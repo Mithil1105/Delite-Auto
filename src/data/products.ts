@@ -1,0 +1,501 @@
+import type { Product } from "./types";
+
+export const products: Product[] = [
+  // Seat covers
+  {
+    id: "p01", slug: "dolphin-orbit-seat-cover-creta",
+    name: "Dolphin Orbit Seat Cover — Hyundai Creta",
+    brandSlug: "dolphin", categorySlug: "seat-covers", vehicle: "car",
+    price: 12750, mrp: 15500, tag: "bestseller", icon: "Armchair",
+    description: "Nappa leatherette with contrast stitching, molded foam padding and a fit cut specifically for the Creta's seat geometry — no sagging, no gaps at the bolsters.",
+    specs: [
+      { label: "Material", value: "Nappa leatherette" },
+      { label: "Fit", value: "Model-specific, tailored" },
+      { label: "Warranty", value: "2 years" },
+      { label: "Install", value: "Professional fitting included" },
+    ],
+  },
+  {
+    id: "p02", slug: "dolphin-orbit-seat-cover-xuv700",
+    name: "Dolphin Orbit Seat Cover — Mahindra XUV700",
+    brandSlug: "dolphin", categorySlug: "seat-covers", vehicle: "car",
+    price: 14790, mrp: 17200, tag: "trending", icon: "Armchair",
+    description: "Our most-fitted cover for the XUV700 — diamond-stitch inserts, breathable perforated panels on the seat base, and reinforced headrest covers.",
+    specs: [
+      { label: "Material", value: "Perforated leatherette" },
+      { label: "Fit", value: "Model-specific, tailored" },
+      { label: "Warranty", value: "2 years" },
+      { label: "Install", value: "Professional fitting included" },
+    ],
+  },
+  {
+    id: "p03", slug: "access-seat-cover-universal",
+    name: "Access Seat Cover Set — Universal Fit",
+    brandSlug: "dolphin", categorySlug: "seat-covers", vehicle: "car",
+    price: 6490, icon: "Armchair",
+    description: "Adjustable fit across most hatchback and sedan seat frames. A dependable everyday upgrade for cabins that see a lot of use.",
+    specs: [
+      { label: "Material", value: "PU leather" },
+      { label: "Fit", value: "Universal, adjustable straps" },
+      { label: "Warranty", value: "1 year" },
+    ],
+  },
+  {
+    id: "p04", slug: "carigiri-rear-armrest",
+    name: "Carigiri Premium Rear Seat Armrest",
+    brandSlug: "dolphin", categorySlug: "comfort", vehicle: "car",
+    price: 1849, icon: "Sofa",
+    description: "Ergonomic foam-cored armrest with a felt-lined storage box and cupholders — the upgrade most rear-seat passengers ask for first.",
+    specs: [
+      { label: "Material", value: "Nappa leatherette" },
+      { label: "Fit", value: "Universal, most sedans/SUVs" },
+    ],
+  },
+
+  // Floor mats
+  {
+    id: "p05", slug: "4n-mats-12mm-grass-black-set-5",
+    name: "4N 12mm Grass Mats — Set of 5, Black",
+    brandSlug: "4n-mats", categorySlug: "floor-mats", vehicle: "car",
+    price: 3200, tag: "bestseller", icon: "Grid2x2",
+    description: "The set that started 4N's reputation — dense grass-weave top layer over a waterproof anti-skid base, trimmed to your car's floor pan.",
+    specs: [
+      { label: "Thickness", value: "12mm" },
+      { label: "Set", value: "5-piece (front, rear, boot optional)" },
+      { label: "Care", value: "Waterproof, hose-washable" },
+    ],
+  },
+  {
+    id: "p06", slug: "4n-mats-12mm-grass-border-grey",
+    name: "4N 12mm Grass Mats with Border — Grey/Black",
+    brandSlug: "4n-mats", categorySlug: "floor-mats", vehicle: "car",
+    price: 3600, icon: "Grid2x2",
+    description: "Same dense weave as our bestseller, finished with a contrast border for cabins that want a little more detail underfoot.",
+    specs: [
+      { label: "Thickness", value: "12mm" },
+      { label: "Set", value: "5-piece" },
+      { label: "Care", value: "Waterproof, hose-washable" },
+    ],
+  },
+  {
+    id: "p07", slug: "alp-3d-mats-mahindra-heavy-duty",
+    name: "ALP 3D Mats — Mahindra, Heavy Duty All-Weather",
+    brandSlug: "4n-mats", categorySlug: "floor-mats", vehicle: "car",
+    price: 4950, tag: "new", icon: "Grid2x2",
+    description: "Raised-lip 3D molding traps mud, rain and spills before they touch carpet — built for Mahindra's SUV floor contours.",
+    specs: [
+      { label: "Material", value: "TPE, odourless" },
+      { label: "Fit", value: "Model-specific 3D mold" },
+    ],
+  },
+  {
+    id: "p08", slug: "chetak-llm-mats",
+    name: "LLM Floor Mat — Bajaj Chetak EV",
+    brandSlug: "4n-mats", categorySlug: "floor-mats", vehicle: "bike",
+    price: 890, icon: "Grid2x2",
+    description: "Footboard mat sized for the Chetak's deck — dust-repellent texture, easy to lift out and wipe clean.",
+    specs: [
+      { label: "Fit", value: "Bajaj Chetak, all variants" },
+      { label: "Care", value: "Wipe-clean surface" },
+    ],
+  },
+
+  // Car care
+  {
+    id: "p09", slug: "waxpol-silicone-liquid-polish-300ml",
+    name: "Waxpol Silicone Liquid Car Polish, 300ml",
+    brandSlug: "waxpol", categorySlug: "car-care", vehicle: "car",
+    price: 233, tag: "bestseller", icon: "SprayCan",
+    description: "A wipe-on, buff-off silicone polish that restores shine on faded paint and leaves a light protective layer against dust.",
+    specs: [
+      { label: "Volume", value: "300ml" },
+      { label: "Use", value: "Monthly, by hand or DA polisher" },
+    ],
+  },
+  {
+    id: "p10", slug: "waxpol-carpet-upholstery-foam",
+    name: "Waxpol Carpet & Upholstery Cleaner Foam",
+    brandSlug: "waxpol", categorySlug: "car-care", vehicle: "car",
+    price: 533, icon: "SprayCan",
+    description: "Aerosol foam cleaner for fabric seats and carpet — lifts stains without soaking the padding underneath.",
+    specs: [
+      { label: "Format", value: "Foam spray" },
+      { label: "Use on", value: "Fabric seats, carpet, boot liner" },
+    ],
+  },
+  {
+    id: "p11", slug: "waxpol-ecosaver-shampoo-2-5l",
+    name: "Waxpol Ecosaver Wash Shampoo Concentrate, 2.5L",
+    brandSlug: "waxpol", categorySlug: "car-care", vehicle: "universal",
+    price: 1000, icon: "Droplets",
+    description: "High-foam concentrate for snow-foam guns and bucket washing alike — one bottle lasts most owners several months.",
+    specs: [
+      { label: "Volume", value: "2.5 litre" },
+      { label: "Dilution", value: "1:150 for foam wash" },
+    ],
+  },
+  {
+    id: "p12", slug: "waxpol-rain-repellent-kit",
+    name: "Waxpol Rain Repellent Kit with Applicator",
+    brandSlug: "waxpol", categorySlug: "car-care", vehicle: "car",
+    price: 268, tag: "new", icon: "Umbrella",
+    description: "A hydrophobic glass treatment plus microfiber applicator — beads rain off the windshield for sharper visibility in downpours.",
+    specs: [
+      { label: "Includes", value: "Treatment + applicator cloth" },
+      { label: "Lasts", value: "Approx. 2–3 months" },
+    ],
+  },
+  {
+    id: "p13", slug: "wurth-engine-flush-cleaner",
+    name: "Würth Engine Flush & Cleaner",
+    brandSlug: "wurth", categorySlug: "workshop-essentials", vehicle: "universal",
+    price: 640, icon: "Wrench",
+    description: "Workshop-grade flush that clears sludge and varnish before an oil change — the same bottle our own service bay uses.",
+    specs: [
+      { label: "Use", value: "Pre-oil-change flush" },
+      { label: "Grade", value: "Workshop / professional" },
+    ],
+  },
+  {
+    id: "p14", slug: "wurth-brake-paste",
+    name: "Würth Brake Paste, Anti-Squeal",
+    brandSlug: "wurth", categorySlug: "workshop-essentials", vehicle: "universal",
+    price: 720, icon: "Wrench",
+    description: "Copper-free anti-squeal paste for brake pad backing plates and caliper pins — quiets brakes without affecting bite.",
+    specs: [
+      { label: "Use", value: "Brake pad & caliper service" },
+      { label: "Format", value: "Tube, 100g" },
+    ],
+  },
+
+  // Audio & dashcams
+  {
+    id: "p15", slug: "jbl-legend-700-touchscreen",
+    name: "JBL Legend 700, 7\" Touchscreen Multimedia Receiver",
+    brandSlug: "jbl", categorySlug: "audio-dashcams", vehicle: "car",
+    price: 62914, tag: "trending", icon: "Radio",
+    description: "A 7-inch capacitive touchscreen head unit with wireless Android Auto/CarPlay and JBL's own tuned sound profile.",
+    specs: [
+      { label: "Display", value: "7\" capacitive touch" },
+      { label: "Connectivity", value: "Wireless Android Auto & CarPlay" },
+      { label: "Warranty", value: "1 year" },
+    ],
+  },
+  {
+    id: "p16", slug: "moco-4gb-64gb-creta-2024",
+    name: "Moco 4GB/64GB CPAA+DSP+DVR 360 — Hyundai Creta 2024",
+    brandSlug: "sony", categorySlug: "audio-dashcams", vehicle: "car",
+    price: 38500, tag: "new", icon: "Radio",
+    description: "Fitment-matched Android multimedia unit for the 2024 Creta, with built-in DSP tuning and a 360° camera pack ready to wire in.",
+    specs: [
+      { label: "RAM/Storage", value: "4GB / 64GB" },
+      { label: "Fit", value: "Hyundai Creta 2024, plug-and-play harness" },
+    ],
+  },
+  {
+    id: "p17", slug: "pricol-ahd-camera-gridline",
+    name: "Pricol 18.5mm AHD Reverse Camera with Moving Gridlines",
+    brandSlug: "pricol", categorySlug: "audio-dashcams", vehicle: "car",
+    price: 1450, icon: "Camera",
+    description: "Guideline overlays move with your steering input, so reverse parking lines up even on tight, angled bays.",
+    specs: [
+      { label: "Format", value: "AHD, night-vision LEDs" },
+      { label: "Guidelines", value: "Dynamic / steering-linked" },
+    ],
+  },
+  {
+    id: "p18", slug: "qubo-jumpstarter-inflator-2in1",
+    name: "Qubo 2-in-1 Battery Jump Starter & Digital Tyre Inflator",
+    brandSlug: "qubo", categorySlug: "audio-dashcams", vehicle: "universal",
+    price: 4290, tag: "bestseller", icon: "Zap",
+    description: "A glovebox unit that jump-starts a dead battery and re-inflates a tyre from the same charge — genuinely useful on a highway run.",
+    specs: [
+      { label: "Jump capacity", value: "Up to 3.0L petrol / 2.0L diesel" },
+      { label: "Inflator", value: "Digital gauge, auto cut-off" },
+    ],
+  },
+  {
+    id: "p19", slug: "sony-xav-ax series",
+    name: "Sony Digital Media Receiver, 6.95\" Touch",
+    brandSlug: "sony", categorySlug: "audio-dashcams", vehicle: "car",
+    price: 28990, icon: "Radio",
+    description: "Sony's flagship car receiver line — punchy factory-fit sound with wired Android Auto and Apple CarPlay support.",
+    specs: [
+      { label: "Display", value: "6.95\" touch" },
+      { label: "Connectivity", value: "Android Auto, CarPlay (wired)" },
+    ],
+  },
+  {
+    id: "p19b", slug: "nakamichi-nq502-6-speaker-set",
+    name: "Nakamichi NQ502 6\" Coaxial Speaker Set",
+    brandSlug: "nakamichi", categorySlug: "audio-dashcams", vehicle: "car",
+    price: 5490, tag: "new", icon: "Speaker",
+    description: "A drop-in upgrade over factory door speakers — noticeably cleaner mids and actual bass, without touching the head unit.",
+    specs: [
+      { label: "Size", value: "6\" coaxial, pair" },
+      { label: "Power handling", value: "80W RMS" },
+      { label: "Fit", value: "Most factory door mounts" },
+    ],
+  },
+
+  // GPS & security
+  {
+    id: "p20", slug: "wheels-eye-w1-tracker",
+    name: "Wheels Eye W1 GPS Tracker",
+    brandSlug: "wheels-eye", categorySlug: "gps-security", vehicle: "universal",
+    price: 3499, tag: "trending", icon: "MapPin",
+    description: "Live location, ignition alerts and geofencing in one compact unit — the tracker we recommend most for family vehicles.",
+    specs: [
+      { label: "Tracking", value: "Live, app-based" },
+      { label: "Alerts", value: "Ignition, door, geofence" },
+      { label: "Subscription", value: "1 year included" },
+    ],
+  },
+  {
+    id: "p21", slug: "nv-track-anti-theft",
+    name: "NV Track Anti-Theft Immobilizer Kit",
+    brandSlug: "wheels-eye", categorySlug: "gps-security", vehicle: "car",
+    price: 5250, icon: "ShieldCheck",
+    description: "Remote engine-cut immobilizer paired with app alerts — a step up in security for cars parked on the street overnight.",
+    specs: [
+      { label: "Control", value: "App-based remote immobilize" },
+      { label: "Install", value: "Professional wiring required" },
+    ],
+  },
+
+  // Fragrances
+  {
+    id: "p22", slug: "godrej-aer-click-gel-10gm",
+    name: "Godrej Aer Click Gel Car Fragrance, 10gm",
+    brandSlug: "godrej", categorySlug: "fragrances", vehicle: "car",
+    price: 199, icon: "Wind",
+    description: "Vent-clip gel diffuser with an adjustable intensity dial — a small detail that makes a rented or shared car feel yours.",
+    specs: [ { label: "Format", value: "Vent-clip gel" }, { label: "Lasts", value: "Approx. 30 days" } ],
+  },
+  {
+    id: "p23", slug: "godrej-aer-twist-45g",
+    name: "Godrej Aer Twist Gel Fragrance, 45g",
+    brandSlug: "godrej", categorySlug: "fragrances", vehicle: "car",
+    price: 249, icon: "Wind",
+    description: "A twist-cap gel jar for the dashboard or door pocket — longer-lasting than clip diffusers, with a stronger throw.",
+    specs: [ { label: "Format", value: "Twist-cap gel jar" }, { label: "Lasts", value: "Approx. 45 days" } ],
+  },
+  {
+    id: "p24", slug: "vedashree-perfume-classic",
+    name: "Vedashree Car Perfume, Classic Attar Blend",
+    brandSlug: "vedashree", categorySlug: "fragrances", vehicle: "car",
+    price: 350, tag: "new", icon: "Sparkles",
+    description: "A traditional attar-style scent in a refillable glass bottle diffuser — a favourite with customers who find synthetic sprays overpowering.",
+    specs: [ { label: "Format", value: "Refillable glass diffuser" }, { label: "Scent family", value: "Attar / woody-floral" } ],
+  },
+
+  // Bike guards
+  {
+    id: "p25", slug: "activa-front-fender-guard",
+    name: "Front Fender Guard — Honda Activa (Set of 3)",
+    brandSlug: "pathak", categorySlug: "bike-guards", vehicle: "bike",
+    price: 1150, tag: "bestseller", icon: "ShieldCheck",
+    description: "The full Activa protection set — front fender guard, side crash bar and all-round footrest guard — sold together as our most popular bundle.",
+    specs: [ { label: "Set includes", value: "Fender guard, crash bar, footrest guard" }, { label: "Fit", value: "Honda Activa, all generations" } ],
+  },
+  {
+    id: "p26", slug: "pathak-footrest-ola-s1x",
+    name: "Pathak Footrest Stand — Ola S1X",
+    brandSlug: "pathak", categorySlug: "bike-guards", vehicle: "bike",
+    price: 480, icon: "ShieldCheck",
+    description: "OEM-matched footrest stand for the Ola S1X, powder-coated to resist scuffing from daily mounting and dismounting.",
+    specs: [ { label: "Fit", value: "Ola S1X" }, { label: "Finish", value: "Powder-coated steel" } ],
+  },
+  {
+    id: "p27", slug: "pathak-gold-side-stand",
+    name: "Pathak Gold Side Stand",
+    brandSlug: "pathak", categorySlug: "bike-guards", vehicle: "bike",
+    price: 620, icon: "ShieldCheck",
+    description: "A reinforced side stand with a wider foot plate — noticeably more stable on soft ground and inclined parking.",
+    specs: [ { label: "Fit", value: "Universal scooter mount" }, { label: "Finish", value: "Gold anodized" } ],
+  },
+  {
+    id: "p28", slug: "bike-holder-hook-universal",
+    name: "Bike Holder Hook, Premium — Universal",
+    brandSlug: "pathak", categorySlug: "bike-guards", vehicle: "bike",
+    price: 249, icon: "ShieldCheck",
+    description: "A handlebar-mounted hook rated for shopping bags and helmet straps, without scratching your grips.",
+    specs: [ { label: "Fit", value: "Universal handlebar clamp" } ],
+  },
+
+  // Bike covers & locks
+  {
+    id: "p29", slug: "re-classic-650-body-cover",
+    name: "Waterproof Body Cover — Royal Enfield Classic 650",
+    brandSlug: "4n-mats", categorySlug: "bike-covers", vehicle: "bike",
+    price: 650, tag: "bestseller", icon: "Umbrella",
+    description: "Heavy-duty woven polyester that shrugs off monsoon rain, UV fade and the odd dust storm — cut to the Classic 650's silhouette.",
+    specs: [ { label: "Material", value: "210D woven polyester" }, { label: "Fit", value: "Royal Enfield Classic 650, all variants" } ],
+  },
+  {
+    id: "p30", slug: "creta-bicycle-cable-lock",
+    name: "Flexible Cable Lock — Bicycle & Scooter",
+    brandSlug: "4n-mats", categorySlug: "bike-covers", vehicle: "bike",
+    price: 320, icon: "Lock",
+    description: "A coiled steel cable lock long enough to loop through a wheel and a fixed post, with a weatherproof combination dial.",
+    specs: [ { label: "Length", value: "1.2m coiled cable" }, { label: "Lock type", value: "4-digit combination" } ],
+  },
+  {
+    id: "p31", slug: "vito-indicator-buzzer",
+    name: "Vito Indicator Buzzer",
+    brandSlug: "pathak", categorySlug: "bike-covers", vehicle: "bike",
+    price: 180, icon: "Zap",
+    description: "A simple add-on buzzer so you actually hear your indicator ticking over highway wind noise — cheap insurance against a flat battery.",
+    specs: [ { label: "Fit", value: "Universal 2-wheeler wiring" } ],
+  },
+
+  // Workshop essentials
+  {
+    id: "p32", slug: "wurth-underbody-protection-black",
+    name: "Würth Underbody Protection, Black",
+    brandSlug: "wurth", categorySlug: "workshop-essentials", vehicle: "car",
+    price: 890, icon: "Wrench",
+    description: "A rubberized coating that shields the underbody from stone chips and rust — sprayed on during service, cures to a matte black finish.",
+    specs: [ { label: "Format", value: "Aerosol / bulk spray-on" }, { label: "Cure", value: "24 hours before driving" } ],
+  },
+  {
+    id: "p33", slug: "wurth-p20-high-gloss-polish",
+    name: "Würth P20 High Gloss Polish Plus",
+    brandSlug: "wurth", categorySlug: "workshop-essentials", vehicle: "car",
+    price: 1240, icon: "SprayCan",
+    description: "A machine-polish compound our detailing bay uses for the final gloss pass after paint correction.",
+    specs: [ { label: "Use", value: "Machine polish, final stage" } ],
+  },
+  {
+    id: "p34", slug: "wurth-circlip-pliers-angled",
+    name: "Würth Angled Circlip Pliers",
+    brandSlug: "wurth", categorySlug: "workshop-essentials", vehicle: "universal",
+    price: 950, icon: "Wrench",
+    description: "Precision-ground tips for internal and external circlips in tight engine bay clearances — a bench staple, not a one-job tool.",
+    specs: [ { label: "Type", value: "Angled, dual internal/external" } ],
+  },
+  {
+    id: "p35", slug: "wurth-refrigerant-leak-detector",
+    name: "Würth Electronic Refrigerant Leak Detector",
+    brandSlug: "wurth", categorySlug: "workshop-essentials", vehicle: "universal",
+    price: 6800, tag: "new", icon: "Wrench",
+    description: "Pinpoints A/C refrigerant leaks down to the fitting, so a re-gas isn't just a temporary fix.",
+    specs: [ { label: "Sensitivity", value: "Detects R134a & R1234yf" } ],
+  },
+
+  // Comfort
+  {
+    id: "p36", slug: "lumbar-support-cushion",
+    name: "Lumbar Support Cushion",
+    brandSlug: "4n-mats", categorySlug: "comfort", vehicle: "car",
+    price: 750, icon: "Sofa",
+    description: "Memory-foam lumbar support that straps to any seat back — built for owners who spend three-plus hours a day behind the wheel.",
+    specs: [ { label: "Material", value: "Memory foam, mesh cover" }, { label: "Fit", value: "Universal strap mount" } ],
+  },
+  {
+    id: "p37", slug: "ergonomic-neck-pillow",
+    name: "Ergonomic Neck Pillow",
+    brandSlug: "4n-mats", categorySlug: "comfort", vehicle: "car",
+    price: 650, icon: "Sofa",
+    description: "A contoured headrest pillow that keeps the neck aligned on long highway stretches — machine-washable cover.",
+    specs: [ { label: "Material", value: "Memory foam, washable cover" } ],
+  },
+  {
+    id: "p38", slug: "lyrovo-armrest-cushion",
+    name: "Lyrovo PU Leather Armrest Cushion with Side Pockets",
+    brandSlug: "dolphin", categorySlug: "comfort", vehicle: "car",
+    price: 398, icon: "Sofa",
+    description: "Raises and pads the centre armrest while adding two side pockets for a phone, cards or toll tags.",
+    specs: [ { label: "Material", value: "PU leather" }, { label: "Fit", value: "Universal, most centre consoles" } ],
+  },
+  {
+    id: "p39", slug: "carigiri-neck-rest",
+    name: "Carigiri Car Neck Rest Pillow",
+    brandSlug: "dolphin", categorySlug: "comfort", vehicle: "car",
+    price: 590, icon: "Sofa",
+    description: "A firmer alternative to our memory-foam pillow, for drivers who prefer more structured support.",
+    specs: [ { label: "Material", value: "High-density foam" } ],
+  },
+
+  // A few more spread across categories for a fuller catalog
+  {
+    id: "p40", slug: "magnetic-hood-strips",
+    name: "Magnetic Hood Strips — All Cars",
+    brandSlug: "4n-mats", categorySlug: "car-care", vehicle: "car",
+    price: 1200, icon: "Sparkles",
+    description: "Racing-style magnetic hood and roof strips that lift off cleanly for washing — no adhesive residue on repaint jobs.",
+    specs: [ { label: "Fit", value: "Universal, magnetic mount" } ],
+  },
+  {
+    id: "p41", slug: "sarte-sunshade-side-windows",
+    name: "Sarte Sun Shade for Side Windows, Black",
+    brandSlug: "4n-mats", categorySlug: "comfort", vehicle: "car",
+    price: 450, icon: "Sun",
+    description: "Static-cling shades that cut cabin heat and UV glare for rear passengers, without the suction-cup sag of cheaper versions.",
+    specs: [ { label: "Fit", value: "Universal, static cling" }, { label: "Set", value: "4-piece, rear + rear doors" } ],
+  },
+  {
+    id: "p42", slug: "pv-max-key-cover-chrome",
+    name: "PV Max Zinc Alloy Chrome Key Cover & Keychain",
+    brandSlug: "pv-max", categorySlug: "comfort", vehicle: "universal",
+    price: 890, icon: "KeyRound",
+    description: "A weighted zinc-alloy shell that replaces the flimsy factory key fob plastic — chrome finish, matching keychain included.",
+    specs: [ { label: "Material", value: "Zinc alloy, chrome finish" } ],
+  },
+  {
+    id: "p43", slug: "pv-max-seat-belt-buckle",
+    name: "PV Max Leather Seat Belt Buckle Guard",
+    brandSlug: "pv-max", categorySlug: "comfort", vehicle: "car",
+    price: 690, icon: "KeyRound",
+    description: "Stitched leather buckle covers that quiet the metal-on-metal click and dress up an otherwise overlooked detail.",
+    specs: [ { label: "Material", value: "Genuine leather, premium stitching" } ],
+  },
+  {
+    id: "p44", slug: "amaron-2-wheeler-battery",
+    name: "Amaron Sealed 2-Wheeler Battery, 4Ah",
+    brandSlug: "pathak", categorySlug: "workshop-essentials", vehicle: "bike",
+    price: 1650, tag: "trending", icon: "Battery",
+    description: "Maintenance-free sealed battery for scooters and commuter bikes — reliable cold starts, zero topping up.",
+    specs: [ { label: "Capacity", value: "4Ah" }, { label: "Type", value: "Sealed, maintenance-free" }, { label: "Warranty", value: "18 months" } ],
+  },
+  {
+    id: "p45", slug: "waxpol-4t-gold-engine-oil",
+    name: "Waxpol 4T Gold Bike Engine Oil 10W30, 900ml",
+    brandSlug: "waxpol", categorySlug: "workshop-essentials", vehicle: "bike",
+    price: 395, icon: "Droplets",
+    description: "A semi-synthetic 4T oil formulated for Indian commuter and sports bike engines running on ethanol-blended fuel.",
+    specs: [ { label: "Grade", value: "10W30, SN MA2" }, { label: "Volume", value: "900ml" } ],
+  },
+  {
+    id: "p46", slug: "waxpol-chain-lube",
+    name: "Waxpol CCL170 Chain Lube, 150ml",
+    brandSlug: "waxpol", categorySlug: "workshop-essentials", vehicle: "bike",
+    price: 220, icon: "Droplets",
+    description: "A wax-based chain lube that stays put at highway speed instead of flinging onto your rear wheel and swingarm.",
+    specs: [ { label: "Volume", value: "150ml" } ],
+  },
+  {
+    id: "p47", slug: "stellar-air-jet-fan",
+    name: "Stellar Air Jet 130,000 RPM Cordless Turbo Blower",
+    brandSlug: "wheels-eye", categorySlug: "car-care", vehicle: "universal",
+    price: 3200, tag: "new", icon: "Fan",
+    description: "A cordless high-RPM blower for drying wash water out of trims, vents and wheel spokes without water-spotting.",
+    specs: [ { label: "Battery", value: "16000mAh, cordless" }, { label: "Speed", value: "Up to 130,000 RPM" } ],
+  },
+  {
+    id: "p48", slug: "car-trash-bin-genome",
+    name: "Genome Car Trash Bin",
+    brandSlug: "4n-mats", categorySlug: "comfort", vehicle: "car",
+    price: 399, icon: "Sofa",
+    description: "A leak-proof, collapsible bin that hangs off the centre console or seat back — keeps wrappers and receipts off the floor mats.",
+    specs: [ { label: "Material", value: "PU leather shell, leakproof liner" } ],
+  },
+];
+
+export const productBySlug = (slug: string) => products.find((p) => p.slug === slug);
+export const productsByCategory = (slug: string) => products.filter((p) => p.categorySlug === slug);
+export const productsByBrand = (slug: string) => products.filter((p) => p.brandSlug === slug);
+export const relatedProducts = (product: Product, count = 4) =>
+  products
+    .filter((p) => p.id !== product.id && (p.categorySlug === product.categorySlug || p.brandSlug === product.brandSlug))
+    .slice(0, count);

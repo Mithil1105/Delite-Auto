@@ -1,0 +1,54 @@
+import {
+  Armchair,
+  Battery,
+  Camera,
+  CircleHelp,
+  Droplets,
+  Fan,
+  Grid2x2,
+  KeyRound,
+  Lock,
+  MapPin,
+  Radio,
+  ShieldCheck,
+  Sofa,
+  Sparkles,
+  Speaker,
+  SprayCan,
+  Sun,
+  Umbrella,
+  Wind,
+  Wrench,
+  Zap,
+  type LucideProps,
+} from "lucide-react";
+
+// Only the icons actually referenced by categories/products data — kept as an explicit
+// map (rather than `import * as icons`) so unused lucide icons are tree-shaken out.
+const iconMap: Record<string, React.ComponentType<LucideProps>> = {
+  Armchair,
+  Battery,
+  Camera,
+  Droplets,
+  Fan,
+  Grid2x2,
+  KeyRound,
+  Lock,
+  MapPin,
+  Radio,
+  ShieldCheck,
+  Sofa,
+  Sparkles,
+  Speaker,
+  SprayCan,
+  Sun,
+  Umbrella,
+  Wind,
+  Wrench,
+  Zap,
+};
+
+export function Icon({ name, ...props }: { name: string } & LucideProps) {
+  const Cmp = iconMap[name] ?? CircleHelp;
+  return <Cmp {...props} />;
+}
