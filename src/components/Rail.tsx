@@ -38,6 +38,6 @@ export function Rail({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function RailItem({ children }: { children: React.ReactNode }) {
-  return <div className="snap-start shrink-0 w-[240px] sm:w-[260px]">{children}</div>;
+export function RailItem({ children, className = "w-[240px] sm:w-[260px]" }: { children: React.ReactNode; className?: string }) {
+  return <div className={`snap-start shrink-0 ${className}`}>{children}</div>;
 }

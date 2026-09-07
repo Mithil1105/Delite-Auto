@@ -15,6 +15,8 @@ export const brands: Brand[] = [
   { slug: "vedashree", name: "Vedashree", blurb: "Traditional & modern car perfumes" },
   { slug: "pv-max", name: "PV Max", blurb: "Chrome finishing & keychains" },
   { slug: "pathak", name: "Pathak", blurb: "Two-wheeler stands & footrests" },
+  { slug: "studds", name: "Studds", blurb: "India's largest helmet manufacturer" },
+  { slug: "vega", name: "Vega", blurb: "ISI-certified helmets & riding gear" },
 ];
 
 export const brandBySlug = (slug: string) => brands.find((b) => b.slug === slug);

@@ -36,6 +36,26 @@ export default {
           new: "#1f8f6b",
           sale: "#c8481a",
         },
+        brand: {
+          DEFAULT: "#152a63",
+          50: "#eef1fb",
+          100: "#dbe2f6",
+          400: "#3452a8",
+          600: "#1f3a80",
+          700: "#152a63",
+          900: "#0c1a40",
+        },
+        gold: {
+          DEFAULT: "#f5c344",
+          600: "#e0a917",
+        },
+        sale: {
+          DEFAULT: "#e0212f",
+        },
+        lavender: {
+          50: "#f1eefb",
+          100: "#e6e1f7",
+        },
       },
       fontFamily: {
         display: ["Oswald", "Hind", "Hind Vadodara", "ui-sans-serif", "sans-serif"],
@@ -51,6 +71,10 @@ export default {
           "repeating-linear-gradient(135deg, rgba(255,255,255,0.045) 0px, rgba(255,255,255,0.045) 1px, transparent 1px, transparent 14px)",
         "grain-dark":
           "radial-gradient(circle at 15% 20%, rgba(225,87,31,0.16), transparent 45%), radial-gradient(circle at 85% 80%, rgba(86,112,124,0.25), transparent 50%)",
+        "grain-navy":
+          "radial-gradient(circle at 20% 25%, rgba(245,195,68,0.12), transparent 45%), radial-gradient(circle at 85% 75%, rgba(52,82,168,0.35), transparent 50%)",
+        "grid-navy":
+          "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
       },
       letterSpacing: {
         tightish: "-0.01em",

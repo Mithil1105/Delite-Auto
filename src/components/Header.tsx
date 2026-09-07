@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Search, ShoppingCart, Menu, X, Phone, Heart } from "lucide-react";
-import { Logo } from "./Logo";
+import { Search, ShoppingCart, Menu, X, Phone, Heart, User, ChevronDown } from "lucide-react";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { useCart } from "../context/CartContext";
 import { useLang } from "../i18n/LanguageContext";
@@ -18,13 +17,12 @@ export function Header() {
   const currentPath = location.pathname + location.search;
 
   const navItems = [
-    { to: "/", label: t("nav.home") },
-    { to: "/shop", label: t("nav.shop") },
-    { to: "/shop?vehicle=car", label: t("nav.car") },
-    { to: "/shop?vehicle=bike", label: t("nav.bike") },
-    { to: "/brands", label: t("nav.brands") },
-    { to: "/about", label: t("nav.about") },
-    { to: "/contact", label: t("nav.contact") },
+    { to: "/shop?vehicle=car", label: t("nav.cars"), dropdown: true },
+    { to: "/shop?vehicle=bike", label: t("nav.bikes"), dropdown: true },
+    { to: "/brands", label: t("nav.shopByBrands"), dropdown: true },
+    { to: "/shop?tag=bestseller", label: t("nav.dealsOffers"), dropdown: false },
+    { to: "/about", label: t("nav.ourStore"), dropdown: true },
+    { to: "/contact", label: t("nav.contact"), dropdown: false },
   ];
 
   const submitSearch = (e: React.FormEvent) => {
@@ -35,61 +33,63 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50">
-      <div className="hidden sm:block bg-charcoal-deep text-white/70 text-[12px]">
-        <div className="container-page flex items-center justify-between h-9">
-          <span className="font-mono tracking-wide">{t("header.tagline")}</span>
-          <a href={`tel:${site.phone.replace(/\s/g, "")}`} className="flex items-center gap-1.5 hover:text-white transition-colors">
-            <Phone className="w-3 h-3" /> {site.phone}
-          </a>
-        </div>
-      </div>
+      <div className="bg-brand-700 text-white text-[12px] text-center py-1.5 px-4">{t("header.announcement")}</div>
 
-      <div className="bg-white/95 backdrop-blur border-b border-line">
+      <div className="bg-white border-b border-line">
         <div className="container-page flex items-center gap-4 h-16">
-          <Link to="/" className="shrink-0 text-xl">
-            <Logo />
-          </Link>
-
-          <nav className="hidden lg:flex items-center gap-6 ml-4">
+          <nav className="hidden lg:flex items-center gap-5">
             {navItems.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
                 className={clsx(
-                  "font-sans text-[13.5px] font-medium uppercase tracking-wide transition-colors whitespace-nowrap",
-                  currentPath === item.to ? "text-accent" : "text-ink/80 hover:text-ink"
+                  "inline-flex items-center gap-1 font-sans text-[13.5px] font-medium transition-colors whitespace-nowrap",
+                  currentPath === item.to ? "text-brand-700" : "text-ink/80 hover:text-brand-700"
                 )}
               >
                 {item.label}
+                {item.dropdown && <ChevronDown className="w-3 h-3" />}
               </Link>
             ))}
           </nav>
 
-          <form onSubmit={submitSearch} className="hidden md:flex items-center flex-1 max-w-sm ml-auto relative">
+          <Link to="/" className="shrink-0 mx-auto lg:mx-0">
+            <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-brand-700 text-white font-display font-semibold uppercase tracking-tightish">
+              Delite
+            </span>
+          </Link>
+
+          <form onSubmit={submitSearch} className="hidden md:flex items-center flex-1 max-w-xs ml-auto relative">
             <Search className="w-4 h-4 absolute left-3 text-steel-500" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               type="search"
               placeholder={t("header.searchPlaceholder")}
-              className="w-full h-10 pl-9 pr-3 border border-line bg-steel-50 text-[13.5px] focus:outline-none focus:border-ink"
+              className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[13px] focus:outline-none focus:border-brand-600"
             />
           </form>
 
-          <div className="flex items-center gap-1 ml-auto md:ml-3">
+          <div className="flex items-center gap-1 ml-auto md:ml-2">
+            <a href={`tel:${site.phoneAlt.replace(/\s/g, "")}`} className="hidden xl:flex items-center gap-1.5 text-[12.5px] text-steel-700 hover:text-brand-700 mr-2">
+              <Phone className="w-3.5 h-3.5" /> {site.phoneAlt}
+            </a>
             <LanguageSwitcher />
-            <Link to="/shop?wishlist=1" aria-label={t("header.wishlist")} className="relative hidden sm:grid place-items-center w-10 h-10 hover:bg-steel-50">
+            <button type="button" aria-label="Account" className="hidden sm:grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
+              <User className="w-5 h-5" />
+            </button>
+            <Link to="/shop?wishlist=1" aria-label={t("header.wishlist")} className="relative hidden sm:grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
               <Heart className="w-5 h-5" />
               {wishlist.length > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 grid place-items-center bg-accent text-white text-[10px] font-semibold rounded-full">
+                <span className="absolute top-1 right-1 w-4 h-4 grid place-items-center bg-sale text-white text-[10px] font-semibold rounded-full">
                   {wishlist.length}
                 </span>
               )}
             </Link>
-            <Link to="/cart" aria-label={t("header.cart")} className="relative grid place-items-center w-10 h-10 hover:bg-steel-50">
+            <Link to="/cart" aria-label={t("header.cart")} className="relative grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
               <ShoppingCart className="w-5 h-5" />
               {cartCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 grid place-items-center bg-accent text-white text-[10px] font-semibold rounded-full">
+                <span className="absolute top-1 right-1 w-4 h-4 grid place-items-center bg-sale text-white text-[10px] font-semibold rounded-full">
                   {cartCount}
                 </span>
               )}
@@ -98,7 +98,7 @@ export function Header() {
               type="button"
               onClick={() => setOpen((v) => !v)}
               aria-label="Toggle menu"
-              className="lg:hidden grid place-items-center w-10 h-10 hover:bg-steel-50"
+              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
             >
               {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
@@ -116,7 +116,7 @@ export function Header() {
                 onChange={(e) => setQuery(e.target.value)}
                 type="search"
                 placeholder={t("header.searchPlaceholderShort")}
-                className="w-full h-11 pl-9 pr-3 border border-line bg-steel-50 text-[14px] focus:outline-none focus:border-ink"
+                className="w-full h-11 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[14px] focus:outline-none focus:border-brand-600"
               />
             </form>
             {navItems.map((item) => (
@@ -125,8 +125,8 @@ export function Header() {
                 to={item.to}
                 onClick={() => setOpen(false)}
                 className={clsx(
-                  "py-3 border-b border-line font-sans text-[15px] font-medium uppercase",
-                  currentPath === item.to ? "text-accent" : "text-ink"
+                  "py-3 border-b border-line font-sans text-[15px] font-medium",
+                  currentPath === item.to ? "text-brand-700" : "text-ink"
                 )}
               >
                 {item.label}

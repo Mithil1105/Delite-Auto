@@ -5,6 +5,7 @@ export const testimonials: Testimonial[] = [
     name: "Jay Suthar",
     location: "Navrangpura, Ahmedabad",
     vehicle: "Hyundai Creta",
+    productLabel: "Car Seat Cover Set",
     quote:
       "Got the Dolphin seat covers fitted while I waited — 40 minutes and the cabin looked like a factory option, not an add-on.",
   },
@@ -12,6 +13,7 @@ export const testimonials: Testimonial[] = [
     name: "Pragnesh Patel",
     location: "Vastrapur, Ahmedabad",
     vehicle: "Royal Enfield Classic 350",
+    productLabel: "GPS Tracker",
     quote:
       "Asked three shops about a GPS tracker before this one. They were the only ones who actually explained what the geofence alerts do instead of just upselling.",
   },
@@ -19,6 +21,7 @@ export const testimonials: Testimonial[] = [
     name: "Yash Kadia",
     location: "Bopal, Ahmedabad",
     vehicle: "Honda Activa",
+    productLabel: "Activa Guard Set",
     quote:
       "The full Activa guard set — fender, crash bar, footrest — survived a spill on Sarkhej-Gandhinagar highway without a scratch on the bike itself.",
   },
@@ -26,6 +29,7 @@ export const testimonials: Testimonial[] = [
     name: "Nirav Vaghela",
     location: "Maninagar, Ahmedabad",
     vehicle: "Mahindra XUV700",
+    productLabel: "Waxpol Car Care",
     quote:
       "Been buying Waxpol from them for three years for my own detailing side-hustle. Never once got a expired or diluted bottle.",
   },
@@ -33,6 +37,7 @@ export const testimonials: Testimonial[] = [
     name: "Mahesh Purohit",
     location: "Satellite, Ahmedabad",
     vehicle: "Maruti Suzuki Baleno",
+    productLabel: "Floor Mats",
     quote:
       "They talked me out of the more expensive mats because my car doesn't need them. Didn't expect that from an accessories shop.",
   },

@@ -1,141 +1,256 @@
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowRight, MapPin, ShieldCheck } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Hero } from "../components/Hero";
-import { TrustStrip } from "../components/TrustStrip";
-import { CategoryGrid } from "../components/CategoryGrid";
 import { Rail, RailItem } from "../components/Rail";
-import { ProductCard } from "../components/ProductCard";
-import { SectionHeading } from "../components/SectionHeading";
-import { BrandMarquee } from "../components/BrandMarquee";
-import { FounderTeaser } from "../components/FounderTeaser";
-import { TestimonialsSection } from "../components/TestimonialsSection";
-import { ContactForm } from "../components/ContactForm";
+import { PillTabs } from "../components/home/PillTabs";
+import { HomeProductCard } from "../components/home/HomeProductCard";
+import { CategoryIconStrip } from "../components/home/CategoryIconStrip";
+import { VehicleBrandGrid } from "../components/home/VehicleBrandGrid";
+import { PromoBannerPair } from "../components/home/PromoBannerPair";
+import { TestimonialCarousel } from "../components/home/TestimonialCarousel";
+import { GetInTouchBox } from "../components/home/GetInTouchBox";
+import { TrustBadgesRow } from "../components/home/TrustBadgesRow";
+import { ProductArt } from "../components/ProductArt";
 import { products } from "../data/products";
-import { site } from "../data/site";
 import { useLang } from "../i18n/LanguageContext";
+
+function SectionHead({ title, cta, onCta }: { title: string; cta?: string; onCta?: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4 mb-5">
+      <h2 className="text-xl sm:text-2xl font-display normal-case">{title}</h2>
+      {cta && (
+        <button type="button" onClick={onCta} className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
+          {cta}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function Home() {
   const { t } = useLang();
-  const trendingCar = products.filter((p) => p.vehicle === "car" && (p.tag === "trending" || p.tag === "bestseller")).slice(0, 8);
-  const trendingBike = products.filter((p) => p.vehicle === "bike").slice(0, 8);
-  const carCare = products.filter((p) => p.categorySlug === "car-care" || p.categorySlug === "workshop-essentials").slice(0, 8);
+
+  const [trendingVehicle, setTrendingVehicle] = useState<"car" | "bike">("car");
+  const [vehicleTab, setVehicleTab] = useState<"popular" | "new" | "upcoming">("popular");
+  const [brandsVehicle, setBrandsVehicle] = useState<"car" | "bike">("car");
+  const [carCategoryTab, setCarCategoryTab] = useState<"seat-covers" | "dash-cams" | "covers" | "care">("seat-covers");
+  const [bikeCategoryTab, setBikeCategoryTab] = useState<"helmets" | "covers" | "saddlebags" | "locks">("helmets");
+
+  const trending = useMemo(() => {
+    const base = products.filter((p) => p.vehicle === trendingVehicle);
+    const tagged = base.filter((p) => p.tag === "trending" || p.tag === "bestseller");
+    return (tagged.length >= 6 ? tagged : base).slice(0, 8);
+  }, [trendingVehicle]);
+
+  const perfectVehicles = useMemo(() => {
+    if (vehicleTab === "popular") return products.filter((p) => p.tag === "bestseller" || p.tag === "trending").slice(0, 8);
+    if (vehicleTab === "new") return products.filter((p) => p.tag === "new").slice(0, 8);
+    return products.slice(-8);
+  }, [vehicleTab]);
+
+  const carCategoryProducts = useMemo(() => {
+    if (carCategoryTab === "seat-covers") return products.filter((p) => p.categorySlug === "seat-covers");
+    if (carCategoryTab === "dash-cams")
+      return products.filter((p) => p.categorySlug === "audio-dashcams" && /cam|dvr/i.test(p.name));
+    if (carCategoryTab === "covers") return products.filter((p) => p.categorySlug === "floor-mats");
+    return products.filter((p) => p.categorySlug === "car-care");
+  }, [carCategoryTab]);
+
+  const bikeCategoryProducts = useMemo(() => {
+    if (bikeCategoryTab === "helmets") return products.filter((p) => p.categorySlug === "helmets");
+    if (bikeCategoryTab === "covers") return products.filter((p) => p.categorySlug === "bike-covers");
+    if (bikeCategoryTab === "saddlebags") return products.filter((p) => p.categorySlug === "saddlebags");
+    return products.filter((p) => p.categorySlug === "bike-guards");
+  }, [bikeCategoryTab]);
 
   return (
     <>
       <Hero />
 
-      <section className="py-10 border-b border-line">
+      <section className="section-pad">
+        <div className="container-page grid sm:grid-cols-2 gap-4">
+          <Link to="/shop?vehicle=car" className="relative overflow-hidden rounded-2xl bg-brand-700 text-white p-6 sm:p-8 flex items-center justify-between gap-4 min-h-[160px]">
+            <div>
+              <h3 className="text-xl font-display mb-2">{t("home.shopByCars")}</h3>
+              <ArrowRight className="w-5 h-5" />
+            </div>
+            <ProductArt icon="Sofa" categorySlug="seat-covers" className="w-24 h-24 rounded-xl shrink-0" iconClassName="w-10 h-10" />
+          </Link>
+          <Link to="/shop?vehicle=bike" className="relative overflow-hidden rounded-2xl border border-line bg-white p-6 sm:p-8 flex items-center justify-between gap-4 min-h-[160px]">
+            <div>
+              <h3 className="text-xl font-display mb-2">{t("home.shopByBikes")}</h3>
+              <ArrowRight className="w-5 h-5" />
+            </div>
+            <ProductArt icon="ShieldCheck" categorySlug="bike-guards" className="w-24 h-24 rounded-xl shrink-0" iconClassName="w-10 h-10" />
+          </Link>
+        </div>
+      </section>
+
+      <section className="pb-4">
         <div className="container-page">
-          <TrustStrip />
+          <CategoryIconStrip />
         </div>
       </section>
 
       <section className="section-pad">
         <div className="container-page">
-          <SectionHeading
-            eyebrow={t("home.categoryEyebrow")}
-            title={t("home.categoryTitle")}
-            description={t("home.categoryDesc")}
-            cta={t("home.viewCatalog")}
-            ctaHref="/shop"
-          />
-          <CategoryGrid />
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.trendingTitle")}</h2>
+            <Link to="/shop" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
+              {t("home.viewAllTrendings")}
+            </Link>
+          </div>
+          <div className="mb-6">
+            <PillTabs
+              value={trendingVehicle}
+              onChange={(v) => setTrendingVehicle(v as "car" | "bike")}
+              options={[
+                { value: "car", label: t("home.tabCar"), icon: "Car" },
+                { value: "bike", label: t("home.tabBike"), icon: "Bike" },
+              ]}
+            />
+          </div>
+          <Rail>
+            {trending.map((p) => (
+              <RailItem key={p.id}>
+                <HomeProductCard product={p} />
+              </RailItem>
+            ))}
+          </Rail>
         </div>
       </section>
 
       <section className="section-pad bg-steel-50">
         <div className="container-page">
-          <SectionHeading eyebrow={t("home.trendingCarEyebrow")} title={t("home.trendingCarTitle")} cta={t("home.shopAllCar")} ctaHref="/shop?vehicle=car" />
-          <Rail>
-            {trendingCar.map((p) => (
-              <RailItem key={p.id}>
-                <ProductCard product={p} />
-              </RailItem>
-            ))}
-          </Rail>
-        </div>
-      </section>
-
-      <section className="section-pad">
-        <div className="container-page">
-          <SectionHeading eyebrow={t("home.trendingBikeEyebrow")} title={t("home.trendingBikeTitle")} cta={t("home.shopAllBike")} ctaHref="/shop?vehicle=bike" />
-          <Rail>
-            {trendingBike.map((p) => (
-              <RailItem key={p.id}>
-                <ProductCard product={p} />
-              </RailItem>
-            ))}
-          </Rail>
-        </div>
-      </section>
-
-      <section className="section-pad bg-charcoal-deep text-white relative overflow-hidden">
-        <div className="absolute inset-0 bg-diagonal-lines opacity-30" aria-hidden />
-        <div className="container-page relative grid lg:grid-cols-2 gap-10 items-center">
-          <div>
-            <span className="eyebrow mb-4">
-              <MapPin className="w-3 h-3" /> {t("home.gpsEyebrow")}
-            </span>
-            <h2 className="text-3xl sm:text-4xl font-semibold mb-4 leading-tight">{t("home.gpsTitle")}</h2>
-            <p className="text-white/65 text-[15px] leading-relaxed mb-6 max-w-[50ch]">{t("home.gpsBody")}</p>
-            <Link to="/shop?category=gps-security" className="btn-primary">
-              {t("home.gpsCta")} <ArrowRight className="w-4 h-4" />
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.perfectVehicleTitle")}</h2>
+            <Link to="/shop" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
+              {t("home.viewAll")}
             </Link>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="border border-white/15 p-6 flex flex-col gap-3">
-              <ShieldCheck className="w-6 h-6 text-accent" />
-              <div className="font-display uppercase text-sm">{t("home.antiTheftTitle")}</div>
-              <p className="text-[13px] text-white/55">{t("home.antiTheftBody")}</p>
-            </div>
-            <div className="border border-white/15 p-6 flex flex-col gap-3">
-              <MapPin className="w-6 h-6 text-accent" />
-              <div className="font-display uppercase text-sm">{t("home.liveTrackingTitle")}</div>
-              <p className="text-[13px] text-white/55">{t("home.liveTrackingBody")}</p>
-            </div>
+          <div className="mb-6">
+            <PillTabs
+              value={vehicleTab}
+              onChange={(v) => setVehicleTab(v as "popular" | "new" | "upcoming")}
+              options={[
+                { value: "popular", label: t("home.tabPopular"), icon: "Flame" },
+                { value: "new", label: t("home.tabNewlyLaunched"), icon: "Sparkles" },
+                { value: "upcoming", label: t("home.tabUpcoming"), icon: "CalendarClock" },
+              ]}
+            />
           </div>
-        </div>
-      </section>
-
-      <section className="section-pad">
-        <div className="container-page">
-          <SectionHeading eyebrow={t("home.careEyebrow")} title={t("home.careTitle")} cta={t("home.shopCarCare")} ctaHref="/shop?category=car-care" />
           <Rail>
-            {carCare.map((p) => (
+            {perfectVehicles.map((p) => (
               <RailItem key={p.id}>
-                <ProductCard product={p} />
+                <HomeProductCard product={p} />
               </RailItem>
             ))}
           </Rail>
         </div>
       </section>
 
-      <section className="py-14 border-y border-line bg-steel-50">
+      <section className="section-pad">
         <div className="container-page">
-          <div className="text-center mb-8">
-            <span className="eyebrow justify-center">{t("home.brandsEyebrow")}</span>
-            <h2 className="text-2xl font-semibold mt-2">{t("home.brandsTitle")}</h2>
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.brandsSectionTitle")}</h2>
+            <Link to="/brands" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
+              {t("home.viewAll")}
+            </Link>
           </div>
-          <BrandMarquee />
+          <div className="mb-6">
+            <PillTabs
+              value={brandsVehicle}
+              onChange={(v) => setBrandsVehicle(v as "car" | "bike")}
+              options={[
+                { value: "car", label: t("home.tabCar"), icon: "Car" },
+                { value: "bike", label: t("home.tabBike"), icon: "Bike" },
+              ]}
+            />
+          </div>
+          <VehicleBrandGrid vehicle={brandsVehicle} />
         </div>
       </section>
 
-      <FounderTeaser />
-      <TestimonialsSection />
+      <section className="section-pad bg-steel-50">
+        <div className="container-page">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.topCategoriesCarTitle")}</h2>
+            <Link to="/shop?vehicle=car" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
+              {t("home.viewAll")}
+            </Link>
+          </div>
+          <div className="mb-6">
+            <PillTabs
+              value={carCategoryTab}
+              onChange={(v) => setCarCategoryTab(v as typeof carCategoryTab)}
+              options={[
+                { value: "seat-covers", label: t("home.tabSeatCovers") },
+                { value: "dash-cams", label: t("home.tabDashCams") },
+                { value: "covers", label: t("home.tabCovers") },
+                { value: "care", label: t("home.tabCare") },
+              ]}
+            />
+          </div>
+          <Rail>
+            {carCategoryProducts.map((p) => (
+              <RailItem key={p.id}>
+                <HomeProductCard product={p} />
+              </RailItem>
+            ))}
+          </Rail>
+        </div>
+      </section>
 
       <section className="section-pad">
-        <div className="container-page grid lg:grid-cols-[1fr_1.2fr] gap-12">
-          <div>
-            <SectionHeading eyebrow={t("home.connectEyebrow")} title={t("home.connectTitle")} description={t("home.connectDesc")} />
-            <ul className="space-y-3 text-[14px] text-steel-500 mt-6">
-              <li>{site.address}</li>
-              <li>
-                {site.phone} &middot; {site.phoneAlt}
-              </li>
-              <li>{site.email}</li>
-            </ul>
+        <div className="container-page">
+          <PromoBannerPair />
+        </div>
+      </section>
+
+      <section className="section-pad bg-steel-50">
+        <div className="container-page">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.topCategoriesBikeTitle")}</h2>
+            <Link to="/shop?vehicle=bike" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
+              {t("home.viewAll")}
+            </Link>
           </div>
-          <ContactForm />
+          <div className="mb-6">
+            <PillTabs
+              value={bikeCategoryTab}
+              onChange={(v) => setBikeCategoryTab(v as typeof bikeCategoryTab)}
+              options={[
+                { value: "helmets", label: t("home.tabHelmets") },
+                { value: "covers", label: t("home.tabCovers") },
+                { value: "saddlebags", label: t("home.tabSaddlebags") },
+                { value: "locks", label: t("home.tabLocksSafety") },
+              ]}
+            />
+          </div>
+          <Rail>
+            {bikeCategoryProducts.map((p) => (
+              <RailItem key={p.id}>
+                <HomeProductCard product={p} />
+              </RailItem>
+            ))}
+          </Rail>
+        </div>
+      </section>
+
+      <section className="section-pad">
+        <div className="container-page">
+          <SectionHead title={t("home.testimonialsTitle")} />
+          <TestimonialCarousel />
+        </div>
+      </section>
+
+      <section className="section-pad bg-steel-50">
+        <div className="container-page">
+          <GetInTouchBox />
+          <div className="mt-12">
+            <TrustBadgesRow />
+          </div>
         </div>
       </section>
     </>

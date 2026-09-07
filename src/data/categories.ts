@@ -71,6 +71,20 @@ export const categories: Category[] = [
     vehicle: "car",
     icon: "Sofa",
   },
+  {
+    slug: "helmets",
+    name: "Helmets",
+    tagline: "Full-face, half-face & modular, ISI marked",
+    vehicle: "bike",
+    icon: "HardHat",
+  },
+  {
+    slug: "saddlebags",
+    name: "Saddlebags",
+    tagline: "Tank bags, panniers & tail bags",
+    vehicle: "bike",
+    icon: "Backpack",
+  },
 ];
 
 export const categoryBySlug = (slug: string) =>

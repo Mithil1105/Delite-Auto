@@ -29,6 +29,16 @@ export interface Product {
   icon: string;
   description: string;
   specs: { label: string; value: string }[];
+  /** Home-page product card extras (Figma redesign) — optional, only backfilled on featured products. */
+  rating?: number;
+  reviewCount?: number;
+  colors?: string[];
+}
+
+export interface VehicleBrand {
+  slug: string;
+  name: string;
+  vehicle: "car" | "bike";
 }
 
 export interface Testimonial {
@@ -36,4 +46,6 @@ export interface Testimonial {
   location: string;
   quote: string;
   vehicle: string;
+  /** Short purchase label shown under the name on the home-page testimonial carousel. */
+  productLabel?: string;
 }

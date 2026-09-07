@@ -64,6 +64,28 @@
   .card-surface {
     @apply bg-white border border-line shadow-card;
   }
+
+  /* Figma-homepage pill primitives — see Documentations MD/figma-homepage-redesign.md.
+     Kept separate from .btn-* above so the existing pages keep their current buttons. */
+  .btn-pill {
+    @apply inline-flex items-center justify-center gap-2 font-sans font-semibold text-[13.5px] px-6 py-3 rounded-full transition-colors duration-150 whitespace-nowrap;
+  }
+  .btn-pill-gold {
+    @apply btn-pill bg-gold text-ink hover:bg-gold-600;
+  }
+  .btn-pill-dark {
+    @apply btn-pill bg-ink text-white hover:bg-brand-900;
+  }
+  .btn-pill-outline {
+    @apply btn-pill bg-transparent border border-brand-600 text-brand-700 hover:bg-brand-600 hover:text-white;
+  }
+
+  .pill-tab {
+    @apply inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-semibold uppercase tracking-wide border border-line text-steel-700 bg-white transition-colors whitespace-nowrap;
+  }
+  .pill-tab-active {
+    @apply pill-tab bg-ink text-white border-ink;
+  }
 }
 
 @layer utilities {

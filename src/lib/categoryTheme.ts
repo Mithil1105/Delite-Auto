@@ -14,6 +14,8 @@ export const categoryTheme: Record<string, Theme> = {
   "bike-covers": { from: "#16233a", to: "#28406b" },
   "workshop-essentials": { from: "#3a1710", to: "#7a2a15" },
   comfort: { from: "#332417", to: "#5c422a" },
+  helmets: { from: "#241a12", to: "#4a3320" },
+  saddlebags: { from: "#1c1f14", to: "#3a4022" },
 };
 
 export function getCategoryTheme(slug: string): Theme {
