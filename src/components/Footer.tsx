@@ -18,14 +18,14 @@ export function Footer() {
           <ul className="space-y-3 text-[13px] mb-5">
             {site.locations.map((loc) => (
               <li key={loc.name} className="flex gap-2.5">
-                <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-accent" />
+                <MapPin className="w-4 h-4 shrink-0 mt-0.5 text-brand-400" />
                 <span>
                   <span className="text-white font-medium">{loc.name}</span> — {loc.address}
                 </span>
               </li>
             ))}
             <li className="flex gap-2.5">
-              <Phone className="w-4 h-4 shrink-0 mt-0.5 text-accent" />
+              <Phone className="w-4 h-4 shrink-0 mt-0.5 text-brand-400" />
               <span>
                 <a href={`tel:${site.phone.replace(/\s/g, "")}`} className="hover:text-white transition-colors">{site.phone}</a>
                 {" / "}
@@ -33,19 +33,19 @@ export function Footer() {
               </span>
             </li>
             <li className="flex gap-2.5">
-              <Mail className="w-4 h-4 shrink-0 mt-0.5 text-accent" />
+              <Mail className="w-4 h-4 shrink-0 mt-0.5 text-brand-400" />
               <a href={`mailto:${site.email}`} className="hover:text-white transition-colors">{site.email}</a>
             </li>
           </ul>
           <div className="text-[12px] uppercase tracking-widish text-white/50 mb-2">{t("footer.followUsHeading")}</div>
           <div className="flex items-center gap-3">
-            <a href={site.social.instagram} aria-label="Instagram" className="grid place-items-center w-9 h-9 border border-white/15 hover:border-accent hover:text-accent transition-colors">
+            <a href={site.social.instagram} aria-label="Instagram" className="grid place-items-center w-9 h-9 border border-white/15 hover:border-brand-400 hover:text-brand-400 transition-colors">
               <SocialIcon kind="instagram" />
             </a>
-            <a href={site.social.facebook} aria-label="Facebook" className="grid place-items-center w-9 h-9 border border-white/15 hover:border-accent hover:text-accent transition-colors">
+            <a href={site.social.facebook} aria-label="Facebook" className="grid place-items-center w-9 h-9 border border-white/15 hover:border-brand-400 hover:text-brand-400 transition-colors">
               <SocialIcon kind="facebook" />
             </a>
-            <a href={site.social.youtube} aria-label="YouTube" className="grid place-items-center w-9 h-9 border border-white/15 hover:border-accent hover:text-accent transition-colors">
+            <a href={site.social.youtube} aria-label="YouTube" className="grid place-items-center w-9 h-9 border border-white/15 hover:border-brand-400 hover:text-brand-400 transition-colors">
               <SocialIcon kind="youtube" />
             </a>
           </div>
@@ -75,14 +75,14 @@ export function Footer() {
             {carBrands.map((b) => (
               <li key={b.slug}><Link to="/brands" className="hover:text-white transition-colors">{b.name}</Link></li>
             ))}
-            <li><Link to="/brands" className="text-accent hover:text-white transition-colors">{t("footer.viewAll")}</Link></li>
+            <li><Link to="/brands" className="text-brand-400 hover:text-white transition-colors">{t("footer.viewAll")}</Link></li>
           </ul>
           <h3 className="text-white text-[13px] font-display font-semibold uppercase tracking-widish mb-4">{t("footer.carAccessoriesHeading")}</h3>
           <ul className="space-y-2.5 text-[13.5px]">
             {dict.footer.carAccessories.map((label) => (
               <li key={label}><Link to="/shop?vehicle=car" className="hover:text-white transition-colors">{label}</Link></li>
             ))}
-            <li><Link to="/shop?vehicle=car" className="text-accent hover:text-white transition-colors">{t("footer.viewAll")}</Link></li>
+            <li><Link to="/shop?vehicle=car" className="text-brand-400 hover:text-white transition-colors">{t("footer.viewAll")}</Link></li>
           </ul>
         </div>
 
@@ -92,14 +92,14 @@ export function Footer() {
             {bikeBrands.map((b) => (
               <li key={b.slug}><Link to="/brands" className="hover:text-white transition-colors">{b.name}</Link></li>
             ))}
-            <li><Link to="/brands" className="text-accent hover:text-white transition-colors">{t("footer.viewAll")}</Link></li>
+            <li><Link to="/brands" className="text-brand-400 hover:text-white transition-colors">{t("footer.viewAll")}</Link></li>
           </ul>
           <h3 className="text-white text-[13px] font-display font-semibold uppercase tracking-widish mb-4">{t("footer.bikeAccessoriesHeading")}</h3>
           <ul className="space-y-2.5 text-[13.5px]">
             {dict.footer.bikeAccessories.map((label) => (
               <li key={label}><Link to="/shop?vehicle=bike" className="hover:text-white transition-colors">{label}</Link></li>
             ))}
-            <li><Link to="/shop?vehicle=bike" className="text-accent hover:text-white transition-colors">{t("footer.viewAll")}</Link></li>
+            <li><Link to="/shop?vehicle=bike" className="text-brand-400 hover:text-white transition-colors">{t("footer.viewAll")}</Link></li>
           </ul>
         </div>
       </div>

@@ -9,6 +9,7 @@ import clsx from "clsx";
 
 export function Header() {
   const [open, setOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const { cartCount, wishlist } = useCart();
   const { t } = useLang();
@@ -33,7 +34,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50">
-      <div className="bg-brand-700 text-white text-[12px] text-center py-1.5 px-4">{t("header.announcement")}</div>
+      <div className="bg-brand-500 text-white text-[12px] text-center py-1.5 px-4">{t("header.announcement")}</div>
 
       <div className="bg-white border-b border-line">
         <div className="container-page flex items-center gap-4 h-16">
@@ -54,26 +55,41 @@ export function Header() {
           </nav>
 
           <Link to="/" className="shrink-0 mx-auto lg:mx-0">
-            <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-brand-700 text-white font-display font-semibold uppercase tracking-tightish">
+            <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-brand-500 text-white font-display font-semibold uppercase tracking-tightish">
               Delite
             </span>
           </Link>
 
-          <form onSubmit={submitSearch} className="hidden md:flex items-center flex-1 max-w-xs ml-auto relative">
-            <Search className="w-4 h-4 absolute left-3 text-steel-500" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              type="search"
-              placeholder={t("header.searchPlaceholder")}
-              className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[13px] focus:outline-none focus:border-brand-600"
-            />
-          </form>
-
-          <div className="flex items-center gap-1 ml-auto md:ml-2">
-            <a href={`tel:${site.phoneAlt.replace(/\s/g, "")}`} className="hidden xl:flex items-center gap-1.5 text-[12.5px] text-steel-700 hover:text-brand-700 mr-2">
+          <div className="hidden md:flex items-center gap-3 ml-auto">
+            <a
+              href={`tel:${site.phoneAlt.replace(/\s/g, "")}`}
+              className="hidden xl:flex items-center gap-1.5 text-[12.5px] text-steel-700 hover:text-brand-700 shrink-0"
+            >
               <Phone className="w-3.5 h-3.5" /> {site.phoneAlt}
             </a>
+
+            <form onSubmit={submitSearch} className="flex items-center w-64 relative">
+              <Search className="w-4 h-4 absolute left-3 text-steel-500" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                type="search"
+                placeholder={t("header.searchPlaceholder")}
+                className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[13px] focus:outline-none focus:border-brand-600"
+              />
+            </form>
+          </div>
+
+          <div className="flex items-center gap-1 ml-auto md:ml-2">
+            <button
+              type="button"
+              onClick={() => setMobileSearchOpen((v) => !v)}
+              aria-label={t("header.searchPlaceholder")}
+              aria-pressed={mobileSearchOpen}
+              className="md:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+            >
+              <Search className="w-5 h-5" />
+            </button>
             <LanguageSwitcher />
             <button type="button" aria-label="Account" className="hidden sm:grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
               <User className="w-5 h-5" />
@@ -106,19 +122,25 @@ export function Header() {
         </div>
       </div>
 
+      {mobileSearchOpen && (
+        <div className="md:hidden bg-white border-b border-line px-4 py-3">
+          <form onSubmit={submitSearch} className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-steel-500" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              type="search"
+              placeholder={t("header.searchPlaceholderShort")}
+              className="w-full h-11 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[14px] focus:outline-none focus:border-brand-600"
+            />
+          </form>
+        </div>
+      )}
+
       {open && (
         <div className="lg:hidden bg-white border-b border-line shadow-lift">
           <div className="container-page py-4 flex flex-col gap-1">
-            <form onSubmit={submitSearch} className="relative mb-3">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-steel-500" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                type="search"
-                placeholder={t("header.searchPlaceholderShort")}
-                className="w-full h-11 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[14px] focus:outline-none focus:border-brand-600"
-              />
-            </form>
             {navItems.map((item) => (
               <Link
                 key={item.to}

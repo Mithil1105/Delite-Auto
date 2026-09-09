@@ -37,13 +37,14 @@ export default {
           sale: "#c8481a",
         },
         brand: {
-          DEFAULT: "#152a63",
-          50: "#eef1fb",
-          100: "#dbe2f6",
-          400: "#3452a8",
-          600: "#1f3a80",
-          700: "#152a63",
-          900: "#0c1a40",
+          DEFAULT: "#0e1740",
+          50: "#e9edf9",
+          100: "#cdd6ee",
+          400: "#24357a",
+          500: "#1d3fd1",
+          600: "#152257",
+          700: "#0e1740",
+          900: "#050a1f",
         },
         gold: {
           DEFAULT: "#f5c344",
@@ -72,7 +73,7 @@ export default {
         "grain-dark":
           "radial-gradient(circle at 15% 20%, rgba(225,87,31,0.16), transparent 45%), radial-gradient(circle at 85% 80%, rgba(86,112,124,0.25), transparent 50%)",
         "grain-navy":
-          "radial-gradient(circle at 20% 25%, rgba(245,195,68,0.12), transparent 45%), radial-gradient(circle at 85% 75%, rgba(52,82,168,0.35), transparent 50%)",
+          "radial-gradient(circle at 20% 25%, rgba(245,195,68,0.12), transparent 45%), radial-gradient(circle at 85% 75%, rgba(36,53,122,0.35), transparent 50%)",
         "grid-navy":
           "linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px)",
       },

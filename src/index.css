@@ -30,6 +30,16 @@
     @apply max-w-[1280px] mx-auto px-5 sm:px-6 lg:px-8;
   }
 
+  /* Wider than .container-page — for content-heavy homepage sections (category strip, product
+     carousels) that the Figma renders using more of the viewport than the site's other pages,
+     but still a CONTAINED block with real outer margin at desktop widths, not edge-to-edge (a
+     max-width equal to the viewport, e.g. 1440px at a 1440px viewport, leaves zero auto-margin
+     and reads as full-bleed — deliberately kept narrower than that). Scoped to Home.tsx/Hero.tsx
+     only; .container-page is untouched for every other page. */
+  .container-wide {
+    @apply max-w-[1320px] mx-auto px-5 sm:px-8 lg:px-10;
+  }
+
   .btn {
     @apply inline-flex items-center justify-center gap-2 font-sans font-semibold text-[13.5px] tracking-wide uppercase px-6 py-3.5 transition-colors duration-150 whitespace-nowrap;
   }
@@ -81,7 +91,7 @@
   }
 
   .pill-tab {
-    @apply inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-[12.5px] font-semibold uppercase tracking-wide border border-line text-steel-700 bg-white transition-colors whitespace-nowrap;
+    @apply inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-[13.5px] font-semibold uppercase tracking-wide border border-line text-steel-700 bg-white transition-colors whitespace-nowrap;
   }
   .pill-tab-active {
     @apply pill-tab bg-ink text-white border-ink;

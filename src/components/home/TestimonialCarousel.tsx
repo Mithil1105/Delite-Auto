@@ -29,14 +29,12 @@ export function TestimonialCarousel() {
               ))}
             </div>
             <blockquote className="text-[13.5px] leading-relaxed text-ink/85 flex-1">&ldquo;{t.quote}&rdquo;</blockquote>
-            <figcaption className="mt-4 pt-4 border-t border-line flex items-center gap-3">
-              <span className={`grid place-items-center w-9 h-9 rounded-full text-white text-[12px] font-semibold shrink-0 ${avatarPalette[i % avatarPalette.length]}`}>
+            <figcaption className="mt-4 pt-4 border-t border-line flex flex-col items-center text-center gap-1">
+              <span className={`grid place-items-center w-9 h-9 rounded-full text-white text-[12px] font-semibold shrink-0 mb-1 ${avatarPalette[i % avatarPalette.length]}`}>
                 {initials(t.name)}
               </span>
-              <div>
-                <div className="font-semibold text-[13px]">{t.name}</div>
-                <div className="text-[11.5px] text-steel-500">{t.productLabel ?? t.vehicle}</div>
-              </div>
+              <div className="font-semibold text-[13px]">{t.name}</div>
+              <div className="text-[11.5px] text-steel-500">{t.productLabel ?? t.vehicle}</div>
             </figcaption>
           </figure>
         </RailItem>

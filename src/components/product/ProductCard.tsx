@@ -9,11 +9,13 @@ import { useLang } from "../../i18n/LanguageContext";
 import clsx from "clsx";
 
 /**
- * Home-page product card matching the Figma redesign — separate from the shared
- * `ProductCard` (still used by Shop/Product Detail) so those pages are unaffected.
- * See Documentations MD/figma-homepage-redesign.md.
+ * The single shared product card — used on Home (all carousels), Shop's grid, and Product
+ * Detail's "You might also like". Previously two unrelated implementations existed
+ * (`components/ProductCard.tsx` on the old dark theme, `components/home/HomeProductCard.tsx` on
+ * the Figma redesign); this file replaces both — see
+ * `Documentations MD/figma-shop-product-odoo-integration.md`.
  */
-export function HomeProductCard({ product, className = "" }: { product: Product; className?: string }) {
+export function ProductCard({ product, className = "" }: { product: Product; className?: string }) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const { t, dict } = useLang();
   const wishlisted = isWishlisted(product.id);
@@ -25,7 +27,7 @@ export function HomeProductCard({ product, className = "" }: { product: Product;
   return (
     <div className={clsx("group flex flex-col bg-white border border-line rounded-2xl overflow-hidden shadow-card transition-shadow hover:shadow-lift", className)}>
       <Link to={`/product/${product.slug}`} className="block relative">
-        <ProductArt icon={product.icon} categorySlug={product.categorySlug} productId={product.id} alt={product.name} className="aspect-[4/3] w-full" />
+        <ProductArt icon={product.icon} categorySlug={product.categorySlug} productId={product.id} alt={product.name} className="aspect-square w-full" />
         <button
           type="button"
           onClick={(e) => {
@@ -39,9 +41,9 @@ export function HomeProductCard({ product, className = "" }: { product: Product;
           <Heart className={clsx("w-4 h-4", wishlisted ? "fill-sale text-sale" : "text-ink")} />
         </button>
       </Link>
-      <div className="flex flex-col flex-1 p-4 gap-1.5">
-        {eyebrow && <div className="font-mono text-[10.5px] uppercase tracking-widish text-steel-500">{eyebrow}</div>}
-        <Link to={`/product/${product.slug}`} className="font-semibold text-[14px] leading-snug hover:text-brand-700 transition-colors line-clamp-2">
+      <div className="flex flex-col flex-1 p-5 gap-2">
+        {eyebrow && <div className="font-mono text-[11px] uppercase tracking-widish text-steel-500">{eyebrow}</div>}
+        <Link to={`/product/${product.slug}`} className="font-semibold text-[15px] leading-snug hover:text-brand-700 transition-colors line-clamp-2">
           {product.name}
         </Link>
 
@@ -63,11 +65,11 @@ export function HomeProductCard({ product, className = "" }: { product: Product;
         </div>
 
         <div className="mt-auto flex items-baseline gap-2 pt-1">
-          <span className="price text-[15px] font-bold text-sale">{formatINR(product.price)}</span>
-          {product.mrp && <span className="price text-[12px] text-steel-500 line-through">{formatINR(product.mrp)}</span>}
+          <span className="price text-[17px] font-bold text-sale">{formatINR(product.price)}</span>
+          {product.mrp && <span className="price text-[13px] text-steel-500 line-through">{formatINR(product.mrp)}</span>}
         </div>
 
-        <button type="button" onClick={() => addToCart(product)} className="btn-pill-outline w-full mt-1">
+        <button type="button" onClick={() => addToCart(product)} className="btn-pill-outline w-full mt-1 !py-2.5">
           {t("home.addToCart")}
         </button>
       </div>

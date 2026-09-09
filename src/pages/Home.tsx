@@ -4,21 +4,20 @@ import { ArrowRight } from "lucide-react";
 import { Hero } from "../components/Hero";
 import { Rail, RailItem } from "../components/Rail";
 import { PillTabs } from "../components/home/PillTabs";
-import { HomeProductCard } from "../components/home/HomeProductCard";
+import { ProductCard } from "../components/product/ProductCard";
 import { CategoryIconStrip } from "../components/home/CategoryIconStrip";
 import { VehicleBrandGrid } from "../components/home/VehicleBrandGrid";
 import { PromoBannerPair } from "../components/home/PromoBannerPair";
 import { TestimonialCarousel } from "../components/home/TestimonialCarousel";
 import { GetInTouchBox } from "../components/home/GetInTouchBox";
 import { TrustBadgesRow } from "../components/home/TrustBadgesRow";
-import { ProductArt } from "../components/ProductArt";
 import { products } from "../data/products";
 import { useLang } from "../i18n/LanguageContext";
 
 function SectionHead({ title, cta, onCta }: { title: string; cta?: string; onCta?: () => void }) {
   return (
     <div className="flex items-center justify-between gap-4 mb-5">
-      <h2 className="text-xl sm:text-2xl font-display normal-case">{title}</h2>
+      <h2 className="text-2xl sm:text-3xl font-display normal-case">{title}</h2>
       {cta && (
         <button type="button" onClick={onCta} className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
           {cta}
@@ -68,35 +67,64 @@ export default function Home() {
     <>
       <Hero />
 
-      <section className="section-pad">
-        <div className="container-page grid sm:grid-cols-2 gap-4">
-          <Link to="/shop?vehicle=car" className="relative overflow-hidden rounded-2xl bg-brand-700 text-white p-6 sm:p-8 flex items-center justify-between gap-4 min-h-[160px]">
+      <section className="relative bg-white overflow-hidden">
+        <div className="grid lg:grid-cols-[1.15fr_1fr] min-h-[300px] sm:min-h-[330px] lg:min-h-[360px]">
+          <Link
+            to="/shop?vehicle=car"
+            className="relative z-10 text-white bg-brand-500 px-6 sm:px-10 lg:px-14 pt-6 sm:pt-8 overflow-hidden"
+            style={{ clipPath: "polygon(0 0, 100% 0, 82% 100%, 0 100%)" }}
+          >
             <div>
-              <h3 className="text-xl font-display mb-2">{t("home.shopByCars")}</h3>
-              <ArrowRight className="w-5 h-5" />
+              <div className="flex items-center gap-2">
+                <h3 className="text-2xl sm:text-3xl font-display">{t("home.shopByCars")}</h3>
+                <ArrowRight className="w-6 h-6 shrink-0" />
+              </div>
+              <div className="h-px bg-white/25 mt-4 max-w-[240px]" />
             </div>
-            <ProductArt icon="Sofa" categorySlug="seat-covers" className="w-24 h-24 rounded-xl shrink-0" iconClassName="w-10 h-10" />
+            <div className="absolute bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 w-[70%] max-w-[320px]">
+              <div className="absolute inset-x-6 bottom-1 h-4 rounded-[50%] bg-black/35 blur-md" aria-hidden />
+              <img
+                src="/images/hero/car.png"
+                alt=""
+                className="relative w-full h-auto max-h-[160px] sm:max-h-[190px] lg:max-h-[215px] object-contain object-bottom pointer-events-none"
+              />
+            </div>
           </Link>
-          <Link to="/shop?vehicle=bike" className="relative overflow-hidden rounded-2xl border border-line bg-white p-6 sm:p-8 flex items-center justify-between gap-4 min-h-[160px]">
+          <Link
+            to="/shop?vehicle=bike"
+            className="relative bg-white px-6 sm:px-10 lg:px-14 pt-6 sm:pt-8 overflow-hidden"
+          >
             <div>
-              <h3 className="text-xl font-display mb-2">{t("home.shopByBikes")}</h3>
-              <ArrowRight className="w-5 h-5" />
+              <div className="flex items-center gap-2">
+                <h3 className="text-2xl sm:text-3xl font-display text-ink">{t("home.shopByBikes")}</h3>
+                <span className="grid place-items-center w-7 h-7 rounded-full bg-brand-500 text-white shrink-0">
+                  <ArrowRight className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="h-px bg-line mt-4 max-w-[240px]" />
             </div>
-            <ProductArt icon="ShieldCheck" categorySlug="bike-guards" className="w-24 h-24 rounded-xl shrink-0" iconClassName="w-10 h-10" />
+            <div className="absolute bottom-5 sm:bottom-6 left-1/2 -translate-x-1/2 w-[45%] max-w-[180px]">
+              <div className="absolute inset-x-3 bottom-1 h-3 rounded-[50%] bg-black/25 blur-md" aria-hidden />
+              <img
+                src="/images/hero/bike.png"
+                alt=""
+                className="relative w-full h-auto max-h-[175px] sm:max-h-[210px] lg:max-h-[235px] object-contain object-bottom pointer-events-none"
+              />
+            </div>
           </Link>
         </div>
       </section>
 
-      <section className="pb-4">
-        <div className="container-page">
+      <section className="py-8 sm:py-10 lg:py-12">
+        <div className="container-wide">
           <CategoryIconStrip />
         </div>
       </section>
 
-      <section className="section-pad">
-        <div className="container-page">
+      <section className="pt-2 sm:pt-4 pb-16 sm:pb-20 lg:pb-24">
+        <div className="container-wide">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.trendingTitle")}</h2>
+            <h2 className="text-2xl sm:text-3xl font-display normal-case">{t("home.trendingTitle")}</h2>
             <Link to="/shop" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
               {t("home.viewAllTrendings")}
             </Link>
@@ -114,7 +142,7 @@ export default function Home() {
           <Rail>
             {trending.map((p) => (
               <RailItem key={p.id}>
-                <HomeProductCard product={p} />
+                <ProductCard product={p} />
               </RailItem>
             ))}
           </Rail>
@@ -122,9 +150,9 @@ export default function Home() {
       </section>
 
       <section className="section-pad bg-steel-50">
-        <div className="container-page">
+        <div className="container-wide">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.perfectVehicleTitle")}</h2>
+            <h2 className="text-2xl sm:text-3xl font-display normal-case">{t("home.perfectVehicleTitle")}</h2>
             <Link to="/shop" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
               {t("home.viewAll")}
             </Link>
@@ -143,7 +171,7 @@ export default function Home() {
           <Rail>
             {perfectVehicles.map((p) => (
               <RailItem key={p.id}>
-                <HomeProductCard product={p} />
+                <ProductCard product={p} />
               </RailItem>
             ))}
           </Rail>
@@ -151,9 +179,9 @@ export default function Home() {
       </section>
 
       <section className="section-pad">
-        <div className="container-page">
+        <div className="container-wide">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.brandsSectionTitle")}</h2>
+            <h2 className="text-2xl sm:text-3xl font-display normal-case">{t("home.brandsSectionTitle")}</h2>
             <Link to="/brands" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
               {t("home.viewAll")}
             </Link>
@@ -173,9 +201,9 @@ export default function Home() {
       </section>
 
       <section className="section-pad bg-steel-50">
-        <div className="container-page">
+        <div className="container-wide">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.topCategoriesCarTitle")}</h2>
+            <h2 className="text-2xl sm:text-3xl font-display normal-case">{t("home.topCategoriesCarTitle")}</h2>
             <Link to="/shop?vehicle=car" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
               {t("home.viewAll")}
             </Link>
@@ -195,7 +223,7 @@ export default function Home() {
           <Rail>
             {carCategoryProducts.map((p) => (
               <RailItem key={p.id}>
-                <HomeProductCard product={p} />
+                <ProductCard product={p} />
               </RailItem>
             ))}
           </Rail>
@@ -203,15 +231,15 @@ export default function Home() {
       </section>
 
       <section className="section-pad">
-        <div className="container-page">
+        <div className="container-wide">
           <PromoBannerPair />
         </div>
       </section>
 
       <section className="section-pad bg-steel-50">
-        <div className="container-page">
+        <div className="container-wide">
           <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-            <h2 className="text-xl sm:text-2xl font-display normal-case">{t("home.topCategoriesBikeTitle")}</h2>
+            <h2 className="text-2xl sm:text-3xl font-display normal-case">{t("home.topCategoriesBikeTitle")}</h2>
             <Link to="/shop?vehicle=bike" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
               {t("home.viewAll")}
             </Link>
@@ -231,7 +259,7 @@ export default function Home() {
           <Rail>
             {bikeCategoryProducts.map((p) => (
               <RailItem key={p.id}>
-                <HomeProductCard product={p} />
+                <ProductCard product={p} />
               </RailItem>
             ))}
           </Rail>
@@ -239,14 +267,14 @@ export default function Home() {
       </section>
 
       <section className="section-pad">
-        <div className="container-page">
+        <div className="container-wide">
           <SectionHead title={t("home.testimonialsTitle")} />
           <TestimonialCarousel />
         </div>
       </section>
 
       <section className="section-pad bg-steel-50">
-        <div className="container-page">
+        <div className="container-wide">
           <GetInTouchBox />
           <div className="mt-12">
             <TrustBadgesRow />
