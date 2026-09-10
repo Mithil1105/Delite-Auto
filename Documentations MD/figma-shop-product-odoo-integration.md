@@ -12,6 +12,12 @@
 | Created        | 2026-09-08                              |
 | Last updated   | 2026-09-08                              |
 
+> **See also (2026-09-09):** `ProductCard`'s DOM-nesting/fabricated-rating fixes and the Header
+> chevron decision, both referenced in this file's own text below, are now tracked in
+> [frontend-foundation-uiux-refactor.md](frontend-foundation-uiux-refactor.md). The Shop/PDP
+> rebuild described in this file is otherwise untouched by that pass — this is a pointer, not a
+> supersede.
+
 ## Summary
 
 A larger continuation of the Figma homepage rebuild: bring Home, Shop, Product Detail,

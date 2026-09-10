@@ -1,16 +1,17 @@
-import { useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { ChevronRight, Heart, Minus, Plus, Play, Share2, Star } from "lucide-react";
-import { productBySlug, relatedProducts } from "../data/products";
+import { productBySlug } from "../data/products";
 import { categoryBySlug } from "../data/categories";
 import { productImages } from "../lib/productImages";
 import { categoryImages } from "../lib/categoryImages";
-import { ProductArt } from "../components/ProductArt";
-import { ProductCard } from "../components/product/ProductCard";
-import { Rail, RailItem } from "../components/Rail";
+import { ProductMedia } from "../components/product/ProductMedia";
+import { ProductCarousel } from "../components/product/ProductCarousel";
 import { TrustBadgesRow } from "../components/home/TrustBadgesRow";
 import { formatINR } from "../lib/format";
 import { useCart } from "../context/CartContext";
+import { useRecommendations } from "../hooks/useRecommendations";
+import { recordProductView } from "../lib/recommendations/history";
 import { useLang } from "../i18n/LanguageContext";
 import clsx from "clsx";
 
@@ -23,14 +24,23 @@ export default function ProductDetail() {
   const [tab, setTab] = useState<Tab>("description");
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const { t, dict } = useLang();
+  const navigate = useNavigate();
+
+  // Feeds the cart-drawer's cart-cross-sell "recent affinity" signal — see
+  // Documentations MD/personalized-product-recommendations.md. No early return before this hook:
+  // it must run unconditionally, so it's guarded by `product` internally instead.
+  useEffect(() => {
+    if (product) recordProductView(product.id);
+  }, [product]);
+
+  const related = useRecommendations({ strategy: "pdp", currentProduct: product, limit: 4 });
 
   if (!product) return <Navigate to="/shop" replace />;
 
   const category = categoryBySlug(product.categorySlug);
   const categoryLabel = category ? dict.categories[category.slug as keyof typeof dict.categories] : null;
   const wishlisted = isWishlisted(product.id);
-  const related = relatedProducts(product);
-  const rating = product.rating ?? 4.0;
+  const hasRating = product.rating != null && !!product.reviewCount;
   const reviewCount = product.reviewCount ?? 0;
   const savePercent = product.mrp ? Math.round(((product.mrp - product.price) / product.mrp) * 100) : null;
 
@@ -65,11 +75,11 @@ export default function ProductDetail() {
         <div className="grid lg:grid-cols-2 gap-10 mb-14">
           {/* Gallery */}
           <div>
-            <ProductArt
-              icon={product.icon}
-              categorySlug={product.categorySlug}
-              productId={product.id}
+            <ProductMedia
+              src={heroImage}
               alt={product.name}
+              icon={product.icon}
+              eager
               className="w-full aspect-square rounded-2xl border border-line"
               iconClassName="w-24 h-24"
             />
@@ -93,7 +103,7 @@ export default function ProductDetail() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 {categoryLabel && <div className="font-mono text-[11px] uppercase tracking-widish text-steel-500 mb-1.5">{categoryLabel.name}</div>}
-                <h1 className="text-2xl sm:text-3xl font-display normal-case leading-tight">{product.name}</h1>
+                <h1 className="text-2xl sm:text-3xl heading leading-tight">{product.name}</h1>
               </div>
               <button
                 type="button"
@@ -117,15 +127,19 @@ export default function ProductDetail() {
             </div>
 
             <div className="flex items-center gap-2 mt-3">
-              <div className="flex items-center gap-0.5">
-                {Array.from({ length: 5 }, (_, i) => (
-                  <Star key={i} className={clsx("w-4 h-4", i < Math.round(rating) ? "fill-gold text-gold" : "text-line")} />
-                ))}
-              </div>
-              <span className="text-[13px] font-semibold">{rating.toFixed(1)}</span>
-              <span className="text-[12.5px] text-steel-500">
-                ({reviewCount}) {reviewCount === 0 && t("product.noReviewsYet")}
-              </span>
+              {hasRating ? (
+                <>
+                  <div className="flex items-center gap-0.5">
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <Star key={i} className={clsx("w-4 h-4", i < Math.round(product.rating!) ? "fill-gold text-gold" : "text-line")} />
+                    ))}
+                  </div>
+                  <span className="text-[13px] font-semibold">{product.rating!.toFixed(1)}</span>
+                  <span className="text-[12.5px] text-steel-500">({product.reviewCount})</span>
+                </>
+              ) : (
+                <span className="text-[12.5px] text-steel-500">{t("product.noReviewsYet")}</span>
+              )}
               <button type="button" onClick={() => setTab("reviews")} className="text-[12.5px] font-semibold text-brand-700 hover:underline ml-1">
                 + {t("product.writeReview")}
               </button>
@@ -166,12 +180,20 @@ export default function ProductDetail() {
               <button type="button" onClick={() => addToCart(product, qty)} className="btn-pill-dark w-full justify-center !py-3.5">
                 {t("product.addToCart")}
               </button>
-              <button type="button" onClick={() => addToCart(product, qty)} className="btn-pill-gold w-full justify-center !py-3.5">
+              <button
+                type="button"
+                onClick={() => {
+                  // Buy Now adds the product but must NOT trigger cart feedback (drawer/mobile
+                  // "Added" indicator) — it's navigating straight to checkout, a distinct action
+                  // from Add to Cart. See Documentations MD/responsive-cart-drawer.md.
+                  addToCart(product, qty, { feedback: false });
+                  navigate("/cart");
+                }}
+                className="btn-pill-gold w-full justify-center !py-3.5"
+              >
                 {t("product.payWith")}
               </button>
-              <button type="button" className="text-[12.5px] font-semibold text-brand-700 hover:underline self-center">
-                {t("product.morePaymentOptions")}
-              </button>
+              <span className="text-[12.5px] font-semibold text-steel-500 self-center">{t("product.morePaymentOptions")}</span>
             </div>
 
             <div className="flex items-center gap-2 mt-6 pt-6 border-t border-line">
@@ -236,9 +258,9 @@ export default function ProductDetail() {
 
         {tab === "reviews" && (
           <div className="mb-16 max-w-2xl">
-            {reviewCount > 0 ? (
+            {hasRating ? (
               <p className="text-[14.5px] text-ink/75">
-                {rating.toFixed(1)} ★ average from {reviewCount} reviews.
+                {product.rating!.toFixed(1)} ★ average from {reviewCount} reviews.
               </p>
             ) : (
               <p className="text-[14.5px] text-ink/75">{t("product.noReviewsYet")}</p>
@@ -260,14 +282,8 @@ export default function ProductDetail() {
 
         {related.length > 0 && (
           <section className="mb-16">
-            <h2 className="text-xl sm:text-2xl font-display normal-case mb-5">{t("product.youMightAlsoLike")}</h2>
-            <Rail>
-              {related.map((p) => (
-                <RailItem key={p.id}>
-                  <ProductCard product={p} />
-                </RailItem>
-              ))}
-            </Rail>
+            <h2 className="text-xl sm:text-2xl heading mb-5">{t("product.youMightAlsoLike")}</h2>
+            <ProductCarousel products={related} />
           </section>
         )}
 

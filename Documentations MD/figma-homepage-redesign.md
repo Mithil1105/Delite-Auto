@@ -12,6 +12,12 @@
 | Created        | 2026-09-07                              |
 | Last updated   | 2026-09-08                              |
 
+> **Note (2026-09-09):** The layout/spacing primitives, `ProductArt`→`ProductMedia`/
+> `ProductPlaceholder` split, Header chevron removal, and Home.tsx semantic tab fixes referenced
+> in this file's Known-issues section below have been superseded by
+> [frontend-foundation-uiux-refactor.md](frontend-foundation-uiux-refactor.md). This file is kept
+> as a historical record of the original homepage rebuild.
+
 ## Summary
 
 Rebuilt the Home page, and the global `Header`/`Footer` chrome, to match a Figma prototype the

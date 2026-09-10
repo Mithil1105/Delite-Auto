@@ -1,21 +1,15 @@
 import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2, ArrowRight, ShoppingBag } from "lucide-react";
 import { useCart } from "../context/CartContext";
-import { ProductArt } from "../components/ProductArt";
+import { ProductMedia } from "../components/product/ProductMedia";
+import { productImages } from "../lib/productImages";
 import { formatINR } from "../lib/format";
 import { brandBySlug } from "../data/brands";
 import { useLang } from "../i18n/LanguageContext";
 
 export default function Cart() {
-  const { lines, addToCart } = useCart();
+  const { lines, removeLine, setQuantity } = useCart();
   const { t } = useLang();
-
-  const setQty = (productId: string, delta: number) => {
-    const line = lines.find((l) => l.product.id === productId);
-    if (!line) return;
-    if (line.qty + delta <= 0) return;
-    addToCart(line.product, delta);
-  };
 
   const subtotal = lines.reduce((sum, l) => sum + l.product.price * l.qty, 0);
 
@@ -40,14 +34,7 @@ export default function Cart() {
             return (
               <div key={product.id} className="flex gap-4 py-5">
                 <Link to={`/product/${product.slug}`} className="shrink-0">
-                  <ProductArt
-                    icon={product.icon}
-                    categorySlug={product.categorySlug}
-                    productId={product.id}
-                    alt={product.name}
-                    className="w-24 h-24"
-                    iconClassName="w-8 h-8"
-                  />
+                  <ProductMedia src={productImages[product.id]} alt={product.name} icon={product.icon} className="w-24 h-24" iconClassName="w-8 h-8" />
                 </Link>
                 <div className="flex-1 min-w-0 flex flex-col">
                   {brand && <span className="font-mono text-[11px] uppercase tracking-widish text-steel-500">{brand.name}</span>}
@@ -56,18 +43,18 @@ export default function Cart() {
                   </Link>
                   <div className="mt-auto flex items-center justify-between pt-3">
                     <div className="flex items-center border border-line">
-                      <button onClick={() => setQty(product.id, -1)} className="w-8 h-8 grid place-items-center hover:bg-steel-50" aria-label="Decrease">
+                      <button onClick={() => setQuantity(product.id, qty - 1)} className="w-8 h-8 grid place-items-center hover:bg-steel-50" aria-label="Decrease">
                         <Minus className="w-3.5 h-3.5" />
                       </button>
                       <span className="w-8 text-center font-mono text-[13px]">{qty}</span>
-                      <button onClick={() => setQty(product.id, 1)} className="w-8 h-8 grid place-items-center hover:bg-steel-50" aria-label="Increase">
+                      <button onClick={() => setQuantity(product.id, qty + 1)} className="w-8 h-8 grid place-items-center hover:bg-steel-50" aria-label="Increase">
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
                     <span className="price font-semibold text-[14.5px]">{formatINR(product.price * qty)}</span>
                   </div>
                 </div>
-                <button aria-label="Remove item" className="text-steel-300 hover:text-accent transition-colors shrink-0" onClick={() => setQty(product.id, -qty)}>
+                <button aria-label="Remove item" className="text-steel-300 hover:text-accent transition-colors shrink-0" onClick={() => removeLine(product.id)}>
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
@@ -89,7 +76,7 @@ export default function Cart() {
             <span>{t("cart.total")}</span>
             <span className="price">{formatINR(subtotal)}</span>
           </div>
-          <button className="btn-primary w-full justify-center">
+          <button disabled aria-disabled="true" className="btn-primary w-full justify-center opacity-50 cursor-not-allowed">
             {t("cart.checkout")} <ArrowRight className="w-4 h-4" />
           </button>
           <p className="text-[12px] text-steel-500 text-center mt-3">{t("cart.demoNote")}</p>

@@ -60,15 +60,15 @@ export function CategoryIconStrip() {
       {items.map((item) => (
         <RailItem key={item.href + item.icon} className="w-[124px] sm:w-[136px]">
           <Link to={item.href} className="flex flex-col items-center gap-3 text-center group">
-            <span
-              className={
-                item.image
-                  ? "relative grid place-items-center w-20 h-20 rounded-full overflow-hidden bg-steel-50 ring-1 ring-line group-hover:ring-brand-500 transition-all"
-                  : "relative grid place-items-center w-20 h-20 rounded-full overflow-hidden bg-brand-600 text-white group-hover:bg-brand-700 transition-colors"
-              }
-            >
+            <span className={item.image ? "category-circle-photo" : "category-circle-icon"}>
               {item.image ? (
-                <img src={item.image} alt="" className="w-full h-full object-contain p-3.5" />
+                // The image is clipped to a circle by a NESTED overflow-hidden wrapper, not by
+                // the outer ring-bearing span itself — overflow-hidden on the same element as a
+                // ring/box-shadow clips that ring too (a browser box-shadow+overflow interaction),
+                // which made the hover ring render as broken arcs instead of one clean circle.
+                <span className="block w-full h-full rounded-full overflow-hidden">
+                  <img src={item.image} alt="" className="w-full h-full object-contain p-3.5" />
+                </span>
               ) : (
                 <Icon name={item.icon} className="w-9 h-9" strokeWidth={1.75} />
               )}

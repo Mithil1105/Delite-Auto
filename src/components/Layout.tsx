@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { Header } from "./Header";
 import { Footer } from "./Footer";
 import { Toast } from "./Toast";
+import { CartDrawer } from "./cart/CartDrawer";
 
 export function Layout() {
   const { pathname } = useLocation();
@@ -19,6 +20,7 @@ export function Layout() {
       </main>
       <Footer />
       <Toast />
+      <CartDrawer />
     </div>
   );
 }

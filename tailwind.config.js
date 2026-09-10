@@ -90,10 +90,22 @@ export default {
           "0%": { opacity: "0", transform: "translateY(14px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        cartBounce: {
+          "0%": { transform: "scale(1)" },
+          "35%": { transform: "scale(1.15)" },
+          "65%": { transform: "scale(0.96)" },
+          "100%": { transform: "scale(1)" },
+        },
+        cartHighlight: {
+          "0%": { backgroundColor: "rgba(29,63,209,0.08)" },
+          "100%": { backgroundColor: "transparent" },
+        },
       },
       animation: {
         marquee: "marquee 32s linear infinite",
         fadeUp: "fadeUp 0.6s ease both",
+        cartBounce: "cartBounce 320ms ease-out",
+        cartHighlight: "cartHighlight 800ms ease-out",
       },
     },
   },

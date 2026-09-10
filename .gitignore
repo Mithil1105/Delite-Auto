@@ -17,6 +17,11 @@ dist-ssr
 .env.*
 !.env.example
 
+# Playwright visual-regression artifacts (baseline screenshots under tests/visual/*-snapshots/
+# ARE committed — only run output/reports are ignored)
+test-results/
+playwright-report/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

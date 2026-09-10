@@ -1,29 +1,38 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Search, ShoppingCart, Menu, X, Phone, Heart, User, ChevronDown } from "lucide-react";
+import { Search, ShoppingCart, Menu, X, Phone, Heart, User } from "lucide-react";
+import clsx from "clsx";
 import { LanguageSwitcher } from "./LanguageSwitcher";
-import { useCart } from "../context/CartContext";
+import { MobileCartAddedIndicator } from "./cart/MobileCartAddedIndicator";
+import { useCart, CART_DRAWER_BREAKPOINT } from "../context/CartContext";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useLang } from "../i18n/LanguageContext";
 import { site } from "../data/site";
-import clsx from "clsx";
 
 export function Header() {
   const [open, setOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const { cartCount, wishlist } = useCart();
+  const { cartCount, wishlist, openCartDrawer, recentCartActivity } = useCart();
   const { t } = useLang();
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname + location.search;
+  // Tablet/desktop: cart button opens the drawer, stays on the page. Mobile: plain /cart link —
+  // see Documentations MD/responsive-cart-drawer.md for why 700px, not Tailwind's `md` (768px).
+  const isDrawerBreakpoint = useMediaQuery(CART_DRAWER_BREAKPOINT);
 
+  // Note: none of these render an actual dropdown/mega-menu (a real Cars/Bikes/Shop-by-Brands
+  // mega-menu is a deliberately deferred follow-up — see
+  // Documentations MD/frontend-foundation-uiux-refactor.md) so no item shows a false
+  // dropdown-affordance chevron.
   const navItems = [
-    { to: "/shop?vehicle=car", label: t("nav.cars"), dropdown: true },
-    { to: "/shop?vehicle=bike", label: t("nav.bikes"), dropdown: true },
-    { to: "/brands", label: t("nav.shopByBrands"), dropdown: true },
-    { to: "/shop?tag=bestseller", label: t("nav.dealsOffers"), dropdown: false },
-    { to: "/about", label: t("nav.ourStore"), dropdown: true },
-    { to: "/contact", label: t("nav.contact"), dropdown: false },
+    { to: "/shop?vehicle=car", label: t("nav.cars") },
+    { to: "/shop?vehicle=bike", label: t("nav.bikes") },
+    { to: "/brands", label: t("nav.shopByBrands") },
+    { to: "/shop?tag=bestseller", label: t("nav.dealsOffers") },
+    { to: "/about", label: t("nav.ourStore") },
+    { to: "/contact", label: t("nav.contact") },
   ];
 
   const submitSearch = (e: React.FormEvent) => {
@@ -49,7 +58,6 @@ export function Header() {
                 )}
               >
                 {item.label}
-                {item.dropdown && <ChevronDown className="w-3 h-3" />}
               </Link>
             ))}
           </nav>
@@ -102,13 +110,27 @@ export function Header() {
                 </span>
               )}
             </Link>
-            <Link to="/cart" aria-label={t("header.cart")} className="relative grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
-              <ShoppingCart className="w-5 h-5" />
+            <Link
+              to="/cart"
+              onClick={(e) => {
+                if (isDrawerBreakpoint) {
+                  e.preventDefault();
+                  openCartDrawer();
+                }
+              }}
+              aria-label={t("header.cart")}
+              className="relative grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+            >
+              <ShoppingCart
+                key={!isDrawerBreakpoint ? recentCartActivity?.id : undefined}
+                className={clsx("w-5 h-5", !isDrawerBreakpoint && "animate-cartBounce motion-reduce:animate-none")}
+              />
               {cartCount > 0 && (
                 <span className="absolute top-1 right-1 w-4 h-4 grid place-items-center bg-sale text-white text-[10px] font-semibold rounded-full">
                   {cartCount}
                 </span>
               )}
+              <MobileCartAddedIndicator />
             </Link>
             <button
               type="button"

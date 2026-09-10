@@ -71,6 +71,13 @@ export interface Product {
   colors?: string[];
   /** Availability for purchase — absent means "assume available" (existing catalog has no stock data yet). */
   available?: boolean;
+  /**
+   * True when this product cannot be added to cart without the customer choosing a
+   * colour/vehicle/fitment first. No current catalog entry sets this (no real variant data yet)
+   * — see `src/lib/recommendations/variants.ts` and
+   * `Documentations MD/personalized-product-recommendations.md`.
+   */
+  requiresSelection?: boolean;
 }
 
 /**

@@ -7,6 +7,10 @@
     @apply bg-paper text-ink font-sans antialiased;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
+  /* Site default: headings are uppercase display type unless a specific heading opts out via
+     the .heading utility below (see Documentations MD/frontend-foundation-uiux-refactor.md for
+     why this stays a base-layer default rather than every heading declaring it explicitly —
+     most pages have no case class at all and rely on this). */
   h1, h2, h3, h4 {
     @apply font-display uppercase;
     text-wrap: balance;
@@ -40,6 +44,24 @@
     @apply max-w-[1320px] mx-auto px-5 sm:px-8 lg:px-10;
   }
 
+  /* Replicates .container-wide's LEFT inset (auto-margin + padding) for content that lives
+     inside a full-bleed, edge-to-edge element (e.g. VehicleShopSplit's diagonal banner) rather
+     than inside .container-wide itself — so that content's left edge lines up with every
+     .container-wide section above/below it at every viewport width, not just one. */
+  .inset-wide-l {
+    padding-left: max(1.25rem, calc((100vw - 1320px) / 2 + 1.25rem));
+  }
+  @media (min-width: 640px) {
+    .inset-wide-l {
+      padding-left: max(2rem, calc((100vw - 1320px) / 2 + 2rem));
+    }
+  }
+  @media (min-width: 1024px) {
+    .inset-wide-l {
+      padding-left: max(2.5rem, calc((100vw - 1320px) / 2 + 2.5rem));
+    }
+  }
+
   .btn {
     @apply inline-flex items-center justify-center gap-2 font-sans font-semibold text-[13.5px] tracking-wide uppercase px-6 py-3.5 transition-colors duration-150 whitespace-nowrap;
   }
@@ -63,8 +85,21 @@
     @apply inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-widish text-accent;
   }
 
+  /* Legacy universal spacing class — being migrated to the intentional section-pad-* tokens
+     below (see Documentations MD/frontend-foundation-uiux-refactor.md). Delete once no
+     consumers remain (grep the repo first). */
   .section-pad {
     @apply py-16 sm:py-20 lg:py-24;
+  }
+
+  .section-pad-compact {
+    @apply py-8 sm:py-10 lg:py-12;
+  }
+  .section-pad-normal {
+    @apply py-16 sm:py-20 lg:py-24;
+  }
+  .section-pad-large {
+    @apply py-20 sm:py-28 lg:py-32;
   }
 
   .price {
@@ -95,6 +130,42 @@
   }
   .pill-tab-active {
     @apply pill-tab bg-ink text-white border-ink;
+  }
+
+  /* CategoryIconStrip's circle frames. Two things fixed here, not just styled:
+     1. ring-steel-300 (not ring-line, #e3e7e8) — ring-line is nearly the same lightness as the
+        bg-steel-50 (#eef2f4) fill behind it, so the "always-on" ring was essentially invisible at
+        rest; steel-300 (#9db0b9) has real contrast against that background.
+     2. The hover color change is a plain custom rule gated behind
+        `@media (hover: hover) and (pointer: fine)`, NOT a Tailwind `group-hover:` utility — this
+        project's Tailwind build does not scope `group-hover:`/`hover:` behind that media feature
+        (confirmed by inspecting the generated CSS), so on a touch device a tap can leave an
+        element's :hover state visually "stuck" (no mouse to move away and un-hover it). Gating it
+        explicitly means the ring/background color change can only ever happen on devices with a
+        real pointer, at every screen size. */
+  .category-circle-photo {
+    @apply relative grid place-items-center w-20 h-20 rounded-full bg-steel-50 ring-1 ring-steel-300 transition-all;
+  }
+  .category-circle-icon {
+    @apply relative grid place-items-center w-20 h-20 rounded-full bg-brand-600 text-white transition-colors;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .group:hover .category-circle-photo {
+      --tw-ring-color: #1d3fd1; /* brand-500 */
+    }
+    .group:hover .category-circle-icon {
+      background-color: #0e1740; /* brand-700 */
+    }
+  }
+
+  /* Explicit, self-documenting heading-case utilities — replace ad hoc `normal-case` overrides
+     fighting the base h1-h4 uppercase rule above. .heading-upper is the site default spelled out
+     (identical to doing nothing); .heading opts a specific heading into sentence/title case. */
+  .heading-upper {
+    @apply font-display uppercase tracking-tightish;
+  }
+  .heading {
+    @apply font-display normal-case tracking-tightish;
   }
 }
 

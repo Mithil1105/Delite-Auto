@@ -43,6 +43,7 @@ export default function Shop() {
   const vehicle = params.get("vehicle") ?? "";
   const brand = params.get("brand") ?? "";
   const model = params.get("model") ?? "";
+  const tag = params.get("tag") ?? "";
   const q = params.get("q") ?? "";
   const onlyWishlist = params.get("wishlist") === "1";
   const availabilityParam = params.get("availability") ?? ""; // "in" | "out" | ""
@@ -74,6 +75,7 @@ export default function Shop() {
     if (availabilityParam === "in") list = list.filter((p) => p.available !== false);
     if (availabilityParam === "out") list = list.filter((p) => p.available === false);
     if (color) list = list.filter((p) => p.colors?.includes(color));
+    if (tag) list = list.filter((p) => p.tag === tag);
     if (q) {
       const needle = q.toLowerCase();
       list = list.filter((p) => p.name.toLowerCase().includes(needle) || p.description.toLowerCase().includes(needle));
@@ -83,9 +85,9 @@ export default function Shop() {
     if (sort === "price-desc") sorted.sort((a, b) => b.price - a.price);
     if (sort === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
     return sorted;
-  }, [category, vehicle, brand, model, q, onlyWishlist, availabilityParam, color, sort, maxPrice, wishlist]);
+  }, [category, vehicle, brand, model, tag, q, onlyWishlist, availabilityParam, color, sort, maxPrice, wishlist]);
 
-  const activeCount = [category, vehicle, brand, model, availabilityParam, color, onlyWishlist ? "w" : ""].filter(Boolean).length;
+  const activeCount = [category, vehicle, brand, model, tag, availabilityParam, color, onlyWishlist ? "w" : ""].filter(Boolean).length;
   const clearAll = () => {
     setParams({}, { replace: true });
     setPage(1);
