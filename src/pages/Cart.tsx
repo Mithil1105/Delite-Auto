@@ -11,7 +11,7 @@ export default function Cart() {
   const { lines, removeLine, setQuantity } = useCart();
   const { t } = useLang();
 
-  const subtotal = lines.reduce((sum, l) => sum + l.product.price * l.qty, 0);
+  const subtotal = lines.reduce((sum, l) => sum + (l.variantPrice ?? l.product.price) * l.qty, 0);
 
   if (lines.length === 0) {
     return (
@@ -29,32 +29,35 @@ export default function Cart() {
       <h1 className="text-3xl font-semibold mb-8">{t("cart.title")}</h1>
       <div className="grid lg:grid-cols-[1fr_340px] gap-10">
         <div className="flex flex-col divide-y divide-line border-y border-line">
-          {lines.map(({ product, qty }) => {
+          {lines.map(({ product, qty, variantId, variantLabel, variantPrice }) => {
             const brand = brandBySlug(product.brandSlug);
+            const brandName = brand?.name ?? product.brand?.name;
+            const unitPrice = variantPrice ?? product.price;
             return (
-              <div key={product.id} className="flex gap-4 py-5">
+              <div key={variantId ? `${product.id}-${variantId}` : product.id} className="flex gap-4 py-5">
                 <Link to={`/product/${product.slug}`} className="shrink-0">
-                  <ProductMedia src={productImages[product.id]} alt={product.name} icon={product.icon} className="w-24 h-24" iconClassName="w-8 h-8" />
+                  <ProductMedia src={product.primaryImage ?? productImages[product.id]} alt={product.name} icon={product.icon} className="w-24 h-24" iconClassName="w-8 h-8" />
                 </Link>
                 <div className="flex-1 min-w-0 flex flex-col">
-                  {brand && <span className="font-mono text-[11px] uppercase tracking-widish text-steel-500">{brand.name}</span>}
+                  {brandName && <span className="font-mono text-[11px] uppercase tracking-widish text-steel-500">{brandName}</span>}
                   <Link to={`/product/${product.slug}`} className="font-semibold text-[14.5px] leading-snug hover:text-accent transition-colors truncate">
                     {product.name}
                   </Link>
+                  {variantLabel && <span className="text-[12px] text-steel-500">{variantLabel}</span>}
                   <div className="mt-auto flex items-center justify-between pt-3">
                     <div className="flex items-center border border-line">
-                      <button onClick={() => setQuantity(product.id, qty - 1)} className="w-8 h-8 grid place-items-center hover:bg-steel-50" aria-label="Decrease">
+                      <button onClick={() => setQuantity(product.id, qty - 1, variantId)} className="w-8 h-8 grid place-items-center hover:bg-steel-50" aria-label="Decrease">
                         <Minus className="w-3.5 h-3.5" />
                       </button>
                       <span className="w-8 text-center font-mono text-[13px]">{qty}</span>
-                      <button onClick={() => setQuantity(product.id, qty + 1)} className="w-8 h-8 grid place-items-center hover:bg-steel-50" aria-label="Increase">
+                      <button onClick={() => setQuantity(product.id, qty + 1, variantId)} className="w-8 h-8 grid place-items-center hover:bg-steel-50" aria-label="Increase">
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
-                    <span className="price font-semibold text-[14.5px]">{formatINR(product.price * qty)}</span>
+                    <span className="price font-semibold text-[14.5px]">{formatINR(unitPrice * qty)}</span>
                   </div>
                 </div>
-                <button aria-label="Remove item" className="text-steel-300 hover:text-accent transition-colors shrink-0" onClick={() => removeLine(product.id)}>
+                <button aria-label="Remove item" className="text-steel-300 hover:text-accent transition-colors shrink-0" onClick={() => removeLine(product.id, variantId)}>
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>

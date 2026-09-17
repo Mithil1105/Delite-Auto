@@ -12,7 +12,8 @@ import { PromoBannerPair } from "../components/home/PromoBannerPair";
 import { TestimonialCarousel } from "../components/home/TestimonialCarousel";
 import { GetInTouchBox } from "../components/home/GetInTouchBox";
 import { TrustBadgesRow } from "../components/home/TrustBadgesRow";
-import { products } from "../data/products";
+import { products as fallbackProducts } from "../data/products";
+import { useCatalogProducts } from "../hooks/useCatalogProducts";
 import { useLang } from "../i18n/LanguageContext";
 
 function SectionHead({ title, cta, onCta }: { title: string; cta?: string; onCta?: () => void }) {
@@ -31,6 +32,18 @@ function SectionHead({ title, cta, onCta }: { title: string; cta?: string; onCta
 export default function Home() {
   const { t } = useLang();
 
+  // Real catalog data via catalogService (mock by default; real Odoo data via Supabase Edge
+  // Functions once VITE_CATALOG_SOURCE=supabase — see Documentations MD/odoo-real-catalog.md).
+  // Falls back to the local catalog as a same-shape placeholder while loading (or, in production, if the
+  // real fetch fails) rather than rendering empty carousels — a deliberate exception to "never
+  // silently show mock data on a configured-but-failed Odoo call" for this specific surface: Home
+  // is promotional (Shop/PDP/Cart remain the actual purchase path and DO show a real error state
+  // on failure), and briefly-stale product cards in a marketing carousel don't carry the same
+  // fake-price/fake-stock purchasing risk. Homepage layout/geometry is unaffected either way — the
+  // same product-card components render regardless of which array backs them.
+  const catalogProducts = useCatalogProducts();
+  const products = catalogProducts ?? fallbackProducts;
+
   const [trendingVehicle, setTrendingVehicle] = useState<"car" | "bike">("car");
   const [vehicleTab, setVehicleTab] = useState<"popular" | "new">("popular");
   const [brandsVehicle, setBrandsVehicle] = useState<"car" | "bike">("car");
@@ -41,27 +54,37 @@ export default function Home() {
     const base = products.filter((p) => p.vehicle === trendingVehicle);
     const tagged = base.filter((p) => p.tag === "trending" || p.tag === "bestseller");
     return (tagged.length >= 6 ? tagged : base).slice(0, 8);
-  }, [trendingVehicle]);
+  }, [products, trendingVehicle]);
 
+  // `categorySlug`/`tag` are mock-catalog-only concepts — always "" / undefined on real
+  // Odoo-backed products (see Documentations MD/odoo-real-catalog.md), so every branch below
+  // falls back to a plain vehicle-filtered slice rather than rendering an empty rail. This is the
+  // same graceful-degradation shape `trending` below already established: show real products
+  // honestly, never fabricate a "popular"/"new"/category match that isn't backed by real data.
   const perfectVehicles = useMemo(() => {
-    if (vehicleTab === "popular") return products.filter((p) => p.tag === "bestseller" || p.tag === "trending").slice(0, 8);
-    return products.filter((p) => p.tag === "new").slice(0, 8);
-  }, [vehicleTab]);
+    const tagged = vehicleTab === "popular" ? products.filter((p) => p.tag === "bestseller" || p.tag === "trending") : products.filter((p) => p.tag === "new");
+    return (tagged.length > 0 ? tagged : products).slice(0, 8);
+  }, [products, vehicleTab]);
 
   const carCategoryProducts = useMemo(() => {
-    if (carCategoryTab === "seat-covers") return products.filter((p) => p.categorySlug === "seat-covers");
-    if (carCategoryTab === "dash-cams")
-      return products.filter((p) => p.categorySlug === "audio-dashcams" && /cam|dvr/i.test(p.name));
-    if (carCategoryTab === "mats") return products.filter((p) => p.categorySlug === "floor-mats");
-    return products.filter((p) => p.categorySlug === "car-care");
-  }, [carCategoryTab]);
+    let list: typeof products = [];
+    if (carCategoryTab === "seat-covers") list = products.filter((p) => p.categorySlug === "seat-covers");
+    else if (carCategoryTab === "dash-cams") list = products.filter((p) => p.categorySlug === "audio-dashcams" && /cam|dvr/i.test(p.name));
+    else if (carCategoryTab === "mats") list = products.filter((p) => p.categorySlug === "floor-mats");
+    else list = products.filter((p) => p.categorySlug === "car-care");
+    if (list.length > 0) return list;
+    return products.filter((p) => p.vehicle === "car" || p.vehicle === "universal" || p.vehicle === "unknown").slice(0, 8);
+  }, [products, carCategoryTab]);
 
   const bikeCategoryProducts = useMemo(() => {
-    if (bikeCategoryTab === "helmets") return products.filter((p) => p.categorySlug === "helmets");
-    if (bikeCategoryTab === "covers") return products.filter((p) => p.categorySlug === "bike-covers");
-    if (bikeCategoryTab === "saddlebags") return products.filter((p) => p.categorySlug === "saddlebags");
-    return products.filter((p) => p.categorySlug === "bike-guards");
-  }, [bikeCategoryTab]);
+    let list: typeof products = [];
+    if (bikeCategoryTab === "helmets") list = products.filter((p) => p.categorySlug === "helmets");
+    else if (bikeCategoryTab === "covers") list = products.filter((p) => p.categorySlug === "bike-covers");
+    else if (bikeCategoryTab === "saddlebags") list = products.filter((p) => p.categorySlug === "saddlebags");
+    else list = products.filter((p) => p.categorySlug === "bike-guards");
+    if (list.length > 0) return list;
+    return products.filter((p) => p.vehicle === "bike" || p.vehicle === "universal" || p.vehicle === "unknown").slice(0, 8);
+  }, [products, bikeCategoryTab]);
 
   return (
     <>

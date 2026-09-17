@@ -1,30 +1,54 @@
 // Vercel serverless function: GET /api/catalog/products
 //
-// Falls back to the local mock catalog until Odoo is configured (see
-// server/odoo/client.ts#isOdooConfigured) — this keeps the endpoint genuinely functional today
-// rather than 500ing, while staying honest that no real Odoo call has been wired up yet.
+// When Odoo is configured, genuinely calls it (server/odoo/fetchProducts.ts) — see
+// Documentations MD/odoo-live-catalog-integration.md for the query/pagination model and its known
+// limitations. Falls back to the local mock catalog only when Odoo is NOT configured at all (dev
+// convenience); if Odoo IS configured but the call fails, returns a controlled 502 rather than
+// silently serving mock data (spec section 18 — never show fake price/stock in that state).
 //
-// Typed loosely (`any` req/res) rather than importing `@vercel/node` — that package isn't a
-// project dependency yet; add it (`npm i -D @vercel/node`) and swap in `VercelRequest`/
-// `VercelResponse` before relying on this in production. This file sits outside `tsconfig.app.json`'s
-// `include` (see tsconfig.app.json — only "src"), so it isn't checked by `npm run build` locally;
-// Vercel type-checks it independently at deploy time.
+// Typed loosely (`any` req/res) rather than importing `@vercel/node` — see server/odoo/client.ts's
+// header comment; this file sits outside tsconfig.app.json's `include`, so `npm run build` doesn't
+// type-check it (Vercel does, independently, at deploy time).
 
 import { isOdooConfigured } from "../../server/odoo/client";
+import { fetchOdooProductsPage } from "../../server/odoo/fetchProducts";
 import { products as mockProducts } from "../../src/data/products";
 
+const DEFAULT_LIMIT = 24;
+const MAX_LIMIT = 60;
+
 export default async function handler(req: any, res: any) {
-  try {
-    const { vehicle, category, brand, tag, q, limit } = req.query ?? {};
+  const { vehicle, category, brand, tag, q, limit, page, offset } = req.query ?? {};
 
-    if (isOdooConfigured()) {
-      // TODO: replace this branch with a real `odooExecuteKw("product.template", "search_read", ...)`
-      // call + `normalizeProduct()` once field mappings are confirmed against this store's Odoo
-      // instance. Deliberately not attempted here — no credentials were available to verify the
-      // real shape, and a guessed mapping would be worse than the honest mock fallback below.
-      console.warn("[api/catalog/products] Odoo is configured but the real query path isn't implemented yet — serving mock data");
+  const parsedLimit = Math.min(MAX_LIMIT, Math.max(1, Number(limit) || DEFAULT_LIMIT));
+  const parsedPage = Math.max(1, Number(page) || 1);
+  const parsedOffset = offset !== undefined ? Math.max(0, Number(offset) || 0) : (parsedPage - 1) * parsedLimit;
+
+  if (isOdooConfigured()) {
+    try {
+      const { items, total } = await fetchOdooProductsPage({
+        vehicle: vehicle ? String(vehicle) : undefined,
+        category: category ? String(category) : undefined,
+        brand: brand ? String(brand) : undefined,
+        tag: tag ? String(tag) : undefined,
+        q: q ? String(q) : undefined,
+        offset: parsedOffset,
+        limit: parsedLimit,
+      });
+      res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
+      res.setHeader("X-Total-Count", String(total));
+      res.setHeader("X-Page", String(parsedPage));
+      res.setHeader("X-Page-Size", String(parsedLimit));
+      res.status(200).json(items);
+    } catch (err) {
+      console.error("[api/catalog/products] Odoo query failed:", err instanceof Error ? err.message : err);
+      res.status(502).json({ error: "Catalog temporarily unavailable" });
     }
+    return;
+  }
 
+  // Not configured — explicit dev/mock fallback. Never reached once ODOO_* env vars are set.
+  try {
     let list = mockProducts;
     if (vehicle) list = list.filter((p) => p.vehicle === vehicle);
     if (category) list = list.filter((p) => p.categorySlug === category);
@@ -34,9 +58,13 @@ export default async function handler(req: any, res: any) {
       const needle = String(q).toLowerCase();
       list = list.filter((p) => p.name.toLowerCase().includes(needle));
     }
-    if (limit) list = list.slice(0, Number(limit));
+    const total = list.length;
+    list = list.slice(parsedOffset, parsedOffset + parsedLimit);
 
     res.setHeader("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
+    res.setHeader("X-Total-Count", String(total));
+    res.setHeader("X-Page", String(parsedPage));
+    res.setHeader("X-Page-Size", String(parsedLimit));
     res.status(200).json(list);
   } catch (err) {
     console.error("[api/catalog/products]", err);

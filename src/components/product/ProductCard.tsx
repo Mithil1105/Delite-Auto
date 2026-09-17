@@ -33,16 +33,18 @@ export function ProductCard({ product, className = "", variant = "default", onQu
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const { t, dict } = useLang();
   const wishlisted = isWishlisted(product.id);
-  const category = categoryBySlug(product.categorySlug);
-  const eyebrow = category ? dict.categories[category.slug as keyof typeof dict.categories]?.name : "";
+  const category = product.categorySlug ? categoryBySlug(product.categorySlug) : undefined;
+  const eyebrow = category ? dict.categories[category.slug as keyof typeof dict.categories]?.name : (product.brand?.name ?? product.categories?.[0]?.name ?? "");
   const hasRating = product.rating != null && !!product.reviewCount;
+
+  const imageSrc = product.primaryImage ?? productImages[product.id];
 
   if (variant === "cart-recommendation") {
     const requiresSelection = productRequiresSelection(product);
     return (
       <div className={clsx("flex items-center gap-3 py-1.5", className)}>
         <Link to={`/product/${product.slug}`} onClick={onView} className="shrink-0">
-          <ProductMedia src={productImages[product.id]} alt={product.name} icon={product.icon} className="w-11 h-11 rounded-lg border border-line" iconClassName="w-4 h-4" />
+          <ProductMedia src={imageSrc} alt={product.name} icon={product.icon} className="w-11 h-11 rounded-lg border border-line" iconClassName="w-4 h-4" />
         </Link>
         <Link to={`/product/${product.slug}`} onClick={onView} className="flex-1 min-w-0">
           <div className="text-[12.5px] font-medium leading-snug line-clamp-1 hover:text-brand-700 transition-colors">{product.name}</div>
@@ -72,7 +74,7 @@ export function ProductCard({ product, className = "", variant = "default", onQu
   return (
     <div className={clsx("group relative flex flex-col bg-white border border-line rounded-2xl overflow-hidden shadow-card transition-shadow hover:shadow-lift", className)}>
       <Link to={`/product/${product.slug}`} className="block">
-        <ProductMedia src={productImages[product.id]} alt={product.name} icon={product.icon} className="aspect-square w-full" />
+        <ProductMedia src={imageSrc} alt={product.name} icon={product.icon} className="aspect-square w-full" />
       </Link>
       <button
         type="button"

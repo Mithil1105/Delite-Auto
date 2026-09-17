@@ -16,11 +16,27 @@ import { useLang } from "../../i18n/LanguageContext";
  * slot in there without touching the rest of the layout. See
  * Documentations MD/responsive-cart-drawer.md.
  */
-export const CartDrawerItem = forwardRef<HTMLDivElement, { product: Product; qty: number; highlighted?: boolean }>(
-  function CartDrawerItem({ product, qty, highlighted = false }, ref) {
+interface CartDrawerItemProps {
+  product: Product;
+  qty: number;
+  highlighted?: boolean;
+  /** Which purchased variant this line is for — see `CartLine.variantId` in CartContext.tsx. */
+  variantId?: string;
+  /** Captured at add-to-cart time (CartContext's `addToCart`) — shown when present instead of the bare product name/price. */
+  variantLabel?: string;
+  variantPrice?: number;
+}
+
+export const CartDrawerItem = forwardRef<HTMLDivElement, CartDrawerItemProps>(
+  function CartDrawerItem({ product, qty, highlighted = false, variantId, variantLabel, variantPrice }, ref) {
     const { setQuantity, removeLine } = useCart();
     const { t } = useLang();
-    const brand = brandBySlug(product.brandSlug);
+    // `brandBySlug` resolves the local mock catalog's static brand list; real Odoo products carry
+    // their brand as `product.brand` (a real category id/name pair) instead — see
+    // Documentations MD/odoo-real-catalog.md.
+    const brandName = brandBySlug(product.brandSlug)?.name ?? product.brand?.name;
+    const imageSrc = product.primaryImage ?? productImages[product.id];
+    const unitPrice = variantPrice ?? product.price;
 
     return (
       <div
@@ -28,22 +44,23 @@ export const CartDrawerItem = forwardRef<HTMLDivElement, { product: Product; qty
         className={clsx("flex gap-3 py-4 px-5 transition-colors", highlighted && "animate-cartHighlight motion-reduce:animate-none")}
       >
         <Link to={`/product/${product.slug}`} className="shrink-0">
-          <ProductMedia src={productImages[product.id]} alt={product.name} icon={product.icon} className="w-20 h-20 rounded-xl border border-line" iconClassName="w-7 h-7" />
+          <ProductMedia src={imageSrc} alt={product.name} icon={product.icon} className="w-20 h-20 rounded-xl border border-line" iconClassName="w-7 h-7" />
         </Link>
         <div className="flex-1 min-w-0 flex flex-col">
           {/* Metadata row — brand today; colour/vehicle/model/fitment land here later without a
               layout change. */}
-          {brand && <span className="font-mono text-[10.5px] uppercase tracking-widish text-steel-500">{brand.name}</span>}
+          {brandName && <span className="font-mono text-[10.5px] uppercase tracking-widish text-steel-500">{brandName}</span>}
           <Link to={`/product/${product.slug}`} className="font-semibold text-[13.5px] leading-snug hover:text-brand-700 transition-colors line-clamp-2">
             {product.name}
           </Link>
+          {variantLabel && <span className="text-[11.5px] text-steel-500 mt-0.5">{variantLabel}</span>}
 
           <div className="mt-auto flex items-end justify-between gap-2 pt-2">
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center border border-line rounded-md w-fit">
                 <button
                   type="button"
-                  onClick={() => setQuantity(product.id, qty - 1)}
+                  onClick={() => setQuantity(product.id, qty - 1, variantId)}
                   className="w-7 h-7 grid place-items-center hover:bg-steel-50"
                   aria-label="Decrease quantity"
                 >
@@ -52,18 +69,18 @@ export const CartDrawerItem = forwardRef<HTMLDivElement, { product: Product; qty
                 <span className="w-6 text-center font-mono text-[12.5px]">{qty}</span>
                 <button
                   type="button"
-                  onClick={() => setQuantity(product.id, qty + 1)}
+                  onClick={() => setQuantity(product.id, qty + 1, variantId)}
                   className="w-7 h-7 grid place-items-center hover:bg-steel-50"
                   aria-label="Increase quantity"
                 >
                   <Plus className="w-3 h-3" />
                 </button>
               </div>
-              <button type="button" onClick={() => removeLine(product.id)} className="text-[11.5px] font-medium text-steel-500 hover:text-sale transition-colors text-left">
+              <button type="button" onClick={() => removeLine(product.id, variantId)} className="text-[11.5px] font-medium text-steel-500 hover:text-sale transition-colors text-left">
                 {t("cart.remove")}
               </button>
             </div>
-            <span className="price text-[14px] font-semibold shrink-0">{formatINR(product.price * qty)}</span>
+            <span className="price text-[14px] font-semibold shrink-0">{formatINR(unitPrice * qty)}</span>
           </div>
         </div>
       </div>

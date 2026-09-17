@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, ChevronRight, PackageSearch, SlidersHorizontal, X } from "lucide-react";
-import { products } from "../data/products";
-import { categories } from "../data/categories";
-import { brands } from "../data/brands";
+import { ChevronDown, ChevronRight, PackageSearch, SlidersHorizontal, TriangleAlert, X } from "lucide-react";
+import type { Category, Product } from "../data/types";
+import { catalogService, type PagedProductQuery, type PagedProductResult, type ProductSort } from "../services/catalog/catalogService";
+import { brands as mockBrands } from "../data/brands";
 import { ProductCard } from "../components/product/ProductCard";
 import { TrustBadgesRow } from "../components/home/TrustBadgesRow";
 import { useCart } from "../context/CartContext";
@@ -12,7 +12,12 @@ import clsx from "clsx";
 
 const MAX_PRICE = 70000;
 const PAGE_SIZE = 9;
-type Sort = "relevance" | "price-asc" | "price-desc" | "name";
+
+// Real Odoo data via Supabase — category/brand filters are real category ids, not the static
+// mock slug sets. See Documentations MD/odoo-real-catalog.md.
+const IS_REAL_CATALOG = import.meta.env.VITE_CATALOG_SOURCE === "supabase";
+
+const EMPTY_CATEGORIES: Category[] = [];
 
 /**
  * A collapsible filter group — "Category type" / "Brands" / "Model name" / "Availability" /
@@ -31,6 +36,62 @@ function FilterSection({ title, children, defaultOpen = false }: { title: string
   );
 }
 
+function useCategories() {
+  const [categories, setCategories] = useState<Category[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    catalogService.getCategories().then((c) => {
+      if (!cancelled) setCategories(c);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return categories;
+}
+
+/**
+ * Real, server-side paginated/filtered fetch — filter-in-Odoo-domain-then-paginate (see
+ * Documentations MD/odoo-real-catalog.md). `page 1` replaces the accumulated mobile list; a later
+ * page appends to it (Load More), tracked via `lastAppendedPageRef` so a re-render/retry of the
+ * SAME page never double-appends.
+ */
+function useCatalogPage(query: PagedProductQuery) {
+  const [result, setResult] = useState<PagedProductResult | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [accumulated, setAccumulated] = useState<Product[]>([]);
+  const lastAppendedPageRef = useRef(0);
+  const [reloadToken, setReloadToken] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatus("loading");
+    catalogService
+      .getProductsPage(query)
+      .then((r) => {
+        if (cancelled) return;
+        setResult(r);
+        setStatus("ready");
+        if (r.page === 1) {
+          setAccumulated(r.items);
+          lastAppendedPageRef.current = 1;
+        } else if (r.page > lastAppendedPageRef.current) {
+          setAccumulated((prev) => [...prev, ...r.items]);
+          lastAppendedPageRef.current = r.page;
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(query), reloadToken]);
+
+  return { result, status, accumulated, retry: () => setReloadToken((n) => n + 1) };
+}
+
 export default function Shop() {
   const [params, setParams] = useSearchParams();
   const { wishlist } = useCart();
@@ -38,17 +99,21 @@ export default function Shop() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [page, setPage] = useState(1);
+  const categoriesRaw = useCategories();
+  const categories = categoriesRaw ?? EMPTY_CATEGORIES;
 
   const category = params.get("category") ?? "";
-  const vehicle = params.get("vehicle") ?? "";
+  const vehicleParam = params.get("vehicle") ?? "";
+  const vehicle = vehicleParam === "car" || vehicleParam === "bike" ? vehicleParam : "";
   const brand = params.get("brand") ?? "";
   const model = params.get("model") ?? "";
+  const fitment = params.get("fitment") ?? "";
   const tag = params.get("tag") ?? "";
   const q = params.get("q") ?? "";
   const onlyWishlist = params.get("wishlist") === "1";
   const availabilityParam = params.get("availability") ?? ""; // "in" | "out" | ""
   const color = params.get("color") ?? "";
-  const sort = (params.get("sort") as Sort) ?? "relevance";
+  const sort = (params.get("sort") as ProductSort) ?? "relevance";
   const maxPrice = Number(params.get("max") ?? MAX_PRICE);
 
   const setParam = (key: string, value: string | null) => {
@@ -59,50 +124,74 @@ export default function Shop() {
     setPage(1);
   };
 
+  // Category-type list vs. brand list: real Odoo data sources both from the one flat
+  // product.public.category list via its verified `role` (see _shared/odoo/catalog.ts); the mock
+  // catalog keeps its existing separate categories.ts / brands.ts, which predate that model.
+  const categoryOptions = IS_REAL_CATALOG ? categories.filter((c) => c.role === "other") : categories;
+  const brandCategoryOptions = IS_REAL_CATALOG ? categories.filter((c) => c.role === "brand") : [];
+
+  const query: PagedProductQuery = useMemo(
+    () => ({
+      page,
+      pageSize: PAGE_SIZE,
+      q: q || model || undefined,
+      sort,
+      vehicle: vehicle || undefined,
+      categoryId: IS_REAL_CATALOG && category ? Number(category) : undefined,
+      brandCategoryId: IS_REAL_CATALOG && brand ? Number(brand) : undefined,
+      fitmentValueId: IS_REAL_CATALOG && fitment ? Number(fitment) : undefined,
+      // Mock-catalog-only convenience filters — ignored by the real (Supabase) service.
+      categorySlug: !IS_REAL_CATALOG && category ? category : undefined,
+      brandSlug: !IS_REAL_CATALOG && brand ? brand : undefined,
+      tag: !IS_REAL_CATALOG && tag ? tag : undefined,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [page, q, model, sort, vehicle, category, brand, fitment, tag]
+  );
+
+  useEffect(() => setPage(1), [q, model, sort, vehicle, category, brand, fitment, tag]);
+
+  const { result, status, accumulated, retry } = useCatalogPage(query);
+
   const swatches = useMemo(() => {
     const set = new Set<string>();
-    products.forEach((p) => p.colors?.forEach((c) => set.add(c)));
+    accumulated.forEach((p) => p.colors?.forEach((c) => set.add(c)));
     return Array.from(set).slice(0, 12);
-  }, []);
+  }, [accumulated]);
 
-  const filtered = useMemo(() => {
-    let list = products.filter((p) => p.price <= maxPrice);
-    if (category) list = list.filter((p) => p.categorySlug === category);
-    if (vehicle) list = list.filter((p) => p.vehicle === vehicle || p.vehicle === "universal");
-    if (brand) list = list.filter((p) => p.brandSlug === brand);
-    if (model) list = list.filter((p) => p.name.toLowerCase().includes(model.toLowerCase()));
-    if (onlyWishlist) list = list.filter((p) => wishlist.includes(p.id));
-    if (availabilityParam === "in") list = list.filter((p) => p.available !== false);
-    if (availabilityParam === "out") list = list.filter((p) => p.available === false);
-    if (color) list = list.filter((p) => p.colors?.includes(color));
-    if (tag) list = list.filter((p) => p.tag === tag);
-    if (q) {
-      const needle = q.toLowerCase();
-      list = list.filter((p) => p.name.toLowerCase().includes(needle) || p.description.toLowerCase().includes(needle));
-    }
-    const sorted = [...list];
-    if (sort === "price-asc") sorted.sort((a, b) => a.price - b.price);
-    if (sort === "price-desc") sorted.sort((a, b) => b.price - a.price);
-    if (sort === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
-    return sorted;
-  }, [category, vehicle, brand, model, tag, q, onlyWishlist, availabilityParam, color, sort, maxPrice, wishlist]);
+  // Price/colour/availability/wishlist have no verified Odoo domain in this phase (see
+  // Documentations MD/odoo-real-catalog.md, "Known follow-ups") — applied as an honest
+  // client-side refinement on top of whichever page(s) are already loaded, rather than a
+  // fabricated server-wide filter. The visible count reflects this refined set, not the raw
+  // server total, whenever one of these is active.
+  const clientFilterActive = maxPrice < MAX_PRICE || onlyWishlist || !!availabilityParam || !!color;
+  function applyClientFilters(list: Product[]): Product[] {
+    let out = list.filter((p) => p.price <= maxPrice);
+    if (onlyWishlist) out = out.filter((p) => wishlist.includes(p.id));
+    if (availabilityParam === "in") out = out.filter((p) => p.purchasable !== false);
+    if (availabilityParam === "out") out = out.filter((p) => p.purchasable === false);
+    if (color) out = out.filter((p) => p.colors?.includes(color));
+    return out;
+  }
 
-  const activeCount = [category, vehicle, brand, model, tag, availabilityParam, color, onlyWishlist ? "w" : ""].filter(Boolean).length;
+  const desktopItems = applyClientFilters(result?.items ?? []);
+  const mobileItems = applyClientFilters(accumulated);
+  const total = clientFilterActive ? mobileItems.length : (result?.total ?? 0);
+  const totalPages = result?.totalPages ?? 1;
+
+  const activeCount = [category, vehicle, brand, model, fitment, tag, availabilityParam, color, onlyWishlist ? "w" : ""].filter(Boolean).length;
   const clearAll = () => {
     setParams({}, { replace: true });
     setPage(1);
   };
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const desktopSlice = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const mobileSlice = filtered.slice(0, page * PAGE_SIZE);
 
   const pageNumbers = useMemo(() => {
     if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
     return [1, 2, 3, "…", totalPages] as const;
   }, [totalPages]);
 
-  const categoryLabel = category ? dict.categories[category as keyof typeof dict.categories]?.name : null;
+  const categoryLabel = !IS_REAL_CATALOG && category ? dict.categories[category as keyof typeof dict.categories]?.name : null;
+  const realCategoryLabel = IS_REAL_CATALOG && category ? categoryOptions.find((c) => String(c.odooId) === category)?.name : null;
 
   const FiltersPanel = (
     <div>
@@ -116,16 +205,20 @@ export default function Shop() {
               {t("shop.allProductsFilter")}
             </button>
           </li>
-          {categories.map((c) => (
-            <li key={c.slug}>
-              <button
-                onClick={() => setParam("category", c.slug)}
-                className={clsx("text-[13.5px] hover:text-brand-700 transition-colors", category === c.slug ? "text-brand-700 font-semibold" : "text-ink/80")}
-              >
-                {dict.categories[c.slug as keyof typeof dict.categories].name}
-              </button>
-            </li>
-          ))}
+          {categoryOptions.map((c) => {
+            const value = IS_REAL_CATALOG ? String(c.odooId) : c.slug;
+            const label = IS_REAL_CATALOG ? c.name : dict.categories[c.slug as keyof typeof dict.categories]?.name;
+            return (
+              <li key={value}>
+                <button
+                  onClick={() => setParam("category", value)}
+                  className={clsx("text-[13.5px] hover:text-brand-700 transition-colors", category === value ? "text-brand-700 font-semibold" : "text-ink/80")}
+                >
+                  {label}
+                </button>
+              </li>
+            );
+          })}
         </ul>
       </FilterSection>
 
@@ -139,16 +232,27 @@ export default function Shop() {
               {t("shop.allBrands")}
             </button>
           </li>
-          {brands.map((b) => (
-            <li key={b.slug}>
+          {(IS_REAL_CATALOG ? brandCategoryOptions : []).map((c) => (
+            <li key={c.odooId}>
               <button
-                onClick={() => setParam("brand", b.slug)}
-                className={clsx("text-[13.5px] hover:text-brand-700 transition-colors", brand === b.slug ? "text-brand-700 font-semibold" : "text-ink/80")}
+                onClick={() => setParam("brand", String(c.odooId))}
+                className={clsx("text-[13.5px] hover:text-brand-700 transition-colors", brand === String(c.odooId) ? "text-brand-700 font-semibold" : "text-ink/80")}
               >
-                {b.name}
+                {c.name}
               </button>
             </li>
           ))}
+          {!IS_REAL_CATALOG &&
+            mockBrands.map((b) => (
+              <li key={b.slug}>
+                <button
+                  onClick={() => setParam("brand", b.slug)}
+                  className={clsx("text-[13.5px] hover:text-brand-700 transition-colors", brand === b.slug ? "text-brand-700 font-semibold" : "text-ink/80")}
+                >
+                  {b.name}
+                </button>
+              </li>
+            ))}
         </ul>
       </FilterSection>
 
@@ -191,20 +295,22 @@ export default function Shop() {
         </div>
       </FilterSection>
 
-      <FilterSection title={t("shop.colorsLabel")}>
-        <div className="flex flex-wrap gap-2">
-          {swatches.map((c) => (
-            <button
-              key={c}
-              type="button"
-              aria-label={c}
-              onClick={() => setParam("color", color === c ? null : c)}
-              className={clsx("w-6 h-6 rounded-full border-2 transition-transform", color === c ? "border-brand-500 scale-110" : "border-line")}
-              style={{ backgroundColor: c }}
-            />
-          ))}
-        </div>
-      </FilterSection>
+      {swatches.length > 0 && (
+        <FilterSection title={t("shop.colorsLabel")}>
+          <div className="flex flex-wrap gap-2">
+            {swatches.map((c) => (
+              <button
+                key={c}
+                type="button"
+                aria-label={c}
+                onClick={() => setParam("color", color === c ? null : c)}
+                className={clsx("w-6 h-6 rounded-full border-2 transition-transform", color === c ? "border-brand-500 scale-110" : "border-line")}
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
+        </FilterSection>
+      )}
 
       {activeCount > 0 && (
         <button onClick={clearAll} className="btn-pill-outline !px-4 !py-2 mt-4 text-[12.5px]">
@@ -214,22 +320,45 @@ export default function Shop() {
     </div>
   );
 
+  if (status === "error") {
+    return (
+      <div className="bg-white">
+        <div className="container-page py-24 flex flex-col items-center text-center">
+          <TriangleAlert className="w-10 h-10 text-steel-300 mb-4" />
+          <h1 className="font-display uppercase text-xl mb-2">{t("shop.catalogUnavailableTitle")}</h1>
+          <p className="text-steel-500 text-[14px] mb-6 max-w-[40ch]">{t("shop.catalogUnavailableDesc")}</p>
+          <button onClick={retry} className="btn-dark">{t("shop.retry")}</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "loading" && !result) {
+    return (
+      <div className="bg-white">
+        <div className="container-page py-24 flex flex-col items-center text-center text-steel-500 text-[14px]">
+          {t("shop.loadingCatalog")}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-white">
       <div className="container-page py-8">
         <nav className="flex items-center gap-1.5 text-[12.5px] text-steel-500 mb-6">
           <Link to="/" className="hover:text-ink">{t("shop.breadcrumbHome")}</Link>
           <ChevronRight className="w-3 h-3" />
-          <span className="text-ink">{categoryLabel ?? t("shop.shopAllTitle")}</span>
+          <span className="text-ink">{categoryLabel ?? realCategoryLabel ?? t("shop.shopAllTitle")}</span>
         </nav>
 
         <h1 className="text-center text-2xl sm:text-3xl font-display uppercase mb-6">
-          {onlyWishlist ? t("shop.savedItems") : categoryLabel ?? t("shop.shopAllTitle")}
+          {onlyWishlist ? t("shop.savedItems") : categoryLabel ?? realCategoryLabel ?? t("shop.shopAllTitle")}
         </h1>
         {q && <p className="text-center text-steel-500 text-[14px] -mt-4 mb-6">{t("shop.showingResultsFor", { query: q })}</p>}
 
         <div className="flex flex-wrap items-center gap-3 mb-6">
-          <span className="text-[13.5px] text-steel-500">{t("shop.productsCount", { count: filtered.length })}</span>
+          <span className="text-[13.5px] text-steel-500">{t("shop.productsCount", { count: total })}</span>
 
           <button
             type="button"
@@ -269,7 +398,7 @@ export default function Shop() {
           )}
 
           <div>
-            {filtered.length === 0 ? (
+            {total === 0 ? (
               <div className="flex flex-col items-center justify-center text-center py-24 border border-dashed border-line">
                 <PackageSearch className="w-10 h-10 text-steel-300 mb-4" />
                 <h3 className="font-display uppercase text-lg mb-1">{t("shop.noMatchTitle")}</h3>
@@ -278,9 +407,9 @@ export default function Shop() {
               </div>
             ) : (
               <>
-                {/* Desktop: true pagination */}
+                {/* Desktop: true server-side pagination */}
                 <div className={clsx("hidden lg:grid gap-5", sidebarOpen ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
-                  {desktopSlice.map((p) => (
+                  {desktopItems.map((p) => (
                     <ProductCard key={p.id} product={p} />
                   ))}
                 </div>
@@ -321,13 +450,13 @@ export default function Shop() {
                   </div>
                 )}
 
-                {/* Mobile: single column + Load More */}
+                {/* Mobile: accumulated pages + Load More */}
                 <div className="grid lg:hidden grid-cols-1 gap-5">
-                  {mobileSlice.map((p) => (
+                  {mobileItems.map((p) => (
                     <ProductCard key={p.id} product={p} />
                   ))}
                 </div>
-                {mobileSlice.length < filtered.length && (
+                {page < totalPages && (
                   <div className="lg:hidden flex justify-center mt-8">
                     <button onClick={() => setPage((n) => n + 1)} className="btn-pill-outline">
                       {t("shop.loadMore")}
@@ -356,7 +485,7 @@ export default function Shop() {
             </div>
             {FiltersPanel}
             <button onClick={() => setMobileFiltersOpen(false)} className="btn-pill-dark w-full mt-6 justify-center">
-              {t("shop.showResults", { count: filtered.length })}
+              {t("shop.showResults", { count: total })}
             </button>
           </div>
         </div>

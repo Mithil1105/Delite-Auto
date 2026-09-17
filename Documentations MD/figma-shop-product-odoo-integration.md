@@ -8,15 +8,27 @@
 | File           | `Documentations MD/figma-shop-product-odoo-integration.md` |
 | Branch         | figma                                   |
 | Owner          | Claude (pairing with the user)          |
-| Status         | In Progress — Odoo/catalog scaffolding, shared `ProductCard`, Shop, Product Detail (desktop+mobile), and a mobile-search Header fix are done; desktop mega-menus (Cars/Shop by Brands dropdowns) deferred |
+| Status         | In Progress — Odoo/catalog scaffolding, shared `ProductCard`, Shop, Product Detail (desktop+mobile), and a mobile-search Header fix are done; desktop mega-menus (Cars/Shop by Brands dropdowns) deferred; Odoo connection now real — see below |
 | Created        | 2026-09-08                              |
-| Last updated   | 2026-09-08                              |
+| Last updated   | 2026-09-15                              |
 
 > **See also (2026-09-09):** `ProductCard`'s DOM-nesting/fabricated-rating fixes and the Header
 > chevron decision, both referenced in this file's own text below, are now tracked in
 > [frontend-foundation-uiux-refactor.md](frontend-foundation-uiux-refactor.md). The Shop/PDP
 > rebuild described in this file is otherwise untouched by that pass — this is a pointer, not a
 > supersede.
+
+> **See also (2026-09-15):** Everything below describing `server/odoo/`/`api/catalog/*` as
+> "scaffolding" / "never exercised against a real Odoo instance" / "no real Odoo call anywhere" is
+> now **superseded** by
+> [odoo-live-catalog-integration.md](odoo-live-catalog-integration.md) — that pass replaced the
+> scaffolded fallback-to-mock branches with real `execute_kw`/`search_read` calls, added
+> pagination, a real media proxy, health/schema diagnostic endpoints, and migrated `Shop.tsx`/
+> `ProductDetail.tsx` off the direct `src/data/products.ts` import onto `catalogService`. The
+> Odoo *field mapping* is still unverified (no live connection was reachable there either) — see
+> that doc's "Known gaps" and `Documentations MD/odoo-schema-report.md`. This file's own
+> "Known issues" list below (the "Blocking, needs the user: real Odoo credentials..." bullet) is
+> the one item that pass addressed the *architecture* for but could not close out entirely.
 
 ## Summary
 
@@ -352,3 +364,4 @@ See `.env.example` for placeholders. No `.env` file was created or committed.
 |------------|--------|------------------------------------------|
 | 2026-09-08 | Claude | Initial version (Pass 1) — Odoo/catalog service-layer scaffolding, product domain model expansion, CategoryIconStrip real-photo fix. Shop/PDP/mobile-Header rebuild deliberately not started (blocked on Figma references) |
 | 2026-09-08 | Claude | Pass 2 — after the user shared Shop/PDP/Header screenshots: consolidated `ProductCard`, rebuilt `Shop.tsx` and `ProductDetail.tsx` (desktop + mobile) to match, added a mobile header search icon/row. Header desktop mega-menus deliberately deferred |
+| 2026-09-15 | Claude | Superseded by [odoo-live-catalog-integration.md](odoo-live-catalog-integration.md) — real Odoo RPC calls replaced the scaffolded mock-fallback branches; `Shop.tsx`/`ProductDetail.tsx` migrated off the direct `src/data/products.ts` import onto `catalogService`. Field mapping still unverified — see that doc |

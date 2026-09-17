@@ -23,6 +23,14 @@ export interface RecommendationRequest {
   /** Clamped to [2, 4] regardless of what's passed — see spec: recommendations are secondary cross-sell content, not a second catalog grid. */
   limit?: number;
   /**
+   * The candidate pool to score/rank against. Omit to use the local mock catalog
+   * (`src/data/products.ts`) directly — production callers should instead pass the catalog
+   * fetched via `catalogService.getProducts()` (see `useCatalogProducts`), so recommendations
+   * come from the same source as everything else once Odoo is wired up, not a second independent
+   * fetch — see Documentations MD/odoo-live-catalog-integration.md, "Recommendation engine".
+   */
+  candidates?: Product[];
+  /**
    * Test/DI seam only — production callers should omit this and let the engine read
    * `getRecentlyViewedCategories()` itself. Exists so engine.test.ts can assert the affinity
    * signal's effect on ranking without depending on localStorage/jsdom.

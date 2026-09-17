@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useCart } from "../../context/CartContext";
 import { useRecommendations } from "../../hooks/useRecommendations";
+import { useCatalogProducts } from "../../hooks/useCatalogProducts";
 import { trackRecommendationEvent } from "../../lib/recommendations/analytics";
 import { ProductCard } from "../product/ProductCard";
 import { useLang } from "../../i18n/LanguageContext";
@@ -18,7 +19,8 @@ const SURFACE = "cart_drawer" as const;
 export function CartRecommendations() {
   const { lines, addToCart } = useCart();
   const { t } = useLang();
-  const recommendations = useRecommendations({ strategy: STRATEGY, cartLines: lines, limit: 4 });
+  const catalogProducts = useCatalogProducts();
+  const recommendations = useRecommendations({ strategy: STRATEGY, cartLines: lines, limit: 4, candidates: catalogProducts });
 
   // Impression fires once per distinct recommendation set, not on every unrelated re-render —
   // keyed on the actual product ids shown, not the array reference.

@@ -1,4 +1,4 @@
-import type { CatalogService, ProductListQuery } from "./types";
+import type { CatalogService, PagedProductQuery, PagedProductResult, ProductListQuery } from "./types";
 import type { Category, Product, ProductDetail } from "../../data/types";
 
 /**
@@ -28,6 +28,24 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export const httpCatalogService: CatalogService = {
   getProducts: (query) => fetchJson<Product[]>(`/api/catalog/products${buildQuery(query)}`),
+
+  /**
+   * Legacy path only — kept for parity/rollback, not production (see catalogService.ts). The
+   * underlying `/api/catalog/products` route has no id-based category/brand/fitment filters or
+   * real pagination, so this fetches a generously-sized page and paginates/sorts client-side
+   * rather than pretending to support filters it can't honor server-side.
+   */
+  async getProductsPage(query: PagedProductQuery): Promise<PagedProductResult> {
+    const list = await fetchJson<Product[]>(`/api/catalog/products${buildQuery({ search: query.q, vehicle: query.vehicle, limit: 200 })}`);
+    const sorted = [...list];
+    if (query.sort === "price-asc") sorted.sort((a, b) => a.price - b.price);
+    if (query.sort === "price-desc") sorted.sort((a, b) => b.price - a.price);
+    if (query.sort === "name") sorted.sort((a, b) => a.name.localeCompare(b.name));
+    const total = sorted.length;
+    const start = (query.page - 1) * query.pageSize;
+    const items = sorted.slice(start, start + query.pageSize);
+    return { items, page: query.page, pageSize: query.pageSize, total, totalPages: Math.max(1, Math.ceil(total / query.pageSize)) };
+  },
 
   async getProductBySlug(slug: string) {
     try {

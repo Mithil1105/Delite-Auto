@@ -1,11 +1,23 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Product } from "../data/types";
-import { products } from "../data/products";
+import type { Product, ProductDetail } from "../data/types";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 
 interface CartLine {
   product: Product;
   qty: number;
+  /**
+   * Which variant of `product` this line is for — `product.variants[n].id` (see
+   * `src/data/types.ts#ProductVariant`, which itself carries the real `odooVariantId` once a
+   * product is Odoo-backed — that is the authoritative purchase identity for a real Odoo product,
+   * see Documentations MD/odoo-real-catalog.md, "Cart identity"). `undefined` means "the product
+   * itself, no variant selected" (a single-variant or variant-less product). Cart-line identity is
+   * `(product.id, variantId)` together, NOT just `product.id` — the same product with two
+   * different variants selected is two separate lines, never collapsed into one.
+   */
+  variantId?: string;
+  /** The selected variant's own label/price, captured at add-to-cart time — see `addToCart`. Absent when no variant was selected. */
+  variantLabel?: string;
+  variantPrice?: number;
 }
 
 /**
@@ -27,9 +39,9 @@ interface CartContextValue {
   lines: CartLine[];
   wishlist: string[];
   cartCount: number;
-  addToCart: (product: Product, qty?: number, options?: { feedback?: boolean }) => void;
-  removeLine: (productId: string) => void;
-  setQuantity: (productId: string, qty: number) => void;
+  addToCart: (product: Product | ProductDetail, qty?: number, options?: { feedback?: boolean; variantId?: string }) => void;
+  removeLine: (productId: string, variantId?: string) => void;
+  setQuantity: (productId: string, qty: number, variantId?: string) => void;
   clearCart: () => void;
   toggleWishlist: (productId: string) => void;
   isWishlisted: (productId: string) => boolean;
@@ -52,17 +64,40 @@ const WISHLIST_KEY = "delite-auto-wishlist";
  */
 export const CART_DRAWER_BREAKPOINT = "(min-width: 700px)";
 
+/**
+ * CART PERSISTENCE — MIGRATION NOTE (see Documentations MD/odoo-real-catalog.md, "Cart identity"):
+ * the old format persisted only `{ id, qty, variantId }` and rehydrated `product` by looking the
+ * id up in the static mock `src/data/products.ts` array. That silently discarded every real
+ * Odoo-backed cart line on reload (a real template id like "442" is never in the mock array), and
+ * would have been worse if "fixed" by falling back to some other product — a stale mock-id cart
+ * must never resolve to an unrelated real product. The new format persists the full `product`
+ * snapshot alongside `qty`/`variantId`/`variantLabel`/`variantPrice`, so no catalog lookup is
+ * needed at load time at all — it works identically for the mock catalog and real Odoo data, and
+ * a pre-migration entry (no embedded `product`) is a version mismatch, not a partial match: it is
+ * dropped, never guessed at. This never throws on an old/corrupt entry — one bad line is skipped,
+ * not a page crash.
+ */
+interface PersistedCartLine {
+  product?: Product;
+  qty?: number;
+  variantId?: string;
+  variantLabel?: string;
+  variantPrice?: number;
+}
+
+function isValidProduct(value: unknown): value is Product {
+  return !!value && typeof value === "object" && typeof (value as Product).id === "string" && typeof (value as Product).slug === "string";
+}
+
 function loadCart(): CartLine[] {
   try {
     const raw = localStorage.getItem(CART_KEY);
     if (!raw) return [];
-    const entries: { id: string; qty: number }[] = JSON.parse(raw);
+    const entries: PersistedCartLine[] = JSON.parse(raw);
+    if (!Array.isArray(entries)) return [];
     return entries
-      .map((e) => {
-        const product = products.find((p) => p.id === e.id);
-        return product ? { product, qty: e.qty } : null;
-      })
-      .filter((l): l is CartLine => l !== null);
+      .filter((e): e is Required<Pick<PersistedCartLine, "product" | "qty">> & PersistedCartLine => isValidProduct(e.product) && typeof e.qty === "number" && e.qty > 0)
+      .map((e): CartLine => ({ product: e.product, qty: e.qty, variantId: e.variantId, variantLabel: e.variantLabel, variantPrice: e.variantPrice }));
   } catch {
     return [];
   }
@@ -93,7 +128,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     try {
-      localStorage.setItem(CART_KEY, JSON.stringify(lines.map((l) => ({ id: l.product.id, qty: l.qty }))));
+      const persisted: PersistedCartLine[] = lines.map((l) => ({
+        product: l.product,
+        qty: l.qty,
+        variantId: l.variantId,
+        variantLabel: l.variantLabel,
+        variantPrice: l.variantPrice,
+      }));
+      localStorage.setItem(CART_KEY, JSON.stringify(persisted));
     } catch {
       /* storage unavailable, skip persisting */
     }
@@ -120,13 +162,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
    * Documentations MD/responsive-cart-drawer.md).
    */
   const addToCart = useCallback(
-    (product: Product, qty = 1, options?: { feedback?: boolean }) => {
+    (product: Product | ProductDetail, qty = 1, options?: { feedback?: boolean; variantId?: string }) => {
+      const variantId = options?.variantId;
+      // Captured once, at add time — `variants` only exists on the richer `ProductDetail` a PDP
+      // fetches, not on the `Product` a list card passes; a stored cart line carries its own
+      // snapshot so it renders correctly even if only a plain `Product` is ever passed in.
+      const variant = variantId ? (product as ProductDetail).variants?.find((v) => v.id === variantId) : undefined;
+
       setLines((prev) => {
-        const existing = prev.find((l) => l.product.id === product.id);
+        // Identity is (product.id, variantId) together — the same product with a DIFFERENT
+        // variant is a separate line, not a quantity bump on an unrelated variant's line.
+        const existing = prev.find((l) => l.product.id === product.id && l.variantId === variantId);
         if (existing) {
-          return prev.map((l) => (l.product.id === product.id ? { ...l, qty: l.qty + qty } : l));
+          return prev.map((l) => (l.product.id === product.id && l.variantId === variantId ? { ...l, qty: l.qty + qty } : l));
         }
-        return [...prev, { product, qty }];
+        return [...prev, { product, qty, variantId, variantLabel: variant?.label, variantPrice: variant?.price }];
       });
 
       if (options?.feedback === false) return;
@@ -141,17 +191,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
     [isDrawerBreakpoint]
   );
 
-  const removeLine = useCallback((productId: string) => {
-    setLines((prev) => prev.filter((l) => l.product.id !== productId));
+  // `variantId` omitted matches every line for that product regardless of variant — correct
+  // today (no line ever has a variantId, since no UI passes one into addToCart yet) and an
+  // explicit, documented edge case once real variant selection lands: a caller that knows which
+  // variant it means should always pass it.
+  const removeLine = useCallback((productId: string, variantId?: string) => {
+    setLines((prev) => prev.filter((l) => !(l.product.id === productId && (variantId === undefined || l.variantId === variantId))));
   }, []);
 
   const setQuantity = useCallback(
-    (productId: string, qty: number) => {
+    (productId: string, qty: number, variantId?: string) => {
       if (qty <= 0) {
-        removeLine(productId);
+        removeLine(productId, variantId);
         return;
       }
-      setLines((prev) => prev.map((l) => (l.product.id === productId ? { ...l, qty } : l)));
+      setLines((prev) =>
+        prev.map((l) => (l.product.id === productId && (variantId === undefined || l.variantId === variantId) ? { ...l, qty } : l))
+      );
     },
     [removeLine]
   );

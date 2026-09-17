@@ -1,18 +1,27 @@
 // Vercel serverless function: GET /api/catalog/categories
 //
-// See api/catalog/products.ts for the Odoo-fallback rationale and the `@vercel/node` typing note.
+// See api/catalog/products.ts for the Odoo-fallback/failure-mode rationale. Tries
+// product.public.category then product.category — see server/odoo/fetchCategories.ts.
 
 import { isOdooConfigured } from "../../server/odoo/client";
+import { fetchOdooCategories } from "../../server/odoo/fetchCategories";
 import { categories } from "../../src/data/categories";
 
 export default async function handler(_req: any, res: any) {
-  try {
-    if (isOdooConfigured()) {
-      // TODO: real `odooExecuteKw("product.category", "search_read", ...)` call once field
-      // mappings are confirmed. Serving the local category list until then.
-      console.warn("[api/catalog/categories] Odoo is configured but the real query path isn't implemented yet — serving mock data");
+  if (isOdooConfigured()) {
+    try {
+      const { categories: items } = await fetchOdooCategories();
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      res.status(200).json(items);
+    } catch (err) {
+      console.error("[api/catalog/categories] Odoo query failed:", err instanceof Error ? err.message : err);
+      res.status(502).json({ error: "Categories temporarily unavailable" });
     }
+    return;
+  }
 
+  // Not configured — explicit dev/mock fallback.
+  try {
     res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
     res.status(200).json(categories);
   } catch (err) {

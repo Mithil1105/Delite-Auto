@@ -83,7 +83,7 @@ export function CartDrawer() {
     return () => window.clearTimeout(timer);
   }, [recentCartActivity]);
 
-  const subtotal = lines.reduce((sum, l) => sum + l.product.price * l.qty, 0);
+  const subtotal = lines.reduce((sum, l) => sum + (l.variantPrice ?? l.product.price) * l.qty, 0);
 
   return (
     <>
@@ -143,15 +143,18 @@ export function CartDrawer() {
                 past recommendations — see Documentations MD/personalized-product-recommendations.md. */}
             <div className="flex-1 overflow-y-auto">
               <div className="divide-y divide-line">
-                {lines.map(({ product, qty }) => (
+                {lines.map(({ product, qty, variantId, variantLabel, variantPrice }) => (
                   <CartDrawerItem
-                    key={product.id}
+                    key={variantId ? `${product.id}-${variantId}` : product.id}
                     ref={(el) => {
                       if (el) itemRefs.current.set(product.id, el);
                       else itemRefs.current.delete(product.id);
                     }}
                     product={product}
                     qty={qty}
+                    variantId={variantId}
+                    variantLabel={variantLabel}
+                    variantPrice={variantPrice}
                     highlighted={highlightedProductId === product.id}
                   />
                 ))}
