@@ -15,6 +15,7 @@
     "odoo:health:local": "node --env-file=.env.local node_modules/vite-node/vite-node.mjs scripts/odoo-health-local.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
     "clsx": "^2.1.1",
     "framer-motion": "^13.1.1",
     "lucide-react": "^1.38.0",

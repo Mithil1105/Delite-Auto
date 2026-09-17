@@ -185,7 +185,19 @@ export function odooIdFromSlug(slug: string): number | null {
 export type MediaModel = "product.template" | "product.product" | "product.image";
 export type MediaField = "image_1920" | "image_1024" | "image_512" | "image_256" | "image_128";
 
-export function buildMediaUrl(supabaseUrl: string, model: MediaModel, id: number, field: MediaField = "image_1920"): string {
+/**
+ * Default field changed from `image_1920` to `image_1024` (2026-09-17) — a real, live bug found
+ * via a user screenshot: at least one real product's `image_1920` is 5108×5479px / 909KB, far
+ * beyond what that field name promises (Odoo's own naming convention caps it at 1920px on the
+ * long edge — this record's value didn't honor that, a genuine upstream Odoo data-quality issue,
+ * not something to guess a workaround for). Chromium silently refuses to decode an image that
+ * large (`naturalWidth` stays 0, no console error, no failed network request — confirmed via a
+ * live Playwright inspection, not assumed), which is exactly the broken-image-icon the user saw.
+ * `image_1024` is confirmed present and correctly sized for the same record (59KB) and is a
+ * perfectly good hero/gallery resolution regardless of this specific bug — this is not a
+ * workaround-only change.
+ */
+export function buildMediaUrl(supabaseUrl: string, model: MediaModel, id: number, field: MediaField = "image_1024"): string {
   const params = new URLSearchParams({ model, id: String(id), field });
   return `${supabaseUrl.replace(/\/$/, "")}/functions/v1/catalog-media?${params.toString()}`;
 }

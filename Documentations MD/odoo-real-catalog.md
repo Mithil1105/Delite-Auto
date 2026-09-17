@@ -215,6 +215,25 @@ the 358KB primary `product.template.image_1920`. `catalog-media` was extended to
 `model=product.image` (in addition to `product.template`/`product.product`) so gallery photos
 render their own real photo instead of repeating the primary image.
 
+**2026-09-17 — real bug found via a user screenshot, fixed:** `catalog-media` originally required
+Supabase's platform-level JWT verification, which silently 401'd every plain `<img src>` request
+(browsers can't attach a bearer token to an image tag) — every real product image was rendering as
+a broken-icon placeholder. Fixed by redeploying with `--no-verify-jwt`; the function's own
+allowlist (model/field/id validation, read-only, no arbitrary Odoo access) was already the real
+gate, so this wasn't a security regression, just correcting an accidental platform default that
+contradicted the function's own documented "reachable from the public internet" design.
+
+A second, independent bug surfaced once images started loading: at least one real product's
+`image_1920` is 5108×5479px / 909KB — far beyond what that field name promises (Odoo caps it at
+1920px on the long edge; this specific record's value didn't honor that, a genuine upstream Odoo
+data-quality issue, not guessed around). Chromium silently refuses to decode an image that large
+(`naturalWidth` stays 0, no console error, no failed network request — confirmed via a live
+Playwright inspection of the actual browser response, not assumed). Fixed by changing
+`buildMediaUrl`'s default field from `image_1920` to `image_1024` (confirmed correctly sized —
+59KB — for the same record); this is also simply better practice regardless of the bug (909KB is
+excessive for a product photo). See `tests/interaction/product-image.spec.ts` for the regression
+test against the real affected record (id 14).
+
 ## Architecture
 
 ```
@@ -444,3 +463,4 @@ against the running dev server with `VITE_CATALOG_SOURCE=supabase`):**
 |------------|--------|------------------------------------------|
 | 2026-09-16 | Claude | Initial version — real Odoo catalog implementation: shared Deno client/catalog/media modules, four production Edge Functions + one diagnostic, verified category classification (37 real categories, 28 confirmed brands) and catalog eligibility domain, verified stock decision (98% of catalog has no tracked quantity — purchasability driven by `active`, not stock), Shop/PDP/Brands/Home wired to real paginated/filtered data, cart persistence bug fix (real cart lines were being silently discarded on reload), three recommendation-engine real-data scoring bugs fixed, new Playwright coverage. |
 | 2026-09-17 | Claude | Stabilization pass — re-verified full live recovery after an Odoo API key rotation (345 products, 37 categories, non-catalog exclusion, car/bike/brand/fitment filters, multi-variant + gallery product all re-confirmed against live data). Fixed the availability-semantics audit finding from this pass: the single conflated `available`/`stock` fields (silently `= active`, not real inventory) were replaced with five honest fields — `catalogActive`, `inventoryQuantity`, `inventoryTracked` (now an exported `STORE_INVENTORY_TRACKED` constant), `inStock`, `purchasable` — on both `CatalogVariant` and `CatalogProduct`, threaded through `supabaseCatalogService.ts` and `src/data/types.ts` (`Product.available`/`ProductVariant.available`/`.stock` renamed to `purchasable`/`inventoryQuantity`). Fixed a real bug found while auditing consumers: `ProductDetail.tsx`'s `canAddToCart` didn't check the selected/implicit variant's own purchasability for a single-variant or variant-less product. No architectural change — same live data, same business rule, now honestly named and fully documented. See `odoo-supabase-edge-functions.md`'s new "Operational note: API key rotation" section for the recovery procedure. |
+| 2026-09-17 | Claude | Found and fixed two real, live product-image bugs from a user screenshot showing a broken-image placeholder on a real PDP: (1) `catalog-media` required Supabase's platform JWT verification, which silently 401'd every `<img src>` request — fixed by redeploying with `--no-verify-jwt` (the function's own allowlist was already the real security gate). (2) One real product's `image_1920` is 5108×5479px/909KB, an upstream Odoo data-quality issue — Chromium silently refuses to decode it. Fixed by defaulting `buildMediaUrl` to `image_1024` (confirmed correctly sized for the same record). Verified end-to-end via a live Playwright browser check (`naturalWidth` 0 → 954, screenshot confirmed) plus curl/byte-level inspection, not assumed. Added `tests/interaction/product-image.spec.ts` as a permanent regression test. |

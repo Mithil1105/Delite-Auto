@@ -11,6 +11,8 @@ import { formatINR } from "../lib/format";
 import { useCart } from "../context/CartContext";
 import { useRecommendations } from "../hooks/useRecommendations";
 import { useCatalogProducts } from "../hooks/useCatalogProducts";
+import { useProductReviews } from "../hooks/useProductReviews";
+import { ReviewsSection } from "../components/product/ReviewsSection";
 import { recordProductView } from "../lib/recommendations/history";
 import { useLang } from "../i18n/LanguageContext";
 import clsx from "clsx";
@@ -86,6 +88,13 @@ export default function ProductDetail() {
   const catalogProducts = useCatalogProducts();
   const related = useRecommendations({ strategy: "pdp", currentProduct: product ?? undefined, limit: 4, candidates: catalogProducts });
 
+  // Real Odoo products get a real review aggregate (Documentations MD/
+  // delite-accounts-orders-reviews-admin.md); the local mock catalog has no odooId, so this hook
+  // no-ops and the existing static product.rating/reviewCount fields drive the fallback below —
+  // unchanged behavior for mock data. Called unconditionally (before the early returns) per the
+  // Rules of Hooks — guarded internally by `product?.odooId` being undefined while loading.
+  const { aggregate: reviewAggregate } = useProductReviews(product?.odooId);
+
   if (state === "loading") {
     return (
       <div className="bg-white">
@@ -129,8 +138,10 @@ export default function ProductDetail() {
   const mockCategoryLabel = mockCategory ? dict.categories[mockCategory.slug as keyof typeof dict.categories] : null;
   const realCategoryRef = product.categories?.[0];
   const wishlisted = isWishlisted(product.id);
-  const hasRating = product.rating != null && !!product.reviewCount;
-  const reviewCount = product.reviewCount ?? 0;
+  const realRatingAvailable = product.odooId != null && reviewAggregate.count > 0;
+  const hasRating = realRatingAvailable || (product.rating != null && !!product.reviewCount);
+  const displayRating = realRatingAvailable ? reviewAggregate.average! : (product.rating ?? 0);
+  const displayReviewCount = realRatingAvailable ? reviewAggregate.count : (product.reviewCount ?? 0);
   // MRP has no backing Odoo field on this instance (see Documentations MD/odoo-real-catalog.md,
   // "MRP absence") — `product.mrp` is simply absent for every real product, so this block already
   // renders nothing for them; no separate "is this Odoo-backed" check needed.
@@ -245,11 +256,11 @@ export default function ProductDetail() {
                 <>
                   <div className="flex items-center gap-0.5">
                     {Array.from({ length: 5 }, (_, i) => (
-                      <Star key={i} className={clsx("w-4 h-4", i < Math.round(product.rating!) ? "fill-gold text-gold" : "text-line")} />
+                      <Star key={i} className={clsx("w-4 h-4", i < Math.round(displayRating) ? "fill-gold text-gold" : "text-line")} />
                     ))}
                   </div>
-                  <span className="text-[13px] font-semibold">{product.rating!.toFixed(1)}</span>
-                  <span className="text-[12.5px] text-steel-500">({product.reviewCount})</span>
+                  <span className="text-[13px] font-semibold">{displayRating.toFixed(1)}</span>
+                  <span className="text-[12.5px] text-steel-500">({displayReviewCount})</span>
                 </>
               ) : (
                 <span className="text-[12.5px] text-steel-500">{t("product.noReviewsYet")}</span>
@@ -409,14 +420,8 @@ export default function ProductDetail() {
         )}
 
         {tab === "reviews" && (
-          <div className="mb-16 max-w-2xl">
-            {hasRating ? (
-              <p className="text-[14.5px] text-ink/75">
-                {product.rating!.toFixed(1)} ★ average from {reviewCount} reviews.
-              </p>
-            ) : (
-              <p className="text-[14.5px] text-ink/75">{t("product.noReviewsYet")}</p>
-            )}
+          <div className="mb-16">
+            <ReviewsSection odooTemplateId={product.odooId} />
           </div>
         )}
 

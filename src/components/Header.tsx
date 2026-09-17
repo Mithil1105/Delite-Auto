@@ -5,6 +5,7 @@ import clsx from "clsx";
 import { LanguageSwitcher } from "./LanguageSwitcher";
 import { MobileCartAddedIndicator } from "./cart/MobileCartAddedIndicator";
 import { useCart, CART_DRAWER_BREAKPOINT } from "../context/CartContext";
+import { useAuth } from "../context/AuthContext";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useLang } from "../i18n/LanguageContext";
 import { site } from "../data/site";
@@ -14,6 +15,7 @@ export function Header() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const { cartCount, wishlist, openCartDrawer, recentCartActivity } = useCart();
+  const { session, configured: authConfigured } = useAuth();
   const { t } = useLang();
   const navigate = useNavigate();
   const location = useLocation();
@@ -99,9 +101,15 @@ export function Header() {
               <Search className="w-5 h-5" />
             </button>
             <LanguageSwitcher />
-            <button type="button" aria-label="Account" className="hidden sm:grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
-              <User className="w-5 h-5" />
-            </button>
+            {authConfigured && (
+              <Link
+                to={session ? "/account" : "/login"}
+                aria-label={t("header.account")}
+                className="hidden sm:grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+              >
+                <User className="w-5 h-5" />
+              </Link>
+            )}
             <Link to="/shop?wishlist=1" aria-label={t("header.wishlist")} className="relative hidden sm:grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
               <Heart className="w-5 h-5" />
               {wishlist.length > 0 && (

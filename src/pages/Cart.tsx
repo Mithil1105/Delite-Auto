@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Minus, Plus, Trash2, ArrowRight, ShoppingBag } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { ProductMedia } from "../components/product/ProductMedia";
@@ -10,6 +10,7 @@ import { useLang } from "../i18n/LanguageContext";
 export default function Cart() {
   const { lines, removeLine, setQuantity } = useCart();
   const { t } = useLang();
+  const navigate = useNavigate();
 
   const subtotal = lines.reduce((sum, l) => sum + (l.variantPrice ?? l.product.price) * l.qty, 0);
 
@@ -79,10 +80,10 @@ export default function Cart() {
             <span>{t("cart.total")}</span>
             <span className="price">{formatINR(subtotal)}</span>
           </div>
-          <button disabled aria-disabled="true" className="btn-primary w-full justify-center opacity-50 cursor-not-allowed">
+          <button type="button" onClick={() => navigate("/checkout")} className="btn-primary w-full justify-center">
             {t("cart.checkout")} <ArrowRight className="w-4 h-4" />
           </button>
-          <p className="text-[12px] text-steel-500 text-center mt-3">{t("cart.demoNote")}</p>
+          <p className="text-[12px] text-steel-500 text-center mt-3">{t("checkout.payOnDeliveryNote")}</p>
         </div>
       </div>
     </div>

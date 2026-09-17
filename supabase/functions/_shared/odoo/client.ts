@@ -100,3 +100,23 @@ export function odooSearchCount(config: OdooConfig, model: string, domain: unkno
 export function odooRead<T>(config: OdooConfig, model: string, ids: number[], fields: string[]): Promise<T[]> {
   return odooExecuteKw<T[]>(config, model, "read", [ids, fields]);
 }
+
+/**
+ * Write-side helpers — added for the real order-placement flow (create-order). Every prior
+ * Edge Function in this repo has been read-only (search_read/search_count/read); these are the
+ * first writes ever attempted against this Odoo instance from here. `odooCheckAccessRights` is a
+ * safe, non-mutating permission probe (Odoo's own ir.model.access mechanism) — used to verify
+ * `create` permission BEFORE any code path depends on it, rather than discovering a permission
+ * error mid-checkout with a customer waiting.
+ */
+export function odooCreate(config: OdooConfig, model: string, values: Record<string, unknown>): Promise<number> {
+  return odooExecuteKw<number>(config, model, "create", [values]);
+}
+
+export function odooCheckAccessRights(
+  config: OdooConfig,
+  model: string,
+  operation: "create" | "write" | "read" | "unlink"
+): Promise<boolean> {
+  return odooExecuteKw<boolean>(config, model, "check_access_rights", [operation], { raise_exception: false });
+}
