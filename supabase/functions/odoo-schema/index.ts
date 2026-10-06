@@ -83,6 +83,8 @@ const FIELDS_OF_INTEREST: Record<string, string[]> = {
   "res.country": ["name", "code"],
   "res.country.state": ["name", "code", "country_id"],
   "delivery.carrier": ["name", "delivery_type", "fixed_price", "free_over", "product_id", "active", "website_published", "integration_level", "company_id"],
+  // --- Added for Phase 1/6 native-checkout domain/handoff audit (odoo-native-checkout.md) ---
+  "website": ["name", "domain", "company_id", "default_lang_id", "theme_id"],
 };
 
 /** Models never sampled even if they exist — customer/order data, per explicit instruction not
