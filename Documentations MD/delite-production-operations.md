@@ -10,7 +10,15 @@
 | Owner          | Claude |
 | Status         | Done — migrations applied and Edge Functions deployed to the live project on 2026-09-29 (several items still depend on live provider secrets / manual dashboard steps — see Known issues) |
 | Created        | 2026-09-29 |
-| Last updated   | 2026-09-30 (security-hardening verification pass — Drawer accessibility fix, Deno test-harness assessment resolved, live support-role test of Payments/Reviews; security cleanup pass — `admin-system-health` redeployed with real owner-MFA status, `profiles` RLS narrowed — see the section below; full detail in `delite-auth-security.md`) |
+| Last updated   | 2026-10-06 (admin-retry-odoo-order-sync / admin-retry-email updated for the new quote pipeline — see below) |
+
+> **2026-10-06 update:** `admin-retry-odoo-order-sync`'s `createSaleOrder()` call and
+> `admin-retry-email`'s line-item reconstruction both depended on the pre-quote-pipeline
+> `checkout_snapshot`/`createSaleOrder` shape and would have broken against new `payment_attempts`
+> rows once the quote pipeline shipped. Both were fixed with backward-compatible handling (prefer
+> the new `quoteLines`; fall back to re-quoting/re-reading for any legacy row that predates this
+> change). See [odoo-checkout-finalization.md](odoo-checkout-finalization.md) (branch
+> `feature/odoo-checkout`, not yet merged/deployed) §15 and §24.
 
 ## Summary
 

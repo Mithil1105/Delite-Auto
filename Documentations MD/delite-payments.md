@@ -10,7 +10,16 @@
 | Owner          | Claude |
 | Status         | Code complete, live-verified in "unconfigured" mode (COD works end-to-end; online payment gracefully reports "temporarily unavailable" until real Razorpay secrets are added) — no real Razorpay test-mode payment has been run in this session, see Known gaps |
 | Created        | 2026-09-29 |
-| Last updated   | 2026-09-30 (guest checkout + structured address — see follow-up) |
+| Last updated   | 2026-10-06 (see odoo-checkout-finalization.md for the superseding change) |
+
+> **2026-10-06 update:** the `amount`/`price_unit` this flow charges and writes to Odoo now comes
+> from a server-authoritative quote (`computeAuthoritativeQuote`), not raw `list_price` — and
+> `payment-create` now requires a `checkoutAttemptId` (closing a prior gap where a retried "Pay
+> Online" click could create two Razorpay orders). See
+> [odoo-checkout-finalization.md](odoo-checkout-finalization.md) (branch `feature/odoo-checkout`,
+> not yet merged/deployed) for the full architecture — this doc's description of the payment
+> lifecycle (verify/webhook race protection, `checkout_snapshot`, never re-pricing after capture)
+> otherwise remains accurate.
 
 ## Summary
 

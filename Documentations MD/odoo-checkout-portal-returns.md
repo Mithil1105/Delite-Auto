@@ -10,7 +10,16 @@
 | Owner          | Claude |
 | Status         | **Phase I implemented and deployed live.** Architecture confirmed by the user (React/Supabase checkout kept; Odoo-hosted checkout handoff explicitly rejected). Guest + authenticated checkout, address management, My Orders (merged Delite + legacy Odoo), Order Detail, return/exchange REQUEST capture, and policy pages are built and deployed. Automated return/exchange fulfillment (writing directly to Odoo inventory) was deliberately **not** attempted this pass — see "Return/exchange automation decision" below. |
 | Created        | 2026-09-30 |
-| Last updated   | 2026-09-30 |
+| Last updated   | 2026-10-06 (see odoo-checkout-finalization.md for pricing/tax/address superseding changes) |
+
+> **2026-10-06 update:** this doc's checkout architecture (guest/authenticated flow, address child
+> contacts, `profiles.odoo_partner_id` identity mapping) is unchanged and still accurate. What
+> changed: `price_unit` is no longer raw `list_price` (a live audit proved that wrong — real
+> pricelist rules exist), the delivery-address mapping no longer concatenates city/state/pincode
+> into `street2` (now structured `city`/`zip`/`state_id`/`country_id`), and a new server-
+> authoritative `checkout-quote` step now precedes order placement. See
+> [odoo-checkout-finalization.md](odoo-checkout-finalization.md) (branch `feature/odoo-checkout`,
+> not yet merged/deployed).
 
 ## Summary
 
