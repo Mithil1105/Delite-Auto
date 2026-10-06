@@ -17,25 +17,49 @@
 // getOdooConfig() returning null.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getOdooConfig, validateAndPriceLines, OrderValidationError, type OrderLineInput } from "../_shared/orders/placeOdooOrder.ts";
+import { getOdooConfig, OrderValidationError, type OrderLineInput } from "../_shared/orders/placeOdooOrder.ts";
+import { computeAuthoritativeQuote, assertQuoteUnchanged, type Quote } from "../_shared/orders/quote.ts";
 import { formatShippingAddress, type AddressInput } from "../_shared/orders/customerIdentity.ts";
 import { getRazorpayConfig, createRazorpayOrder } from "../_shared/payments/razorpay.ts";
+import { CheckoutError, checkoutErrorResponse } from "../_shared/errors/checkoutErrors.ts";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface PaymentCreateBody {
+  /** Phase 5C: one stable id per checkout attempt, generated once by the frontend and reused
+   * across retries/double-clicks — the SAME mechanism create-order's COD path already uses. Closes
+   * the previous gap where a retried "Pay Online" click could create two Razorpay orders before
+   * the first payment-create response returned. See
+   * Documentations MD/odoo-checkout-finalization.md Phase 5C.
+   *
+   * Optional only for one deploy cycle's backward compatibility: this backend ships before the
+   * frontend that sends it (coordinated-but-not-atomic deploy — see "Deploy order" in that doc). A
+   * request without one still works (falls back to the pre-fix behavior: no idempotency claim,
+   * same as before this pass), it just isn't protected against a double-click. Once the updated
+   * frontend is live, every real request includes it. Do not remove this fallback casually — it's
+   * what keeps "Pay Online" from breaking for anyone still on an un-updated client mid-rollout. */
+  checkoutAttemptId?: string;
   shippingName: string;
   shippingPhone: string;
   address: AddressInput;
   lines: OrderLineInput[];
+  deliveryMethodId?: number | null;
+  acceptedFingerprint?: string;
   guestEmail?: string;
   policyVersion?: string;
   policyAccepted?: boolean;
+}
+
+interface AttemptRow {
+  id: string;
+  razorpay_order_id: string | null;
+  amount: number;
 }
 
 Deno.serve(async (req: Request) => {
@@ -77,22 +101,34 @@ Deno.serve(async (req: Request) => {
   if (!razorpayConfig) return json({ error: "Online payment temporarily unavailable — please choose Cash on Delivery" }, 501);
 
   try {
-    const { resolvedLines, byId } = await validateAndPriceLines(odooConfig, body.lines);
-    const amount = resolvedLines.reduce((sum, l) => sum + (byId.get(l.odooVariantId)?.list_price ?? 0) * l.qty, 0);
-    if (amount <= 0) return json({ error: "Invalid order total" }, 409);
-    const amountInPaise = Math.round(amount * 100);
+    // Phase 5B: authoritative quote, computed fresh — the amount charged on Razorpay comes ONLY
+    // from this, never from a client-sent value. See Documentations MD/odoo-checkout-finalization.md.
+    const quote: Quote = await computeAuthoritativeQuote({
+      config: odooConfig,
+      db: adminClient,
+      lines: body.lines,
+      supabaseUserId: userId ?? undefined,
+      deliveryMethodId: body.deliveryMethodId ?? null,
+    });
+    if (body.acceptedFingerprint) assertQuoteUnchanged(quote, body.acceptedFingerprint);
+    if (quote.grandTotal <= 0) return checkoutErrorResponse(new CheckoutError("PRICING_UNAVAILABLE", "Invalid order total"));
+    const amountInPaise = Math.round(quote.grandTotal * 100);
 
-    const { data: attemptRow, error: insertError } = await adminClient
+    // Phase 5C idempotency fix: claim checkout_attempt_id the same way create-order's COD path
+    // does, BEFORE ever calling Razorpay — a double-click/retry before the first response returns
+    // can no longer create two Razorpay orders. The column is shared with the COD path on the same
+    // table; one checkoutAttemptId -> at most one payment_attempts row regardless of method.
+    const { data: claimedRow, error: claimError } = await adminClient
       .from("payment_attempts")
       .insert({
         user_id: userId,
-        amount,
+        checkout_attempt_id: body.checkoutAttemptId,
+        amount: quote.grandTotal,
         currency: "INR",
         status: "created",
         payment_method: "online",
         checkout_snapshot: {
-          resolvedLines,
-          variantRows: Array.from(byId.values()),
+          quoteLines: quote.lines,
           shippingName: body.shippingName,
           shippingPhone: body.shippingPhone,
           shippingAddress,
@@ -102,19 +138,49 @@ Deno.serve(async (req: Request) => {
           policyAccepted: !!body.policyAccepted,
         },
       })
-      .select("id")
+      .select("id, razorpay_order_id, amount")
       .single();
-    if (insertError || !attemptRow) {
-      console.error("[payment-create] payment_attempts insert failed", insertError?.message);
+
+    let attempt: AttemptRow;
+    if (!claimError && claimedRow) {
+      attempt = claimedRow as AttemptRow;
+    } else if (claimError?.code === "23505") {
+      // Already claimed — a prior submit for this exact checkout attempt. Never create a second
+      // Razorpay order: reuse the existing one if it's ready, or ask the client to wait briefly if
+      // the original request is still in flight.
+      const { data: existing } = await adminClient
+        .from("payment_attempts")
+        .select("id, razorpay_order_id, amount")
+        .eq("checkout_attempt_id", body.checkoutAttemptId)
+        .maybeSingle();
+      if (!existing) return json({ error: "Could not start payment — please try again" }, 502);
+      attempt = existing as AttemptRow;
+      if (!attempt.razorpay_order_id) {
+        return checkoutErrorResponse(
+          new CheckoutError("PAYMENT_ALREADY_PROCESSING", "Your payment is still being started — please wait a moment and try again", { retryable: true })
+        );
+      }
+      return json(
+        {
+          paymentAttemptId: attempt.id,
+          razorpayOrderId: attempt.razorpay_order_id,
+          amount: Math.round(attempt.amount * 100),
+          currency: "INR",
+          keyId: razorpayConfig.keyId,
+        },
+        200
+      );
+    } else {
+      console.error("[payment-create] payment_attempts insert failed", claimError?.message);
       return json({ error: "Could not start payment — please try again" }, 502);
     }
 
-    const razorpayOrder = await createRazorpayOrder(razorpayConfig, amountInPaise, "INR", attemptRow.id);
-    await adminClient.from("payment_attempts").update({ razorpay_order_id: razorpayOrder.id, updated_at: new Date().toISOString() }).eq("id", attemptRow.id);
+    const razorpayOrder = await createRazorpayOrder(razorpayConfig, amountInPaise, "INR", attempt.id);
+    await adminClient.from("payment_attempts").update({ razorpay_order_id: razorpayOrder.id, updated_at: new Date().toISOString() }).eq("id", attempt.id);
 
     return json(
       {
-        paymentAttemptId: attemptRow.id,
+        paymentAttemptId: attempt.id,
         razorpayOrderId: razorpayOrder.id,
         amount: amountInPaise,
         currency: razorpayOrder.currency,
@@ -124,12 +190,14 @@ Deno.serve(async (req: Request) => {
     );
   } catch (err) {
     if (err instanceof OrderValidationError) return json({ error: err.message }, err.status);
+    if (err instanceof CheckoutError) return checkoutErrorResponse(err);
     console.error("[payment-create]", err instanceof Error ? err.message : err);
     return json({ error: "Could not start payment — please try again" }, 502);
   }
 });
 
 function validateBody(body: PaymentCreateBody, isGuest: boolean): string | null {
+  if (body.checkoutAttemptId !== undefined && !UUID_RE.test(body.checkoutAttemptId)) return "Invalid checkout attempt";
   if (!body.shippingName?.trim()) return "Shipping name is required";
   if (!body.shippingPhone?.trim()) return "Shipping phone is required";
   if (!body.address || typeof body.address !== "object") return "Delivery address is required";

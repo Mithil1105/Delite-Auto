@@ -12,12 +12,22 @@
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { getOdooConfig, createSaleOrder, type ResolvedLine, type OdooVariantRow } from "../orders/placeOdooOrder.ts";
+import { computeAuthoritativeQuote, type QuoteLine } from "../orders/quote.ts";
 import { resolveCustomer, type AddressInput } from "../orders/customerIdentity.ts";
 import { sendOrderConfirmation, sendOrderProcessingDelay } from "../email/index.ts";
 
 interface CheckoutSnapshot {
-  resolvedLines: ResolvedLine[];
-  variantRows: OdooVariantRow[];
+  /** Current snapshot shape (post odoo-checkout-finalization, Documentations MD/
+   * odoo-checkout-finalization.md) — already priced/taxed by computeAuthoritativeQuote at
+   * payment-create time. Used AS-IS here, never re-quoted (see header comment: money has already
+   * been collected for this exact total). */
+  quoteLines?: QuoteLine[];
+  /** Legacy fields — present only on payment_attempts rows created before the quote pipeline
+   * existed. A stuck legacy attempt reaching finalize (should be rare/never for a NEW payment, only
+   * possible via an old in-flight attempt) is re-quoted fresh as a one-time backward-compat path —
+   * see below. */
+  resolvedLines?: ResolvedLine[];
+  variantRows?: OdooVariantRow[];
   shippingName: string;
   shippingPhone: string;
   shippingAddress: string;
@@ -70,7 +80,6 @@ export async function finalizePaidAttempt(paymentAttemptId: string, razorpayPaym
 
   const odooConfig = getOdooConfig();
   const snapshot = attempt.checkout_snapshot;
-  const byId = new Map(snapshot.variantRows.map((v) => [v.id, v]));
 
   if (!odooConfig) {
     await db
@@ -83,6 +92,7 @@ export async function finalizePaidAttempt(paymentAttemptId: string, razorpayPaym
   let saleOrder: { saleOrderId: number; name: string; amountTotal: number } | null = null;
   let partnerEmail = "";
   let resolvedPartnerId: number | null = null;
+  let quoteLines: QuoteLine[] = [];
   try {
     if (attempt.user_id) {
       const { data: userData } = await db.auth.admin.getUserById(attempt.user_id);
@@ -105,11 +115,32 @@ export async function finalizePaidAttempt(paymentAttemptId: string, razorpayPaym
       address,
     });
     resolvedPartnerId = customer.partnerId;
+
+    if (snapshot.quoteLines && snapshot.quoteLines.length > 0) {
+      // The normal path — the exact accepted, authoritative, already-taxed lines captured at
+      // payment-create time. Never re-quoted here: money has already been collected for this
+      // total, and re-pricing after capture could charge one amount and record another.
+      quoteLines = snapshot.quoteLines;
+    } else if (snapshot.resolvedLines && snapshot.resolvedLines.length > 0) {
+      // One-time backward-compat path for a payment_attempts row created before the quote
+      // pipeline existed. Re-quoted fresh since no quoteLines were ever captured for it — this is
+      // strictly better than the old behavior (raw list_price with no tax), not worse.
+      console.warn("[finalize] legacy checkout_snapshot without quoteLines — re-quoting fresh", attempt.id);
+      const freshQuote = await computeAuthoritativeQuote({
+        config: odooConfig,
+        db,
+        lines: snapshot.resolvedLines,
+        supabaseUserId: attempt.user_id ?? undefined,
+      });
+      quoteLines = freshQuote.lines;
+    } else {
+      throw new Error("checkout snapshot has no line items to finalize");
+    }
+
     saleOrder = await createSaleOrder(
       odooConfig,
       customer.partnerId,
-      snapshot.resolvedLines,
-      byId,
+      quoteLines,
       `Delite web order (paid) — ${partnerEmail || attempt.user_id}`,
       customer.partnerId,
       customer.shippingPartnerId
@@ -182,7 +213,7 @@ export async function finalizePaidAttempt(paymentAttemptId: string, razorpayPaym
         toEmail: partnerEmail,
         odooOrderName: saleOrder.name,
         orderDate: new Date().toLocaleDateString("en-IN"),
-        lines: snapshot.resolvedLines.map((l) => ({ name: byId.get(l.odooVariantId)?.name ?? "Item", qty: l.qty, unitPrice: byId.get(l.odooVariantId)?.list_price ?? 0 })),
+        lines: quoteLines.map((l) => ({ name: l.name, qty: l.quantity, unitPrice: l.unitPrice })),
         total: saleOrder.amountTotal,
         paymentMethod: "online",
         shippingAddress: snapshot.shippingAddress,

@@ -10,7 +10,8 @@
 // re-checked for an existing odoo_sale_order_id/order_id before ever calling Odoo again — clicking
 // Retry repeatedly can never create a second Odoo order.
 
-import { getOdooConfig, validateAndPriceLines, createSaleOrder, fetchSaleOrder } from "../_shared/orders/placeOdooOrder.ts";
+import { getOdooConfig, createSaleOrder, fetchSaleOrder } from "../_shared/orders/placeOdooOrder.ts";
+import { computeAuthoritativeQuote, type QuoteLine } from "../_shared/orders/quote.ts";
 import { resolveCustomer, type AddressInput } from "../_shared/orders/customerIdentity.ts";
 import { mirrorOrderFromAttempt } from "../_shared/orders/mirrorOrder.ts";
 import { requireAdmin } from "../_shared/auth/requireAdmin.ts";
@@ -21,7 +22,12 @@ const CORS_HEADERS: Record<string, string> = {
 };
 
 interface CheckoutSnapshot {
-  resolvedLines: { odooVariantId: number; qty: number }[];
+  /** Current snapshot shape (post odoo-checkout-finalization) — already priced/taxed. */
+  quoteLines?: QuoteLine[];
+  /** Legacy snapshot shape (payment_attempts rows created before the quote pipeline existed) —
+   * only identity/qty, no pricing. Re-quoted fresh on retry rather than trusted as-is, since a
+   * stuck attempt may be arbitrarily old and `list_price`/pricelist/tax could have changed since. */
+  resolvedLines?: { odooVariantId: number; qty: number }[];
   shippingName: string;
   shippingPhone: string;
   shippingAddress: string;
@@ -96,7 +102,22 @@ Deno.serve(async (req: Request) => {
         const { data: userRes } = await db.auth.admin.getUserById(claimed.user_id);
         email = userRes?.user?.email ?? "";
       }
-      const { resolvedLines, byId } = await validateAndPriceLines(odooConfig, shipping.resolvedLines);
+
+      let quoteLines: QuoteLine[];
+      if (shipping.quoteLines && shipping.quoteLines.length > 0) {
+        quoteLines = shipping.quoteLines;
+      } else if (shipping.resolvedLines && shipping.resolvedLines.length > 0) {
+        const freshQuote = await computeAuthoritativeQuote({
+          config: odooConfig,
+          db,
+          lines: shipping.resolvedLines,
+          supabaseUserId: claimed.user_id ?? undefined,
+        });
+        quoteLines = freshQuote.lines;
+      } else {
+        throw new Error("checkout snapshot has no line items to retry");
+      }
+
       const address: AddressInput = shipping.address ?? { line1: shipping.shippingAddress, city: "", state: "", pincode: "" };
       const customer = await resolveCustomer({
         db,
@@ -110,8 +131,7 @@ Deno.serve(async (req: Request) => {
       saleOrder = await createSaleOrder(
         odooConfig,
         customer.partnerId,
-        resolvedLines,
-        byId,
+        quoteLines,
         `Delite web order (admin retry) — ${email || claimed.user_id}`,
         customer.partnerId,
         customer.shippingPartnerId

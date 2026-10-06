@@ -8,6 +8,7 @@
 // principle already applied to catalog/stock elsewhere in this project.
 
 import { getOdooConfig, odooCreate, odooSearchRead, type OdooConfig } from "../odoo/client.ts";
+import type { QuoteLine } from "./quote.ts";
 
 export interface OrderLineInput {
   odooVariantId?: number;
@@ -93,9 +94,10 @@ export async function validateAndPriceLines(
   return { resolvedLines, byId };
 }
 
-/** Creates the real sale.order and reads back its authoritative name/total. Callers must have
- * already re-validated prices via validateAndPriceLines — this function trusts `byId`'s
- * `list_price` as-is (no further live re-check), so it must be called promptly after validation.
+/** Creates the real sale.order and reads back its authoritative name/total. `quoteLines` must come
+ * from a freshly-computed `computeAuthoritativeQuote()` call (see `_shared/orders/quote.ts`) —
+ * price_unit/discount/tax_id are taken directly from it, never from `list_price` or any
+ * client-sent value (Documentations MD/odoo-checkout-finalization.md Phase 4/5).
  *
  * `partnerInvoiceId`/`partnerShippingId` (spec #20) default to `partnerId` when omitted — every
  * caller now passes them explicitly via `_shared/orders/customerIdentity.ts`'s `resolveCustomer()`
@@ -103,16 +105,21 @@ export async function validateAndPriceLines(
 export async function createSaleOrder(
   config: OdooConfig,
   partnerId: number,
-  resolvedLines: ResolvedLine[],
-  byId: Map<number, OdooVariantRow>,
+  quoteLines: QuoteLine[],
   clientOrderRef: string,
   partnerInvoiceId?: number,
   partnerShippingId?: number
 ): Promise<{ saleOrderId: number; name: string; amountTotal: number }> {
-  const orderLine = resolvedLines.map((line) => [
+  const orderLine = quoteLines.map((line) => [
     0,
     0,
-    { product_id: line.odooVariantId, product_uom_qty: line.qty, price_unit: byId.get(line.odooVariantId)!.list_price },
+    {
+      product_id: line.odooVariantId,
+      product_uom_qty: line.quantity,
+      price_unit: line.unitPrice,
+      discount: line.discountPercent,
+      tax_id: [[6, 0, line.taxIds]],
+    },
   ]);
   const saleOrderId = await odooCreate(config, "sale.order", {
     partner_id: partnerId,

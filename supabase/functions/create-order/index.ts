@@ -25,18 +25,12 @@
 // sale.order; it always resolves to the one real order.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import {
-  getOdooConfig,
-  validateAndPriceLines,
-  createSaleOrder,
-  fetchSaleOrder,
-  OrderValidationError,
-  sleep,
-  type OrderLineInput,
-} from "../_shared/orders/placeOdooOrder.ts";
+import { getOdooConfig, createSaleOrder, fetchSaleOrder, OrderValidationError, sleep, type OrderLineInput } from "../_shared/orders/placeOdooOrder.ts";
+import { computeAuthoritativeQuote, assertQuoteUnchanged, type Quote } from "../_shared/orders/quote.ts";
 import { resolveCustomer, formatShippingAddress, type AddressInput } from "../_shared/orders/customerIdentity.ts";
 import { mirrorOrderFromAttempt } from "../_shared/orders/mirrorOrder.ts";
 import { sendOrderConfirmation } from "../_shared/email/index.ts";
+import { CheckoutError, checkoutErrorResponse } from "../_shared/errors/checkoutErrors.ts";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -52,6 +46,12 @@ interface CreateOrderBody {
   shippingPhone: string;
   address: AddressInput;
   lines: OrderLineInput[];
+  deliveryMethodId?: number | null;
+  /** The fingerprint from a prior checkout-quote call. If provided and a freshly-recomputed quote
+   * disagrees, the order is refused with CHECKOUT_CHANGED instead of silently using stale pricing
+   * (Documentations MD/odoo-checkout-finalization.md Phase 5B). Optional only for safety/backward
+   * compatibility — the frontend always sends it. */
+  acceptedFingerprint?: string;
   /** Guest checkout only — ignored when a valid Authorization header identifies a real user. */
   guestEmail?: string;
   policyVersion?: string;
@@ -111,8 +111,18 @@ Deno.serve(async (req: Request) => {
   const shipping = { shippingName: body.shippingName, shippingPhone: body.shippingPhone, shippingAddress };
 
   try {
-    const { resolvedLines, byId } = await validateAndPriceLines(odooConfig, body.lines);
-    const amount = resolvedLines.reduce((sum, l) => sum + (byId.get(l.odooVariantId)?.list_price ?? 0) * l.qty, 0);
+    // Phase 5B: the authoritative quote is computed fresh here, BEFORE any Odoo write — if the
+    // customer accepted an earlier checkout-quote and anything has changed since (price, tax,
+    // availability, delivery), this refuses with CHECKOUT_CHANGED instead of silently placing the
+    // order at a stale amount. See Documentations MD/odoo-checkout-finalization.md.
+    const quote: Quote = await computeAuthoritativeQuote({
+      config: odooConfig,
+      db,
+      lines: body.lines,
+      supabaseUserId: userId ?? undefined,
+      deliveryMethodId: body.deliveryMethodId ?? null,
+    });
+    if (body.acceptedFingerprint) assertQuoteUnchanged(quote, body.acceptedFingerprint);
 
     // Atomic claim — the UNIQUE constraint on checkout_attempt_id is the only thing standing
     // between a double-submit and two real Odoo orders. Whoever's insert succeeds is the winner.
@@ -121,12 +131,12 @@ Deno.serve(async (req: Request) => {
       .insert({
         user_id: userId,
         checkout_attempt_id: body.checkoutAttemptId,
-        amount,
+        amount: quote.grandTotal,
         currency: "INR",
         status: "pending",
         payment_method: "cod",
         odoo_sync_status: "pending",
-        checkout_snapshot: { resolvedLines, ...shipping, guestEmail: userId ? undefined : customerEmail },
+        checkout_snapshot: { quoteLines: quote.lines, ...shipping, guestEmail: userId ? undefined : customerEmail },
       })
       .select("id, user_id, order_id, odoo_sale_order_id, status, syncing_since, retry_count")
       .single();
@@ -220,8 +230,7 @@ Deno.serve(async (req: Request) => {
       const saleOrder = await createSaleOrder(
         odooConfig,
         customer.partnerId,
-        resolvedLines,
-        byId,
+        quote.lines,
         `Delite web order (COD) — ${customerEmail || userId}`,
         customer.partnerId,
         customer.shippingPartnerId
@@ -252,7 +261,7 @@ Deno.serve(async (req: Request) => {
             toEmail: customerEmail,
             odooOrderName: saleOrder.name,
             orderDate: new Date().toLocaleDateString("en-IN"),
-            lines: resolvedLines.map((l) => ({ name: byId.get(l.odooVariantId)?.name ?? "Item", qty: l.qty, unitPrice: byId.get(l.odooVariantId)?.list_price ?? 0 })),
+            lines: quote.lines.map((l) => ({ name: l.name, qty: l.quantity, unitPrice: l.unitPrice })),
             total: saleOrder.amountTotal,
             paymentMethod: "cod",
             shippingAddress,
@@ -282,11 +291,11 @@ Deno.serve(async (req: Request) => {
               odoo_sale_order_id: saleOrder.saleOrderId,
               total: saleOrder.amountTotal,
               is_test: a.env === "test",
-              items: resolvedLines.map((line) => ({
-                odoo_template_id: byId.get(line.odooVariantId)?.product_tmpl_id?.[0] ?? null,
+              items: quote.lines.map((line) => ({
+                odoo_template_id: line.odooTemplateId,
                 odoo_variant_id: line.odooVariantId,
-                quantity: line.qty,
-                observed_unit_price: byId.get(line.odooVariantId)?.list_price ?? 0,
+                quantity: line.quantity,
+                observed_unit_price: line.unitPrice,
               })),
             },
           });
@@ -315,10 +324,12 @@ Deno.serve(async (req: Request) => {
         })
         .eq("id", attempt.id);
       if (odooErr instanceof OrderValidationError) return json({ error: odooErr.message }, odooErr.status);
+      if (odooErr instanceof CheckoutError) return checkoutErrorResponse(odooErr);
       return json({ error: "Could not place your order — please try again" }, 502);
     }
   } catch (err) {
     if (err instanceof OrderValidationError) return json({ error: err.message }, err.status);
+    if (err instanceof CheckoutError) return checkoutErrorResponse(err);
     console.error("[create-order]", err instanceof Error ? err.message : err);
     return json({ error: "Could not place your order — please try again" }, 502);
   }

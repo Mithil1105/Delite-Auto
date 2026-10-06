@@ -28,6 +28,13 @@ interface CheckoutSnapshotLine {
   qty: number;
 }
 
+interface CheckoutSnapshotQuoteLine {
+  odooVariantId: number;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
@@ -70,17 +77,28 @@ Deno.serve(async (req: Request) => {
       let lines: { name: string; qty: number; unitPrice: number }[] = [];
       if (order.payment_attempt_id) {
         const { data: attempt } = await db.from("payment_attempts").select("checkout_snapshot").eq("id", order.payment_attempt_id).maybeSingle();
-        const resolvedLines = (attempt?.checkout_snapshot?.resolvedLines ?? []) as CheckoutSnapshotLine[];
-        const odooConfig = getOdooConfig();
-        if (odooConfig && resolvedLines.length > 0) {
-          const variantRows = await odooRead<{ id: number; name: string; list_price: number }>(
-            odooConfig,
-            "product.product",
-            resolvedLines.map((l) => l.odooVariantId),
-            ["id", "name", "list_price"]
-          );
-          const byId = new Map(variantRows.map((v) => [v.id, v]));
-          lines = resolvedLines.map((l) => ({ name: byId.get(l.odooVariantId)?.name ?? "Item", qty: l.qty, unitPrice: byId.get(l.odooVariantId)?.list_price ?? 0 }));
+        const snapshot = attempt?.checkout_snapshot ?? {};
+        const quoteLines = (snapshot.quoteLines ?? []) as CheckoutSnapshotQuoteLine[];
+        if (quoteLines.length > 0) {
+          // Current snapshot shape (post odoo-checkout-finalization) — already has the
+          // authoritative name/quantity/unitPrice, no extra Odoo read needed.
+          lines = quoteLines.map((l) => ({ name: l.name, qty: l.quantity, unitPrice: l.unitPrice }));
+        } else {
+          // Legacy snapshot shape (payment_attempts rows created before the quote pipeline) —
+          // re-read live product names; the price shown here is best-effort display only for an
+          // already-placed historical order, never used to re-price or re-create anything.
+          const resolvedLines = (snapshot.resolvedLines ?? []) as CheckoutSnapshotLine[];
+          const odooConfig = getOdooConfig();
+          if (odooConfig && resolvedLines.length > 0) {
+            const variantRows = await odooRead<{ id: number; name: string; list_price: number }>(
+              odooConfig,
+              "product.product",
+              resolvedLines.map((l) => l.odooVariantId),
+              ["id", "name", "list_price"]
+            );
+            const byId = new Map(variantRows.map((v) => [v.id, v]));
+            lines = resolvedLines.map((l) => ({ name: byId.get(l.odooVariantId)?.name ?? "Item", qty: l.qty, unitPrice: byId.get(l.odooVariantId)?.list_price ?? 0 }));
+          }
         }
       }
 
