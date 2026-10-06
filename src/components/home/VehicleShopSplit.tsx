@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { useLang } from "../../i18n/LanguageContext";
+import { track } from "../../lib/analytics/client";
 
 /**
  * Full-bleed "Shop by Cars / Shop by Bikes" diagonal split banner.
@@ -19,21 +20,25 @@ import { useLang } from "../../i18n/LanguageContext";
  * section on the page at every viewport width — this section is full-bleed (no `.container-wide`
  * wrapper) so it needs the equivalent left inset applied directly.
  */
-export function VehicleShopSplit() {
+export function VehicleShopSplit({ content }: { content?: Record<string, unknown> } = {}) {
   const { t } = useLang();
+  const copy = (key: string, fallback: string) => typeof content?.[key] === "string" && String(content[key]).trim() ? String(content[key]).trim() : fallback;
+  const href = (key: string, fallback: string) => { const value = copy(key, fallback); return value.startsWith("/") && !value.startsWith("//") ? value : fallback; };
+  const image = (key: string, fallback: string) => { const value = copy(key, fallback); return value.startsWith("/") || value.startsWith("https://") ? value : fallback; };
 
   return (
     <section className="relative bg-white mb-[58px] sm:mb-[70px] lg:mb-[78px]">
       <div className="grid lg:grid-cols-[1.15fr_1fr] gap-y-[34px] sm:gap-y-[40px] lg:gap-y-0">
         <div className="relative min-h-[300px] sm:min-h-[330px] lg:min-h-[360px]">
           <Link
-            to="/shop?vehicle=car"
+            to={href("carLink", "/shop?vehicle=car")}
+            onClick={() => track("navigation_click", { surface: "home_vehicle_split", metadata: { target: "/shop" } })}
             className="relative z-10 block h-full text-white bg-brand-500 inset-wide-l pr-6 sm:pr-10 lg:pr-14 pt-6 sm:pt-8 overflow-hidden"
             style={{ clipPath: "polygon(0 0, 100% 0, 82% 100%, 0 100%)" }}
           >
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-2xl sm:text-3xl font-display">{t("home.shopByCars")}</h3>
+                <h3 className="text-2xl sm:text-3xl font-display">{copy("carTitle", t("home.shopByCars"))}</h3>
                 <ArrowRight className="w-6 h-6 shrink-0" />
               </div>
               <div className="h-px bg-white/25 mt-4 max-w-[240px]" />
@@ -45,7 +50,7 @@ export function VehicleShopSplit() {
           >
             <div className="absolute inset-x-6 bottom-[33%] h-4 rounded-[50%] bg-black/35 blur-md" aria-hidden />
             <img
-              src="/images/hero/car.png"
+              src={image("carImage", "/images/hero/car.png")}
               alt=""
               className="relative w-full h-auto max-h-[160px] sm:max-h-[190px] lg:max-h-[215px] object-contain object-bottom"
             />
@@ -53,10 +58,10 @@ export function VehicleShopSplit() {
         </div>
 
         <div className="relative min-h-[300px] sm:min-h-[330px] lg:min-h-[360px]">
-          <Link to="/shop?vehicle=bike" className="relative block h-full bg-white px-6 sm:px-10 lg:px-14 pt-6 sm:pt-8 overflow-hidden">
+          <Link to={href("bikeLink", "/shop?vehicle=bike")} onClick={() => track("navigation_click", { surface: "home_vehicle_split", metadata: { target: "/shop" } })} className="relative block h-full bg-white px-6 sm:px-10 lg:px-14 pt-6 sm:pt-8 overflow-hidden">
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-2xl sm:text-3xl font-display text-ink">{t("home.shopByBikes")}</h3>
+                <h3 className="text-2xl sm:text-3xl font-display text-ink">{copy("bikeTitle", t("home.shopByBikes"))}</h3>
                 <span className="grid place-items-center w-7 h-7 rounded-full bg-brand-500 text-white shrink-0">
                   <ArrowRight className="w-4 h-4" />
                 </span>
@@ -70,7 +75,7 @@ export function VehicleShopSplit() {
           >
             <div className="absolute inset-x-3 bottom-[33%] h-3 rounded-[50%] bg-black/25 blur-md" aria-hidden />
             <img
-              src="/images/hero/bike.png"
+              src={image("bikeImage", "/images/hero/bike.png")}
               alt=""
               className="relative w-full h-auto max-h-[175px] sm:max-h-[210px] lg:max-h-[235px] object-contain object-bottom"
             />

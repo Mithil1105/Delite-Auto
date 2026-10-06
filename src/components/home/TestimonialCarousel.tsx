@@ -17,10 +17,12 @@ const avatarPalette = ["bg-brand-600", "bg-accent", "bg-badge-new", "bg-gold-600
  * Home-page testimonial carousel matching the Figma redesign. Avatars are initials-in-circle,
  * not photos — see the "missing assets" note in Documentations MD/figma-homepage-redesign.md.
  */
-export function TestimonialCarousel() {
+export function TestimonialCarousel({ items }: { items?: unknown } = {}) {
+  const published = Array.isArray(items) ? items.filter((item) => item && typeof item.name === "string" && typeof item.quote === "string").slice(0, 12) as typeof testimonials : [];
+  const shown = published.length ? published : testimonials;
   return (
     <Rail>
-      {testimonials.map((t, i) => (
+      {shown.map((t, i) => (
         <RailItem key={t.name} className="w-[260px] sm:w-[280px]">
           <figure className="card-surface rounded-2xl p-5 flex flex-col h-full">
             <div className="flex text-gold mb-3">

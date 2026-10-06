@@ -440,7 +440,7 @@ export default function ProductDetail() {
         {related.length > 0 && (
           <section className="mb-16">
             <h2 className="text-xl sm:text-2xl heading mb-5">{t("product.youMightAlsoLike")}</h2>
-            <ProductCarousel products={related} />
+            <ProductCarousel products={related} tracking={{ surface: "product_detail", strategy: "pdp" }} />
           </section>
         )}
 

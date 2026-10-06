@@ -26,6 +26,10 @@ export interface PagedProductQuery {
   vehicle?: "car" | "bike";
   brandCategoryId?: number;
   fitmentValueId?: number;
+  /** Resolves an explicit set of real Odoo template ids in one request — used by CMS
+   * merchandising rails (Featured/Trending/New Arrivals), which store only ids, never copied
+   * product data. See Documentations MD/delite-admin.md, "Odoo-ID-only persistence". */
+  ids?: number[];
   sort?: ProductSort;
   /** Mock-catalog-only convenience filters (slug-based) — `supabaseCatalogService` ignores these; `mockCatalogService` is the only implementation that understands them. */
   categorySlug?: string;

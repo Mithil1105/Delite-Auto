@@ -37,13 +37,20 @@ test.describe("Tablet/desktop: drawer", () => {
     await page.goto("/shop");
     await page.waitForLoadState("networkidle");
 
-    await addFirstProduct(page);
+    // Scoped to the first visible product card's own Add-to-Cart button — not by its text, which
+    // now transiently reads "Added to Cart" right after a click (spec: Add-to-Cart success
+    // state), so a text-based `:has-text('Add to Cart')` match could otherwise skip to the next
+    // card's button if clicked again too soon. Excludes the card's wishlist (heart) button.
+    const clickFirstCard = () =>
+      page.locator(".group.bg-white.border-line:visible").first().locator('button:not([aria-label*="wishlist" i])').click();
+
+    await clickFirstCard();
     const qtyOf = (n = 0) =>
       page.getByRole("dialog").locator('button[aria-label="Increase quantity"]').nth(n).locator("xpath=preceding-sibling::span[1]");
     await expect(qtyOf()).toHaveText("1");
 
     await page.locator('button[aria-label="Close cart"]').click();
-    await addFirstProduct(page);
+    await clickFirstCard();
     await expect(qtyOf()).toHaveText("2");
     await expect(page.getByRole("dialog").locator('button[aria-label="Increase quantity"]')).toHaveCount(1);
   });

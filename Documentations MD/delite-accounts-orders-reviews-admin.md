@@ -10,7 +10,7 @@
 | Owner          | Claude |
 | Status         | Done — full signed-in flow verified live end-to-end (login, checkout → real Odoo order, review submission, admin moderation) |
 | Created        | 2026-09-17 |
-| Last updated   | 2026-09-17 |
+| Last updated   | 2026-09-30 (checkout/account superseded by Odoo-backed rebuild — see follow-up) |
 
 ## Summary
 
@@ -253,11 +253,75 @@ record disconnected from the business's actual order management).
 - **Bundle size**: adding `@supabase/supabase-js` pushed the main JS chunk to ~696KB (from
   ~438KB), past Vite's default 500KB warning threshold. Not a build error, not addressed in this
   pass (would need route-level code-splitting) — flagged rather than ignored.
-- **Admin promotion is manual** (documented SQL, above) — no invite/promotion UI exists.
+- **Admin promotion is manual** (documented SQL, above) — no invite/promotion UI exists. **Resolved
+  2026-09-29** — see the follow-up entry below and `Documentations MD/delite-auth-security.md`.
+- **Payment processing** was explicitly out of scope. **Resolved 2026-09-29** — see
+  `Documentations MD/delite-payments.md`.
+
+### Follow-up: Commerce completion — wishlist, order-status honesty, shop-filter honesty (2026-09-29)
+
+Part of the same phase as `delite-payments.md`/`delite-auth-security.md`/
+`delite-transactional-email.md`/`delite-contact-and-admin-media.md`.
+
+1. **Account-backed wishlist (#40-43).** Previously localStorage-only for every visitor, signed in
+   or not (confirmed by direct audit — no `wishlist` table existed anywhere). Guest behavior is
+   **unchanged** (still localStorage, `CartContext`'s existing `wishlist`/`toggleWishlist`/
+   `isWishlisted` interface untouched — every UI consumer, Header/MobileNavDrawer/ProductCard/
+   ProductDetail/Shop's `?wishlist=1`, keeps working with zero changes). New: on login,
+   `CartContext` merges the guest wishlist into a new `public.wishlist_items` table (keyed by real
+   Odoo `odoo_template_id`, never a copied price/image — consistent with every other CMS/
+   merchandising Odoo-ID-only rule in this project) via an upsert with `ignoreDuplicates: true`
+   (dedupe, never drops a server-side item, never clears local state until the merge call actually
+   returns), then the server becomes the source of truth for the rest of that session.
+   `toggleWishlist()` mirrors each add/remove to the table when signed in (optimistic — local state
+   flips immediately, reverted with a toast if the write fails, per #42's explicit "optimistic UI,
+   recover on backend failure"). On logout, state reverts to whatever's in `localStorage` (not the
+   just-signed-out account's data), so one customer's wishlist can't leak into the next guest view
+   on a shared device. Analytics (`wishlist_add`/`wishlist_remove`) is unchanged — already existed,
+   already fires with the real Odoo template id either way.
+2. **Order status honesty (#44-45).** `OrderConfirmation.tsx` and the Admin Orders page now show
+   `payment_method`/`payment_status` (new, real, from `delite-payments.md`) as their own fields,
+   separate from Odoo fulfilment `status` — which is, and remains, always `'placed'` today (nothing
+   in this codebase writes any other value — confirmed by this session's own audit; no polling/
+   webhook reads Odoo's real `sale.order.state` back into Supabase). Rendered honestly as "Order
+   received — current status: placed," never a fabricated Processing/Shipped/Delivered progress
+   bar. `checkout.payOnDeliveryNote`'s copy ("Pay on Delivery — no online payment is processed
+   yet") was stale as of this same phase (online payment now exists) — corrected to "Pay in cash
+   when your order arrives" and scoped to only render when `payment_method === 'cod'`, removed
+   entirely from `Cart.tsx` (payment method is chosen at Checkout, not implied earlier).
+3. **Shop filter honesty (#54).** Price and availability filters were already honestly documented
+   in code as a deliberate client-side refinement over whatever page(s) are currently loaded (no
+   verified Odoo domain for either, per `odoo-real-catalog.md`) — left unchanged. The colour
+   filter, confirmed via this session's audit to have **no reliable real-Odoo-product colour
+   data** (`Product.colors` is populated only for the mock catalog / a handful of manually
+   backfilled featured products), is now explicitly hidden behind `!IS_REAL_CATALOG` rather than
+   relying on incidental emptiness — so it can never inconsistently appear only for whichever
+   search happens to include one of those manually-backfilled products.
+
+### Follow-up: Odoo-backed checkout/account rebuild superseding parts of this doc (2026-09-30)
+
+Part of the phase documented fully in `Documentations MD/odoo-checkout-portal-returns.md`. The
+`create-order` flow and `/account` page described above are **materially superseded**, not just
+extended:
+- The single-string `shippingAddress` this doc's original checkout used is now a structured
+  `address` (line1/line2/city/state/pincode) object, backed by real Odoo delivery child contacts
+  instead of overwriting the customer's own address every order.
+- Checkout no longer requires a Supabase session — guest checkout (no password created) is now
+  supported end-to-end.
+- The old single-page `Account.tsx` described here is **deleted**, replaced by a nested
+  `/account/*` route tree (Overview/Orders/Order Detail/Returns/Addresses/Profile).
+- Orders now merge this app's own tracked orders with any legacy Odoo orders under the same
+  customer, and support a return/exchange **request** flow (not present at all when this doc was
+  written).
+
+Everything else in this doc (Supabase Auth/`profiles`, moderated reviews, the admin Orders/Reviews
+panel, `admin-odoo-link`) is unchanged. See `odoo-checkout-portal-returns.md` for full detail.
 
 ## Revision log
 
 | Date       | Author | Change                                  |
 |------------|--------|------------------------------------------|
+| 2026-09-30 | Claude | Odoo-backed checkout/account rebuild: structured address replacing free-text `shippingAddress`, guest checkout, `Account.tsx` deleted in favor of a nested `/account/*` route tree, merged Delite+legacy Odoo orders, return/exchange request capture. Full detail: `odoo-checkout-portal-returns.md`. |
+| 2026-09-29 | Claude | Commerce completion follow-up: account-backed wishlist (guest localStorage unchanged, merge-on-login into new wishlist_items table), order-status honesty (payment_method/payment_status shown separately from Odoo fulfilment status, stale "no online payment" copy corrected), colour shop-filter explicitly hidden in real-catalog mode (no reliable Odoo colour data). See delite-payments.md/delite-auth-security.md/delite-transactional-email.md/delite-contact-and-admin-media.md for the rest of this phase. |
 | 2026-09-17 | Claude | Initial version — real Supabase Auth accounts (profiles table + trigger), checkout producing real Odoo sale.order via a new create-order Edge Function (write access verified first via odoo-write-check), a moderated product-review system (product_reviews table, ReviewsSection component, real PDP aggregate), and an admin panel (order list with server-built "Open in Odoo" links, review moderation queue). Payment processing explicitly out of scope per user confirmation. Found and fixed one real security-advisor finding (handle_new_user RPC exposure) and one real UI bug (unlabelled form inputs breaking both accessibility and testability). Full signed-in flow verification blocked by this Supabase project's email-confirmation requirement — documented as a known gap rather than worked around. |
 | 2026-09-17 | Claude | Added `admin-bootstrap` Edge Function to create/promote a pre-confirmed admin account via Supabase's Admin Auth API, unblocking full live verification without touching the project-wide email-confirmation setting. Used it to bootstrap the real admin account and then drove the entire signed-in flow through the actual browser UI: login → add to cart → checkout (real Odoo order `S00024` created) → order confirmation → review submission (pending) → admin orders/reviews views → reject review. Found and fixed one real bug surfaced by this test: `prevent_self_admin_promotion`'s trigger was also blocking `admin-bootstrap`'s own service-role writes (`auth.uid()` is NULL for service-role, so `private.is_admin()` read false) — the first bootstrap call reported success but silently left `is_admin: false`, caught only by re-reading the row, not by trusting the function's response. Fixed by exempting `auth.role() = 'service_role'` explicitly. General (non-admin) signup still needs the project's "Confirm email" toggle turned off manually — no config-API tool for that was available in this session. |

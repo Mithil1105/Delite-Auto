@@ -8,7 +8,9 @@ import { ProductCard } from "../components/product/ProductCard";
 import { TrustBadgesRow } from "../components/home/TrustBadgesRow";
 import { useCart } from "../context/CartContext";
 import { useLang } from "../i18n/LanguageContext";
+import { SeoHead } from "../components/SeoHead";
 import clsx from "clsx";
+import { track } from "../lib/analytics/client";
 
 const MAX_PRICE = 70000;
 const PAGE_SIZE = 9;
@@ -152,6 +154,22 @@ export default function Shop() {
   useEffect(() => setPage(1), [q, model, sort, vehicle, category, brand, fitment, tag]);
 
   const { result, status, accumulated, retry } = useCatalogPage(query);
+  // Search analytics: recorded once per distinct query per visit, when results have loaded (so the
+  // result count is real). Clicking a result records the time from search to click.
+  const searchState = useRef({ q: "", at: 0 });
+  useEffect(() => {
+    if (!q.trim() || status !== "ready" || !result || result.page !== 1) return;
+    const normalized = q.trim().replace(/\s+/g, " ").slice(0, 120);
+    if (searchState.current.q === normalized) return;
+    searchState.current = { q: normalized, at: Date.now() };
+    track("search_submitted", { search_query: normalized, result_count: result.total });
+    if (result.total === 0) track("search_zero_results", { search_query: normalized });
+  }, [q, result, status]);
+  const trackSearchClick = (p: Product) => {
+    const current = searchState.current;
+    if (!current.q || typeof p.odooId !== "number") return;
+    track("search_result_click", { search_query: current.q, odoo_template_id: p.odooId, duration_ms: Date.now() - current.at });
+  };
 
   const swatches = useMemo(() => {
     const set = new Set<string>();
@@ -295,7 +313,10 @@ export default function Shop() {
         </div>
       </FilterSection>
 
-      {swatches.length > 0 && (
+      {/* Real Odoo products have no reliable colour data (see Documentations MD/odoo-real-catalog.md) —
+          explicitly hidden in real-catalog mode rather than relying on incidental emptiness, so it
+          can never inconsistently appear for the rare manually-backfilled product (#54). */}
+      {!IS_REAL_CATALOG && swatches.length > 0 && (
         <FilterSection title={t("shop.colorsLabel")}>
           <div className="flex flex-wrap gap-2">
             {swatches.map((c) => (
@@ -323,6 +344,7 @@ export default function Shop() {
   if (status === "error") {
     return (
       <div className="bg-white">
+        <SeoHead routeKey="shop" />
         <div className="container-page py-24 flex flex-col items-center text-center">
           <TriangleAlert className="w-10 h-10 text-steel-300 mb-4" />
           <h1 className="font-display uppercase text-xl mb-2">{t("shop.catalogUnavailableTitle")}</h1>
@@ -336,6 +358,7 @@ export default function Shop() {
   if (status === "loading" && !result) {
     return (
       <div className="bg-white">
+        <SeoHead routeKey="shop" />
         <div className="container-page py-24 flex flex-col items-center text-center text-steel-500 text-[14px]">
           {t("shop.loadingCatalog")}
         </div>
@@ -345,6 +368,7 @@ export default function Shop() {
 
   return (
     <div className="bg-white">
+      <SeoHead routeKey="shop" />
       <div className="container-page py-8">
         <nav className="flex items-center gap-1.5 text-[12.5px] text-steel-500 mb-6">
           <Link to="/" className="hover:text-ink">{t("shop.breadcrumbHome")}</Link>
@@ -410,7 +434,7 @@ export default function Shop() {
                 {/* Desktop: true server-side pagination */}
                 <div className={clsx("hidden lg:grid gap-5", sidebarOpen ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
                   {desktopItems.map((p) => (
-                    <ProductCard key={p.id} product={p} />
+                    <ProductCard key={p.id} product={p} onView={() => trackSearchClick(p)} />
                   ))}
                 </div>
                 {totalPages > 1 && (
@@ -453,7 +477,7 @@ export default function Shop() {
                 {/* Mobile: accumulated pages + Load More */}
                 <div className="grid lg:hidden grid-cols-1 gap-5">
                   {mobileItems.map((p) => (
-                    <ProductCard key={p.id} product={p} />
+                    <ProductCard key={p.id} product={p} onView={() => trackSearchClick(p)} />
                   ))}
                 </div>
                 {page < totalPages && (

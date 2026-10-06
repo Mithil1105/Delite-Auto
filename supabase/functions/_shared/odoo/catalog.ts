@@ -99,6 +99,13 @@ export interface CatalogProductQuery {
   vehicle?: "car" | "bike";
   brandCategoryId?: number;
   fitmentValueId?: number;
+  /** Resolves an explicit set of real Odoo template ids in ONE request — added for CMS
+   * merchandising rails (Featured/Trending/New Arrivals), which store only ids (never copied
+   * product data) and need them resolved live, in bulk, not one detail fetch per product (spec:
+   * avoid N+1). The catalog eligibility domain still applies, so an id that's since become
+   * unpublished/archived in Odoo is naturally excluded — never a stale/broken result, matching
+   * "skip unresolvable products gracefully" (Documentations MD/delite-admin.md). */
+  ids?: number[];
   offset: number;
   limit: number;
 }
@@ -113,6 +120,7 @@ export function buildCatalogDomain(query: CatalogProductQuery): unknown[] {
   if (query.q) {
     domain.push("|", ["name", "ilike", query.q], ["default_code", "ilike", query.q]);
   }
+  if (query.ids !== undefined) domain.push(["id", "in", query.ids]);
   if (query.categoryId !== undefined) domain.push(["public_categ_ids", "in", [query.categoryId]]);
   if (query.vehicle) domain.push(["public_categ_ids", "in", [VEHICLE_TYPE_CATEGORY_IDS[query.vehicle]]]);
   if (query.brandCategoryId !== undefined) domain.push(["public_categ_ids", "in", [query.brandCategoryId]]);

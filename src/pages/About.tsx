@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { ArrowRight, Factory, MapPinned, Truck, Users } from "lucide-react";
 import { site } from "../data/site";
 import { useLang } from "../i18n/LanguageContext";
+import { SeoHead } from "../components/SeoHead";
 
 const capabilityIcons = [Factory, Truck, MapPinned, Users];
 
@@ -12,6 +13,7 @@ export default function About() {
 
   return (
     <>
+      <SeoHead routeKey="about" />
       <section className="relative bg-charcoal-deep text-white py-20 sm:py-28 overflow-hidden">
         <div className="absolute inset-0 bg-diagonal-lines opacity-30" aria-hidden />
         <div className="container-page relative text-center max-w-3xl mx-auto">

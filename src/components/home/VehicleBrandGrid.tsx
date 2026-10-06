@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
-import { vehicleBrandsFor } from "../../data/vehicleBrands";
+import { vehicleBrandLogo, vehicleBrandsFor } from "../../data/vehicleBrands";
 
 /**
- * OEM car/bike wordmark badges for "Shop by Brands" — a stylized text-badge treatment
- * (matching BrandMarquee's approach for accessory brands) since we have no licensed
- * logo assets to drop in. See Documentations MD/figma-homepage-redesign.md.
+ * OEM car/bike tiles for "Shop by Brands": the make's logo when one exists (see
+ * `vehicleBrandLogo` in data/vehicleBrands.ts for sources), otherwise a letter badge. Not Odoo
+ * data. See Documentations MD/figma-homepage-redesign.md.
  *
  * Tiles link to /shop?vehicle=<car|bike> rather than a per-brand filter: vehicleBrands.ts
  * (OEM makes — Audi, Hyundai, BMW…) and brands.ts (the accessory brands Shop.tsx's `brand`
@@ -12,8 +12,8 @@ import { vehicleBrandsFor } from "../../data/vehicleBrands";
  * no OEM-make field at all, so a `brand=<oemSlug>` link would always return zero results. See
  * Documentations MD/frontend-foundation-uiux-refactor.md for the full note.
  */
-export function VehicleBrandGrid({ vehicle }: { vehicle: "car" | "bike" }) {
-  const list = vehicleBrandsFor(vehicle);
+export function VehicleBrandGrid({ vehicle, names }: { vehicle: "car" | "bike"; names?: string[] }) {
+  const list = names?.length ? names.slice(0, 24).map((name, index) => ({ name, slug: `${vehicle}-${index}` })) : vehicleBrandsFor(vehicle);
   return (
     <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-3">
       {list.map((b) => (
@@ -22,9 +22,13 @@ export function VehicleBrandGrid({ vehicle }: { vehicle: "car" | "bike" }) {
           to={`/shop?vehicle=${vehicle}`}
           className="flex flex-col items-center justify-center gap-2 aspect-square rounded-2xl border border-line bg-white hover:border-brand-600 hover:shadow-card transition-all p-2"
         >
-          <span className="grid place-items-center w-9 h-9 rounded-full bg-ink text-white font-display text-[13px] uppercase">
-            {b.name.slice(0, 1)}
-          </span>
+          {vehicleBrandLogo(b.name) ? (
+            <img src={vehicleBrandLogo(b.name)} alt="" loading="lazy" decoding="async" className="h-12 w-full max-w-[80%] object-contain" />
+          ) : (
+            <span className="grid place-items-center w-9 h-9 rounded-full bg-ink text-white font-display text-[13px] uppercase">
+              {b.name.slice(0, 1)}
+            </span>
+          )}
           <span className="text-[10.5px] text-center leading-tight text-steel-700">{b.name}</span>
         </Link>
       ))}

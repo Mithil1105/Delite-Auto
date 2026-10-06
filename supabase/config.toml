@@ -1,0 +1,8 @@
+[functions.analytics-track]
+verify_jwt = false
+
+# Called by Razorpay's servers, not a signed-in Supabase user — authenticated instead via the
+# provider's own HMAC signature over the raw request body (RAZORPAY_WEBHOOK_SECRET), verified
+# inside the function itself. See Documentations MD/delite-payments.md.
+[functions.razorpay-webhook]
+verify_jwt = false

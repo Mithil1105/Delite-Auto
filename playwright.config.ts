@@ -9,7 +9,10 @@ export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
   webServer: {
-    command: "npm run dev",
+    // `--mode interaction` loads `.env.interaction` (VITE_CATALOG_SOURCE=supabase) so admin-panel
+    // and real-catalog specs hit real Odoo/CMS paths — reliable on Windows, unlike passing env
+    // vars through Playwright's webServer.env (Vite reads mode-specific .env files at startup).
+    command: "npm run dev -- --mode interaction",
     url: "http://localhost:5173",
     reuseExistingServer: !process.env.CI,
     timeout: 60_000,

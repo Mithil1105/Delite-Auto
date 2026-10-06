@@ -46,6 +46,7 @@ export const mockCatalogService: CatalogService = {
    */
   async getProductsPage(query: PagedProductQuery): Promise<PagedProductResult> {
     let list = products;
+    if (query.ids) list = list.filter((p) => p.odooId !== undefined && query.ids!.includes(p.odooId));
     if (query.vehicle) list = list.filter((p) => p.vehicle === query.vehicle || p.vehicle === "universal");
     if (query.categorySlug) list = list.filter((p) => p.categorySlug === query.categorySlug);
     if (query.brandSlug) list = list.filter((p) => p.brandSlug === query.brandSlug);

@@ -29,7 +29,6 @@ Deno.serve(async (req: Request) => {
   const params = url.searchParams;
 
   const page = Math.max(1, Number(params.get("page")) || 1);
-  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(params.get("pageSize")) || DEFAULT_PAGE_SIZE));
   const q = params.get("q")?.trim() || undefined;
   const vehicleRaw = params.get("vehicle");
   const vehicle = vehicleRaw === "car" || vehicleRaw === "bike" ? vehicleRaw : undefined;
@@ -47,12 +46,30 @@ Deno.serve(async (req: Request) => {
   const fitmentValueId = parsePositiveInt(params.get("fitment"));
   if (params.get("fitment") && fitmentValueId === undefined) return json({ error: "fitment must be a positive integer attribute-value id" }, 400);
 
+  // Resolves an explicit set of Odoo template ids in one request — used by CMS merchandising
+  // rails (Featured/Trending/New Arrivals), which store only ids. Capped at MAX_PAGE_SIZE like
+  // every other list here; a curated homepage rail is never that large in practice.
+  const idsRaw = params.get("ids");
+  let ids: number[] | undefined;
+  if (idsRaw) {
+    ids = idsRaw
+      .split(",")
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isInteger(n) && n > 0)
+      .slice(0, MAX_PAGE_SIZE);
+    if (ids.length === 0) return json({ items: [], page: 1, pageSize: DEFAULT_PAGE_SIZE, total: 0, totalPages: 1 });
+  }
+
+  // Defaults to fitting every requested id on one page when `ids` is given (a curated rail should
+  // never be silently truncated to the generic default page size).
+  const pageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(params.get("pageSize")) || (ids ? ids.length : DEFAULT_PAGE_SIZE)));
+
   const sortRaw = params.get("sort") ?? "relevance";
   const order = { relevance: "id asc", "price-asc": "list_price asc", "price-desc": "list_price desc", name: "name asc" }[sortRaw];
   if (!order) return json({ error: `Unsupported sort "${sortRaw}"` }, 400);
 
   try {
-    const domain = buildCatalogDomain({ q, categoryId, vehicle, brandCategoryId, fitmentValueId, offset: (page - 1) * pageSize, limit: pageSize });
+    const domain = buildCatalogDomain({ q, categoryId, vehicle, brandCategoryId, fitmentValueId, ids, offset: (page - 1) * pageSize, limit: pageSize });
 
     // Sequential, not Promise.all — this Odoo instance rate-limits (HTTP 429) under concurrent
     // RPC load (see Documentations MD/odoo-supabase-edge-functions.md); two small sequential

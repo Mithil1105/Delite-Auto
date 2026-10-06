@@ -1,17 +1,53 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Search, ShoppingCart, Menu, X, Phone, Heart, User } from "lucide-react";
+import { Search, ShoppingCart, Menu, X, Heart, User } from "lucide-react";
+import { track } from "../lib/analytics/client";
 import clsx from "clsx";
 import { LanguageSwitcher } from "./LanguageSwitcher";
+import { AnnouncementBar } from "./AnnouncementBar";
 import { MobileCartAddedIndicator } from "./cart/MobileCartAddedIndicator";
+import { MobileNavDrawer } from "./MobileNavDrawer";
 import { useCart, CART_DRAWER_BREAKPOINT } from "../context/CartContext";
 import { useAuth } from "../context/AuthContext";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useLang } from "../i18n/LanguageContext";
-import { site } from "../data/site";
+import { useSiteChromeCms } from "../hooks/useSiteChromeCms";
+import type { AnnouncementContentOverride } from "./AnnouncementBar";
 
-export function Header() {
-  const [open, setOpen] = useState(false);
+/** Stable analytics surface code for a header link — derived from the destination so it keeps
+ * working when the links are edited in Delite Admin (Navigation). */
+function navSurface(to: string): string {
+  if (to.startsWith("/shop?vehicle=car")) return "nav_cars";
+  if (to.startsWith("/shop?vehicle=bike")) return "nav_bikes";
+  if (to === "/brands") return "nav_brands";
+  if (to.includes("tag=bestseller")) return "nav_deals";
+  if (to === "/about") return "nav_our_store";
+  if (to === "/contact") return "nav_contact";
+  return "nav_other";
+}
+
+export interface NavItemContent {
+  label: string;
+  url: string;
+  visible: boolean;
+}
+
+export interface HeaderContentOverride {
+  announcement?: AnnouncementContentOverride;
+  navItems?: NavItemContent[];
+}
+
+export function Header({
+  contentOverride,
+  previewMobileMenuOpen,
+}: { contentOverride?: HeaderContentOverride; previewMobileMenuOpen?: boolean } = {}) {
+  const [openState, setOpenState] = useState(false);
+  // Controlled only when the admin Navigation editor supplies previewMobileMenuOpen (its own
+  // "Preview open menu" toggle, needed because PreviewFrame's click-interceptor otherwise
+  // swallows the real hamburger button's click) — uncontrolled everywhere else, unchanged.
+  const open = previewMobileMenuOpen ?? openState;
+  const setOpen = setOpenState;
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const { cartCount, wishlist, openCartDrawer, recentCartActivity } = useCart();
@@ -24,11 +60,21 @@ export function Header() {
   // see Documentations MD/responsive-cart-drawer.md for why 700px, not Tailwind's `md` (768px).
   const isDrawerBreakpoint = useMediaQuery(CART_DRAWER_BREAKPOINT);
 
+  // One query covers both the announcement bar and nav link overrides (site-chrome page) — see
+  // Documentations MD/delite-admin.md, "Storefront CMS wiring". `contentOverride`, when supplied,
+  // short-circuits both live fetches — used only by the admin Navigation editor's preview so it
+  // can reflect unsaved keystrokes, never used storefront-side.
+  const { bySectionKey: chrome } = useSiteChromeCms();
+  const announcementContent =
+    contentOverride?.announcement ?? (chrome.get("announcement-bar")?.content as AnnouncementContentOverride | undefined) ?? {};
+  const publishedNavItems =
+    contentOverride?.navItems ?? (chrome.get("navigation")?.content.items as NavItemContent[] | undefined) ?? [];
+
   // Note: none of these render an actual dropdown/mega-menu (a real Cars/Bikes/Shop-by-Brands
   // mega-menu is a deliberately deferred follow-up — see
   // Documentations MD/frontend-foundation-uiux-refactor.md) so no item shows a false
   // dropdown-affordance chevron.
-  const navItems = [
+  const defaultNavItems = [
     { to: "/shop?vehicle=car", label: t("nav.cars") },
     { to: "/shop?vehicle=bike", label: t("nav.bikes") },
     { to: "/brands", label: t("nav.shopByBrands") },
@@ -36,16 +82,23 @@ export function Header() {
     { to: "/about", label: t("nav.ourStore") },
     { to: "/contact", label: t("nav.contact") },
   ];
+  const navItems =
+    publishedNavItems.length > 0
+      ? publishedNavItems.filter((i) => i.visible).map((i) => ({ to: i.url, label: i.label }))
+      : defaultNavItems;
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
+    // The search itself (query text, result count, clicks) is recorded by the Shop page once
+    // results load; here we only note that the header search was used.
+    track("navigation_click", { surface: "nav_search" });
     navigate(query.trim() ? `/shop?q=${encodeURIComponent(query.trim())}` : "/shop");
     setOpen(false);
   };
 
   return (
     <header className="sticky top-0 z-50">
-      <div className="bg-brand-500 text-white text-[12px] text-center py-1.5 px-4">{t("header.announcement")}</div>
+      <AnnouncementBar {...announcementContent} />
 
       <div className="bg-white border-b border-line">
         <div className="container-page flex items-center gap-4 h-16">
@@ -54,6 +107,7 @@ export function Header() {
               <Link
                 key={item.to}
                 to={item.to}
+                onClick={() => track("navigation_click", { surface: navSurface(item.to), metadata: { target: item.to } })}
                 className={clsx(
                   "inline-flex items-center gap-1 font-sans text-[13.5px] font-medium transition-colors whitespace-nowrap",
                   currentPath === item.to ? "text-brand-700" : "text-ink/80 hover:text-brand-700"
@@ -70,15 +124,8 @@ export function Header() {
             </span>
           </Link>
 
-          <div className="hidden md:flex items-center gap-3 ml-auto">
-            <a
-              href={`tel:${site.phoneAlt.replace(/\s/g, "")}`}
-              className="hidden xl:flex items-center gap-1.5 text-[12.5px] text-steel-700 hover:text-brand-700 shrink-0"
-            >
-              <Phone className="w-3.5 h-3.5" /> {site.phoneAlt}
-            </a>
-
-            <form onSubmit={submitSearch} className="flex items-center w-64 relative">
+          <div className="hidden md:flex items-center ml-auto">
+            <form onSubmit={submitSearch} className="flex items-center w-64 lg:w-80 relative">
               <Search className="w-4 h-4 absolute left-3 text-steel-500" />
               <input
                 value={query}
@@ -121,6 +168,7 @@ export function Header() {
             <Link
               to="/cart"
               onClick={(e) => {
+                track("navigation_click", { surface: "nav_cart" });
                 if (isDrawerBreakpoint) {
                   e.preventDefault();
                   openCartDrawer();
@@ -141,9 +189,11 @@ export function Header() {
               <MobileCartAddedIndicator />
             </Link>
             <button
+              ref={menuTriggerRef}
               type="button"
               onClick={() => setOpen((v) => !v)}
               aria-label="Toggle menu"
+              aria-expanded={open}
               className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
             >
               {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -168,25 +218,22 @@ export function Header() {
         </div>
       )}
 
-      {open && (
-        <div className="lg:hidden bg-white border-b border-line shadow-lift">
-          <div className="container-page py-4 flex flex-col gap-1">
-            {navItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                onClick={() => setOpen(false)}
-                className={clsx(
-                  "py-3 border-b border-line font-sans text-[15px] font-medium",
-                  currentPath === item.to ? "text-brand-700" : "text-ink"
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
-        </div>
-      )}
+      <MobileNavDrawer
+        open={open}
+        onClose={() => setOpen(false)}
+        triggerRef={menuTriggerRef}
+        navItems={navItems}
+        currentPath={currentPath}
+        onNavigate={(to) => {
+          track("navigation_click", { surface: navSurface(to), metadata: { target: to } });
+          setOpen(false);
+        }}
+        showAccountWishlist={authConfigured}
+        accountHref={session ? "/account" : "/login"}
+        accountLabel={t("header.account")}
+        wishlistLabel={t("header.wishlist")}
+        wishlistCount={wishlist.length}
+      />
     </header>
   );
 }

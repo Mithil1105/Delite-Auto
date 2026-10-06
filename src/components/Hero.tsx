@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useLang } from "../i18n/LanguageContext";
+import { track } from "../lib/analytics/client";
 
 /**
  * Figma-redesign hero. Car/bike photography (public/images/hero/car.png, bike.png) are real,
@@ -38,8 +40,31 @@ function AccessoryCluster({
   );
 }
 
-export function Hero() {
+/**
+ * Every prop is optional and defaults to today's i18n copy/link — passing none behaves exactly as
+ * before (the live storefront's `<Hero />` call in Home.tsx is unchanged). Added so the Delite
+ * Admin homepage editor's live preview can reuse this REAL component fed draft CMS content,
+ * instead of a separate fake preview renderer — see Documentations MD/delite-admin.md. The live
+ * storefront itself isn't wired to pass these yet (a deliberately separate, later change); this is
+ * additive only. Hero's imagery (car/bike + accessory cluster) is a fixed multi-photo composition,
+ * not a single swappable banner, so it deliberately isn't made CMS-editable this pass.
+ */
+export interface HeroContentOverride {
+  eyebrow?: string;
+  headingLine1?: string;
+  headingLine2?: string;
+  subheading?: string;
+  ctaLabel?: string;
+  ctaLink?: string;
+}
+
+export function Hero({ eyebrow, headingLine1, headingLine2, subheading, ctaLabel, ctaLink }: HeroContentOverride = {}) {
   const { t } = useLang();
+
+  // Analytics: hero impression once per page view (the admin editor preview is never tracked).
+  useEffect(() => {
+    track("promotion_impression", { surface: "home_hero" });
+  }, []);
 
   return (
     <section className="relative overflow-hidden bg-brand-700 text-white">
@@ -61,14 +86,18 @@ export function Hero() {
         </div>
 
         <div className="text-center">
-          <p className="font-display italic text-white/60 text-lg mb-1">{t("hero.tiredLine")}</p>
+          <p className="font-display italic text-white/60 text-lg mb-1">{eyebrow ?? t("hero.tiredLine")}</p>
           <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.02] mb-3">
-            <span className="block">{t("hero.upgradeLine1")}</span>
-            <span className="block text-gold">{t("hero.upgradeLine2")}</span>
+            <span className="block">{headingLine1 ?? t("hero.upgradeLine1")}</span>
+            <span className="block text-gold">{headingLine2 ?? t("hero.upgradeLine2")}</span>
           </h1>
-          <p className="text-white/70 text-[15px] mb-8">{t("hero.subtitle")}</p>
-          <Link to="/shop" className="btn-pill-gold px-10">
-            {t("hero.cta")}
+          <p className="text-white/70 text-[15px] mb-8">{subheading ?? t("hero.subtitle")}</p>
+          <Link
+            to={ctaLink ?? "/shop"}
+            onClick={() => track("promotion_click", { surface: "home_hero", metadata: { label: ctaLabel ?? t("hero.cta") } })}
+            className="btn-pill-gold px-10"
+          >
+            {ctaLabel ?? t("hero.cta")}
           </Link>
         </div>
 

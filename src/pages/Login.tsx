@@ -48,6 +48,9 @@ export default function Login() {
         <button type="submit" disabled={submitting || !configured} className="btn-primary justify-center disabled:opacity-50 disabled:pointer-events-none">
           {submitting ? t("auth.signingIn") : t("auth.signInCta")}
         </button>
+        <Link to="/forgot-password" className="text-[12.5px] text-steel-500 hover:text-ink text-center">
+          {t("auth.forgotPasswordLink")}
+        </Link>
       </form>
       <p className="text-[13px] text-steel-500 mt-6 text-center">
         {t("auth.noAccount")}{" "}

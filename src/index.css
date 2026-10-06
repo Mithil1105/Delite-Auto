@@ -132,29 +132,59 @@
     @apply pill-tab bg-ink text-white border-ink;
   }
 
-  /* CategoryIconStrip's circle frames. Two things fixed here, not just styled:
-     1. ring-steel-300 (not ring-line, #e3e7e8) — ring-line is nearly the same lightness as the
-        bg-steel-50 (#eef2f4) fill behind it, so the "always-on" ring was essentially invisible at
-        rest; steel-300 (#9db0b9) has real contrast against that background.
-     2. The hover color change is a plain custom rule gated behind
-        `@media (hover: hover) and (pointer: fine)`, NOT a Tailwind `group-hover:` utility — this
-        project's Tailwind build does not scope `group-hover:`/`hover:` behind that media feature
-        (confirmed by inspecting the generated CSS), so on a touch device a tap can leave an
-        element's :hover state visually "stuck" (no mouse to move away and un-hover it). Gating it
-        explicitly means the ring/background color change can only ever happen on devices with a
-        real pointer, at every screen size. */
-  .category-circle-photo {
-    @apply relative grid place-items-center w-20 h-20 rounded-full bg-steel-50 ring-1 ring-steel-300 transition-all;
+  /* Compact segmented control — Figma "Shop by Top Categories" selector (PillTabs
+     variant="segmented"). One outer bordered capsule, buttons immediately adjacent (no gap
+     between them, only the outer border), active = dark fill, inactive = transparent. Both
+     .segment-tab and .segment-tab-active share the same padding/height/border so switching the
+     active tab never changes any button's size (no layout jump). Never wraps to a second row
+     (that would break the single-row capsule shape) — on a narrow viewport where the tabs don't
+     fit, the whole capsule scrolls horizontally instead, same convention as Rail's carousels. */
+  .segment-tabs {
+    @apply inline-flex items-center max-w-full rounded-full border border-line bg-white p-[3px] overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden;
   }
-  .category-circle-icon {
-    @apply relative grid place-items-center w-20 h-20 rounded-full bg-brand-600 text-white transition-colors;
+  .segment-tab {
+    @apply inline-flex items-center gap-1.5 px-3 sm:px-3.5 h-[26px] sm:h-[28px] rounded-full text-[10.5px] sm:text-[11px] font-semibold uppercase tracking-wide text-steel-500 bg-transparent border border-transparent transition-colors whitespace-nowrap shrink-0;
+  }
+  .segment-tab-active {
+    @apply segment-tab bg-ink text-white border-ink;
+  }
+
+  /* Solid brand-fill pill — the ProductCard Add to Cart button's "Added to Cart" success state.
+     Shares .btn-pill's shape with .btn-pill-outline so the button never changes size when its
+     state flips (only the fill/border/text colour transition). */
+  .btn-pill-solid-brand {
+    @apply btn-pill bg-brand-600 border border-brand-600 text-white hover:bg-brand-700 hover:border-brand-700;
+  }
+
+  /* Small circular rail-scroll control — the Figma arrows next to "View All" in a home category
+     section header (distinct from Rail's own edge-overlay arrows, which stay square/circle as
+     used elsewhere). 28-32px, neutral border, disabled state fades rather than disappears so the
+     header layout never jumps. */
+  .rail-control-btn {
+    @apply grid place-items-center w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-line bg-white text-ink transition-colors hover:border-ink disabled:opacity-30 disabled:pointer-events-none disabled:hover:border-line;
+  }
+
+  /* CategoryIconStrip — the Figma "category tile": bare product art (no disc, ring, fill or
+     shadow) above a grey label. The fixed-height media slot keeps every image on one centerline
+     regardless of its own aspect ratio; the reserved label height keeps two-line labels from
+     shifting anything. Hover is a label colour change only, gated behind
+     `(hover: hover) and (pointer: fine)` because this project's Tailwind build does not scope
+     `hover:` variants to real pointers (a tap would otherwise leave a stuck hover on touch). */
+  .category-tile-media {
+    @apply flex h-36 w-full shrink-0 items-center justify-center;
+  }
+  .category-tile-media > img {
+    @apply block h-auto max-h-full w-auto max-w-[88%] object-contain;
+  }
+  .category-tile-media > svg {
+    @apply block h-14 w-14 shrink-0 text-steel-300;
+  }
+  .category-strip-label {
+    @apply flex min-h-[2.5rem] w-full items-start justify-center text-center text-[14.5px] leading-snug text-steel-500 transition-colors;
   }
   @media (hover: hover) and (pointer: fine) {
-    .group:hover .category-circle-photo {
-      --tw-ring-color: #1d3fd1; /* brand-500 */
-    }
-    .group:hover .category-circle-icon {
-      background-color: #0e1740; /* brand-700 */
+    .group:hover .category-strip-label {
+      @apply text-ink;
     }
   }
 
@@ -173,4 +203,32 @@
   .mask-fade-x {
     mask-image: linear-gradient(90deg, transparent, black 6%, black 94%, transparent);
   }
+}
+/* Admin appearance modes. Glass is scoped to Admin; storefront styles remain unchanged. */
+.admin-glass {
+  background: radial-gradient(circle at 85% 0%, #ddd8ff 0, transparent 35%),
+    radial-gradient(circle at 15% 28%, #d9f1ff 0, transparent 38%), #f2f3f8;
+  color: #20253b;
+}
+.admin-glass main { background: transparent; }
+.admin-glass aside[aria-hidden] { background: transparent; }
+.admin-glass .card-surface {
+  background: rgba(255,255,255,.68);
+  border: 1px solid rgba(255,255,255,.84);
+  border-radius: 22px;
+  box-shadow: 0 14px 38px rgba(31,38,88,.08), inset 0 1px 0 rgba(255,255,255,.8);
+  backdrop-filter: blur(20px);
+}
+.admin-glass > aside { background: rgba(26,30,61,.89); backdrop-filter: blur(24px); }
+.admin-glass > div > header { background: rgba(255,255,255,.64); border-color: rgba(255,255,255,.7); backdrop-filter: blur(20px); }
+.admin-glass .btn-dark { border-radius: 12px; }
+.admin-glass .btn-outline { border-radius: 12px; }
+.admin-legacy .card-surface { box-shadow: 0 3px 16px rgba(19,27,51,.04); }
+.admin-sidebar-nav { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.28) transparent; }
+.admin-sidebar-nav::-webkit-scrollbar { width: 6px; }
+.admin-sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.admin-sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,.27); border-radius: 999px; }
+.admin-sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.46); }
+@media (prefers-reduced-motion: reduce) {
+  .admin-glass *, .admin-legacy * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
