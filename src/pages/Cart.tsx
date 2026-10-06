@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Minus, Plus, Trash2, ArrowRight, ShoppingBag } from "lucide-react";
 import { useCart } from "../context/CartContext";
 import { ProductMedia } from "../components/product/ProductMedia";
@@ -8,13 +8,30 @@ import { formatINR } from "../lib/format";
 import { brandBySlug } from "../data/brands";
 import { useLang } from "../i18n/LanguageContext";
 import { track } from "../lib/analytics/client";
+import { buildOdooHandoffUrl, HandoffValidationError } from "../lib/odooCheckoutHandoff";
 
 export default function Cart() {
   const { lines, removeLine, setQuantity } = useCart();
   const { t } = useLang();
-  const navigate = useNavigate();
+  const [preparing, setPreparing] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   const subtotal = lines.reduce((sum, l) => sum + (l.variantPrice ?? l.product.price) * l.qty, 0);
+
+  const onCheckout = async () => {
+    if (preparing) return;
+    setCheckoutError(null);
+    setPreparing(true);
+    try {
+      const url = await buildOdooHandoffUrl(lines);
+      // Real cross-domain full-page navigation, never React Router — the browser needs to
+      // receive Odoo's own session cookie normally. See Documentations MD/odoo-native-checkout.md.
+      window.location.assign(url);
+    } catch (err) {
+      setPreparing(false);
+      setCheckoutError(err instanceof HandoffValidationError ? err.message : "We couldn't start checkout — please try again.");
+    }
+  };
 
   // One cart_viewed per visit to the cart page that has items in it.
   const viewTracked = useRef(false);
@@ -91,8 +108,9 @@ export default function Cart() {
             <span>{t("cart.total")}</span>
             <span className="price">{formatINR(subtotal)}</span>
           </div>
-          <button type="button" onClick={() => navigate("/checkout")} className="btn-primary w-full justify-center">
-            {t("cart.checkout")} <ArrowRight className="w-4 h-4" />
+          {checkoutError && <p className="text-[13px] text-sale mb-2">{checkoutError}</p>}
+          <button type="button" onClick={onCheckout} disabled={preparing} className="btn-primary w-full justify-center disabled:opacity-50 disabled:pointer-events-none">
+            {preparing ? "Preparing secure checkout…" : <>{t("cart.checkout")} <ArrowRight className="w-4 h-4" /></>}
           </button>
         </div>
       </div>

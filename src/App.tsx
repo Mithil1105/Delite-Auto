@@ -13,7 +13,10 @@ import About from "./pages/About";
 import Brands from "./pages/Brands";
 import Contact from "./pages/Contact";
 import Cart from "./pages/Cart";
-import Checkout from "./pages/Checkout";
+import CheckoutRedirect from "./pages/CheckoutRedirect";
+// LEGACY/FALLBACK — no longer routed; see Documentations MD/odoo-native-checkout.md. Kept
+// importable (not deleted) in case the Odoo-native handoff needs to be rolled back.
+// import Checkout from "./pages/Checkout";
 import OrderConfirmation from "./pages/OrderConfirmation";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
@@ -165,7 +168,7 @@ export default function App() {
                   {/* Guest checkout (spec #10-11): no RequireAuth — Checkout.tsx itself branches on
                       whether a session exists. OrderConfirmation reads router state first (works for
                       a guest, who has no session to RLS-fetch the order back with). */}
-                  <Route path="checkout" element={<Checkout />} />
+                  <Route path="checkout" element={<CheckoutRedirect />} />
                   <Route path="order/:id" element={<OrderConfirmation />} />
                   <Route path="login" element={<Login />} />
                   <Route path="signup" element={<Signup />} />
