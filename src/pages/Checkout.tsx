@@ -14,6 +14,53 @@ const labelClass = "block text-[12px] uppercase tracking-wide mb-1.5 text-steel-
 type PaymentMethod = "online" | "cod";
 type Step = "idle" | "processing" | "opening_payment" | "verifying_payment";
 
+// Mirrors supabase/functions/_shared/orders/quote.ts's Quote/QuoteLine shape — the frontend never
+// computes price/tax/shipping/total itself, only displays what the server returns. See
+// Documentations MD/odoo-checkout-finalization.md.
+interface QuoteLine {
+  odooVariantId: number;
+  odooTemplateId: number;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  discountPercent: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+}
+interface Quote {
+  fingerprint: string;
+  expiresAt: string;
+  currency: "INR";
+  lines: QuoteLine[];
+  subtotal: number;
+  discount: number;
+  tax: number;
+  shipping: number;
+  grandTotal: number;
+  deliveryMethodId: number | null;
+  deliveryMethodName: string | null;
+  warnings: string[];
+}
+interface CheckoutErrorBody {
+  code?: string;
+  message: string;
+  retryable?: boolean;
+  quote?: Quote;
+}
+
+/** This project's Edge Functions return errors as either a plain `{ error: string }` (older
+ * endpoints) or the structured `{ error: { code, message, retryable, quote } }` contract
+ * (checkout-quote/create-order/payment-create — see _shared/errors/checkoutErrors.ts). Normalizes
+ * both into one shape so the UI only has one thing to branch on. */
+function readCheckoutError(data: unknown, fallback: string): CheckoutErrorBody {
+  const err = (data as { error?: unknown } | null)?.error;
+  if (!err) return { message: fallback };
+  if (typeof err === "string") return { message: err };
+  const e = err as { code?: string; message?: string; retryable?: boolean; quote?: Quote };
+  return { code: e.code, message: e.message ?? fallback, retryable: e.retryable, quote: e.quote };
+}
+
 interface Address {
   line1: string;
   line2: string;
@@ -28,6 +75,10 @@ interface SavedAddress extends Address {
 }
 
 const emptyAddress: Address = { line1: "", line2: "", city: "", state: "", pincode: "" };
+
+function orderLinesPayloadFor(lines: ReturnType<typeof useCart>["lines"]) {
+  return lines.map((l) => ({ odooVariantId: l.variantId ? Number(l.variantId) : undefined, odooTemplateId: l.product.odooId, qty: l.qty }));
+}
 
 declare global {
   interface Window {
@@ -122,13 +173,48 @@ export default function Checkout() {
     };
   }, []);
 
-  const subtotal = lines.reduce((sum, l) => sum + (l.variantPrice ?? l.product.price) * l.qty, 0);
+  // Display-only — a locally-held estimate shown only until the real quote arrives (and used for
+  // the pre-quote analytics event below, which only needs an approximate value). Never sent to the
+  // server as authoritative; create-order/payment-create only ever use quote.fingerprint +
+  // server-recomputed totals.
+  const displaySubtotal = lines.reduce((sum, l) => sum + (l.variantPrice ?? l.product.price) * l.qty, 0);
+
+  // Server-authoritative checkout quote — see Documentations MD/odoo-checkout-finalization.md
+  // Phase 5. Re-fetched whenever the cart's product/quantity composition changes. The customer
+  // never sees or submits a price the server didn't just compute.
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(true);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const linesKey = JSON.stringify(orderLinesPayloadFor(lines));
+
+  const fetchQuote = async (deliveryMethodId?: number | null) => {
+    if (!supabase) return;
+    setQuoteLoading(true);
+    setQuoteError(null);
+    const { data, error: invokeError } = await supabase.functions.invoke<Quote>("checkout-quote", {
+      body: { lines: orderLinesPayloadFor(lines), deliveryMethodId: deliveryMethodId ?? null },
+    });
+    if (invokeError || (data as unknown as { error?: unknown })?.error) {
+      const { message } = readCheckoutError(data, "Couldn't load pricing — please try again");
+      setQuoteError(message);
+      setQuote(null);
+    } else if (data) {
+      setQuote(data);
+    }
+    setQuoteLoading(false);
+  };
+
+  useEffect(() => {
+    if (lines.length === 0) return;
+    fetchQuote();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linesKey]);
 
   const startedTracked = useRef(false);
   useEffect(() => {
     if (startedTracked.current || lines.length === 0) return;
     startedTracked.current = true;
-    track("checkout_started", { quantity: lines.reduce((n, l) => n + l.qty, 0), value: subtotal });
+    track("checkout_started", { quantity: lines.reduce((n, l) => n + l.qty, 0), value: displaySubtotal });
     track("checkout_step_viewed", { metadata: { step: "details" } });
   }, [lines.length]);
 
@@ -143,18 +229,18 @@ export default function Checkout() {
 
   const unorderableLines = lines.filter((l) => !l.variantId && !l.product.odooId);
 
-  const orderLinesPayload = () =>
-    lines.map((l) => ({ odooVariantId: l.variantId ? Number(l.variantId) : undefined, odooTemplateId: l.product.odooId, qty: l.qty }));
+  const orderLinesPayload = () => orderLinesPayloadFor(lines);
 
   const completeOrder = (orderId: string | null, odooOrderName?: string | null) => {
-    track("checkout_completed", { value: subtotal });
+    const total = quote?.grandTotal ?? displaySubtotal;
+    track("checkout_completed", { value: total });
     rotateAnalyticsCart();
     clearCart();
     // Guest orders can't be re-fetched via RLS (no session at all) — the confirmation page reads
     // this router state directly instead of re-querying `orders`, which also works identically for
     // a signed-in customer and avoids a redundant fetch either way.
     navigate(`/order/${orderId ?? "placed"}`, {
-      state: { odooOrderName, orderId, subtotal, paymentMethod, shippingAddress: formatAddress(address) },
+      state: { odooOrderName, orderId, subtotal: total, paymentMethod, shippingAddress: formatAddress(address) },
     });
   };
 
@@ -170,14 +256,28 @@ export default function Checkout() {
     if (found) setAddress({ line1: found.line1, line2: found.line2, city: "", state: "", pincode: "" });
   };
 
+  /** Returns true when the error was CHECKOUT_CHANGED and has been handled (quote refreshed, user
+   * must review and resubmit) — callers should stop and not treat it as a generic failure. */
+  const handleCheckoutChanged = (data: unknown, reasonMetadata: string): boolean => {
+    const { code, quote: newQuote } = readCheckoutError(data, "");
+    if (code !== "CHECKOUT_CHANGED") return false;
+    track("checkout_failed", { metadata: { reason: reasonMetadata } });
+    if (newQuote) setQuote(newQuote);
+    setError("Your checkout changed. Please review the updated total before continuing.");
+    setStep("idle");
+    return true;
+  };
+
   const placeCodOrder = async (finalAddress: Address, email: string) => {
-    if (!supabase) return;
+    if (!supabase || !quote) return;
     const { data, error: invokeError } = await supabase.functions.invoke("create-order", {
       body: {
         checkoutAttemptId,
         shippingName,
         shippingPhone,
         address: finalAddress,
+        deliveryMethodId: quote.deliveryMethodId,
+        acceptedFingerprint: quote.fingerprint,
         guestEmail: isGuest ? email : undefined,
         policyVersion: POLICY_VERSION,
         policyAccepted,
@@ -185,9 +285,10 @@ export default function Checkout() {
         analytics: analyticsIdentityForOrder(),
       },
     });
+    if (handleCheckoutChanged(data, "checkout_changed_cod")) return;
     if (invokeError || data?.error) {
       track("checkout_failed", { metadata: { reason: "order_error_cod" } });
-      setError(data?.error ?? invokeError?.message ?? t("checkout.orderFailed"));
+      setError(readCheckoutError(data, invokeError?.message ?? t("checkout.orderFailed")).message);
       setStep("idle");
       return;
     }
@@ -195,22 +296,26 @@ export default function Checkout() {
   };
 
   const placeOnlineOrder = async (finalAddress: Address, email: string) => {
-    if (!supabase) return;
+    if (!supabase || !quote) return;
     track("payment_method_selected", { metadata: { method: "online" } });
     const { data: createData, error: createError } = await supabase.functions.invoke("payment-create", {
       body: {
+        checkoutAttemptId,
         shippingName,
         shippingPhone,
         address: finalAddress,
+        deliveryMethodId: quote.deliveryMethodId,
+        acceptedFingerprint: quote.fingerprint,
         guestEmail: isGuest ? email : undefined,
         policyVersion: POLICY_VERSION,
         policyAccepted,
         lines: orderLinesPayload(),
       },
     });
+    if (handleCheckoutChanged(createData, "checkout_changed_online")) return;
     if (createError || createData?.error) {
       track("checkout_failed", { metadata: { reason: "payment_create_error" } });
-      setError(createData?.error ?? createError?.message ?? t("checkout.orderFailed"));
+      setError(readCheckoutError(createData, createError?.message ?? t("checkout.orderFailed")).message);
       setStep("idle");
       return;
     }
@@ -223,7 +328,7 @@ export default function Checkout() {
       return;
     }
 
-    track("payment_started", { value: subtotal, metadata: { method: "online" } });
+    track("payment_started", { value: quote.grandTotal, metadata: { method: "online" } });
 
     const rzp = new window.Razorpay({
       key: createData.keyId,
@@ -253,7 +358,7 @@ export default function Checkout() {
           setStep("idle");
           return;
         }
-        track("payment_success", { value: subtotal, metadata: { method: "online" } });
+        track("payment_success", { value: quote.grandTotal, metadata: { method: "online" } });
         completeOrder(verifyData.orderId, verifyData.odooOrderName);
       },
     });
@@ -279,6 +384,10 @@ export default function Checkout() {
       setError("Please accept the Terms and Returns/Refund policy to continue.");
       return;
     }
+    if (!quote) {
+      setError(quoteError ?? "Please wait for pricing to finish loading before placing your order.");
+      return;
+    }
     if (placing) return; // guards against a double click/duplicate submission
     setError(null);
     setStep("processing");
@@ -290,7 +399,7 @@ export default function Checkout() {
   };
 
   const buttonLabel =
-    step === "processing" ? t("checkout.processing") : step === "opening_payment" ? t("checkout.openingPayment") : step === "verifying_payment" ? t("checkout.verifyingPayment") : t("checkout.placeOrder");
+    step === "processing" ? t("checkout.processing") : step === "opening_payment" ? t("checkout.openingPayment") : step === "verifying_payment" ? t("checkout.verifyingPayment") : quoteLoading ? "Loading pricing…" : t("checkout.placeOrder");
 
   return (
     <div className="container-page py-12">
@@ -396,7 +505,7 @@ export default function Checkout() {
           </section>
 
           {error && <p className="text-[13px] text-sale">{error}</p>}
-          <button type="submit" disabled={placing} className="btn-primary justify-center disabled:opacity-50 disabled:pointer-events-none">
+          <button type="submit" disabled={placing || quoteLoading || !quote} className="btn-primary justify-center disabled:opacity-50 disabled:pointer-events-none">
             {buttonLabel}
           </button>
           {paymentMethod === "cod" && <p className="text-[12px] text-steel-500 text-center">{t("checkout.payOnDeliveryNote")}</p>}
@@ -404,19 +513,52 @@ export default function Checkout() {
 
         <div className="card-surface p-6 h-fit">
           <h2 className="font-display uppercase text-lg mb-5">{t("cart.orderSummary")}</h2>
-          {lines.map(({ product, qty, variantId, variantLabel, variantPrice }) => (
-            <div key={variantId ? `${product.id}-${variantId}` : product.id} className="flex justify-between text-[13.5px] py-2">
-              <span className="text-steel-500 truncate pr-3">
-                {product.name}
-                {variantLabel ? ` — ${variantLabel}` : ""} × {qty}
-              </span>
-              <span className="price font-medium shrink-0">{formatINR((variantPrice ?? product.price) * qty)}</span>
+
+          {quoteLoading && !quote && <p className="text-[13.5px] text-steel-500 py-4">Loading pricing…</p>}
+
+          {quoteError && !quote && (
+            <div className="text-[13px] text-sale py-2">
+              <p>{quoteError}</p>
+              <button type="button" onClick={() => fetchQuote()} className="underline mt-1">Retry</button>
             </div>
-          ))}
-          <div className="flex justify-between text-[15px] py-4 font-semibold border-t border-line mt-2">
-            <span>{t("cart.total")}</span>
-            <span className="price">{formatINR(subtotal)}</span>
-          </div>
+          )}
+
+          {quote && (
+            <>
+              {quote.lines.map((l) => (
+                <div key={l.odooVariantId} className="flex justify-between text-[13.5px] py-2">
+                  <span className="text-steel-500 truncate pr-3">
+                    {l.name} × {l.quantity}
+                  </span>
+                  <span className="price font-medium shrink-0">{formatINR(l.total)}</span>
+                </div>
+              ))}
+              <div className="border-t border-line mt-2 pt-3 flex flex-col gap-1.5 text-[13.5px]">
+                <div className="flex justify-between text-steel-600">
+                  <span>Subtotal</span>
+                  <span>{formatINR(quote.subtotal)}</span>
+                </div>
+                {quote.discount > 0 && (
+                  <div className="flex justify-between text-steel-600">
+                    <span>Discount</span>
+                    <span>-{formatINR(quote.discount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-steel-600">
+                  <span>Tax{quote.tax === 0 ? " (₹0 as currently configured)" : ""}</span>
+                  <span>{formatINR(quote.tax)}</span>
+                </div>
+                <div className="flex justify-between text-steel-600">
+                  <span>Delivery{quote.deliveryMethodName ? ` (${quote.deliveryMethodName})` : ""}</span>
+                  <span>{quote.shipping === 0 ? "Free" : formatINR(quote.shipping)}</span>
+                </div>
+              </div>
+              <div className="flex justify-between text-[15px] py-4 font-semibold border-t border-line mt-2">
+                <span>{t("cart.total")}</span>
+                <span className="price">{formatINR(quote.grandTotal)}</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -3,10 +3,10 @@ import { formatINR } from "../../lib/format";
 import { useLang } from "../../i18n/LanguageContext";
 
 /**
- * Sticky bottom area of the drawer. Checkout is intentionally rendered disabled — the real
- * checkout flow doesn't exist yet (see Documentations MD/responsive-cart-drawer.md) and an
- * active-looking button that does nothing is worse than an honest disabled one. View Cart is the
- * one working CTA.
+ * Sticky bottom area of the drawer. The real checkout flow (Documentations MD/
+ * odoo-checkout-finalization.md) exists now — Checkout navigates to /checkout the same way the
+ * full Cart page's own button already does. Only rendered by CartDrawer.tsx when the cart has at
+ * least one line, so there's no separate empty-cart gating needed here.
  */
 export function CartDrawerSummary({ subtotal, onClose }: { subtotal: number; onClose: () => void }) {
   const { t } = useLang();
@@ -30,10 +30,16 @@ export function CartDrawerSummary({ subtotal, onClose }: { subtotal: number; onC
       >
         {t("cart.viewCart")}
       </button>
-      <button type="button" disabled aria-disabled="true" className="btn-pill-outline w-full justify-center !py-3 mt-2 opacity-50 cursor-not-allowed">
+      <button
+        type="button"
+        onClick={() => {
+          onClose();
+          navigate("/checkout");
+        }}
+        className="btn-pill-outline w-full justify-center !py-3 mt-2"
+      >
         {t("cart.checkout")}
       </button>
-      <p className="text-[11px] text-steel-500 text-center mt-2">{t("cart.checkoutComingSoon")}</p>
     </div>
   );
 }
