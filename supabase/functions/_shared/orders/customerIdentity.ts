@@ -15,17 +15,9 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { odooCreate, odooExecuteKw, odooSearchRead, type OdooConfig } from "../odoo/client.ts";
+import { resolveStructuredAddress, formatShippingAddress as formatShippingAddressImpl, type AddressInput, type StructuredOdooAddress } from "../address/resolveAddress.ts";
 
-export interface AddressInput {
-  line1: string;
-  line2?: string;
-  city: string;
-  state: string;
-  pincode: string;
-  /** Free text, India-default — never guessed against an Odoo res.country id (would risk a wrong
-   * country record on a relation field); stored as text in the address, not set on country_id. */
-  country?: string;
-}
+export type { AddressInput };
 
 export interface ResolveCustomerParams {
   db: SupabaseClient;
@@ -50,11 +42,6 @@ export interface ResolvedCustomer {
    * checkout (spec #65: never expose candidates, never fail checkout over ambiguity — a fresh
    * contact is always a safe, honest fallback). */
   ambiguousMatch: boolean;
-}
-
-function formatStreet2(address: AddressInput): string {
-  const parts = [address.line2, address.city, address.state, address.pincode].filter((p) => p?.trim());
-  return parts.join(", ");
 }
 
 /** Normalizes for comparison only — never used to rewrite what's stored (spec #5: no alias
@@ -105,13 +92,18 @@ export async function resolveCustomer(params: ResolveCustomerParams): Promise<Re
   }
 
   // 3. Create a new contact — either no match, or genuinely ambiguous.
+  const structured = await resolveStructuredAddress(odooConfig, address);
   if (!partnerId) {
     partnerId = await odooCreate(odooConfig, "res.partner", {
       name,
       email: normalizedEmail || undefined,
       phone: phone || undefined,
-      street: address.line1,
-      street2: formatStreet2(address),
+      street: structured.street,
+      street2: structured.street2 || undefined,
+      city: structured.city || undefined,
+      zip: structured.zip || undefined,
+      state_id: structured.state_id,
+      country_id: structured.country_id,
     });
   } else {
     // Keep the existing partner's contact details current — same as the previous
@@ -124,7 +116,7 @@ export async function resolveCustomer(params: ResolveCustomerParams): Promise<Re
     await db.from("profiles").update({ odoo_partner_id: partnerId }).eq("id", supabaseUserId).is("odoo_partner_id", null);
   }
 
-  const shippingPartnerId = await resolveDeliveryAddress(odooConfig, partnerId, name, phone, address);
+  const shippingPartnerId = await resolveDeliveryAddress(odooConfig, partnerId, name, phone, structured);
 
   return { partnerId, shippingPartnerId, ambiguousMatch };
 }
@@ -141,18 +133,22 @@ async function resolveDeliveryAddress(
   parentPartnerId: number,
   name: string,
   phone: string,
-  address: AddressInput
+  structured: StructuredOdooAddress
 ): Promise<number> {
   try {
-    const street2 = formatStreet2(address);
+    // Reuse an existing child whose STRUCTURED fields match exactly — matching on street+street2
+    // alone (the old behavior) would miss that city/state/zip also need to agree now that they're
+    // real fields, not folded into street2.
     const existing = await odooSearchRead<{ id: number }>(
       odooConfig,
       "res.partner",
       [
         ["parent_id", "=", parentPartnerId],
         ["type", "=", "delivery"],
-        ["street", "=", address.line1],
-        ["street2", "=", street2],
+        ["street", "=", structured.street],
+        ["street2", "=", structured.street2],
+        ["city", "=", structured.city],
+        ["zip", "=", structured.zip],
       ],
       ["id"],
       { limit: 1 }
@@ -163,8 +159,12 @@ async function resolveDeliveryAddress(
       parent_id: parentPartnerId,
       type: "delivery",
       name: `${name} — delivery address`,
-      street: address.line1,
-      street2,
+      street: structured.street,
+      street2: structured.street2 || undefined,
+      city: structured.city || undefined,
+      zip: structured.zip || undefined,
+      state_id: structured.state_id,
+      country_id: structured.country_id,
       phone: phone || undefined,
     });
   } catch (err) {
@@ -174,9 +174,6 @@ async function resolveDeliveryAddress(
 }
 
 /** Formats a single display string for `orders.shipping_address` (the existing text column) from
- * structured input — keeps that column populated exactly as before, no schema change needed there. */
-export function formatShippingAddress(address: AddressInput): string {
-  return [address.line1, address.line2, address.city, address.state, address.pincode, address.country]
-    .filter((p) => p?.trim())
-    .join(", ");
-}
+ * structured input — keeps that column populated exactly as before, no schema change needed there.
+ * Re-exported from the shared address resolver so existing callers don't need to change imports. */
+export const formatShippingAddress = formatShippingAddressImpl;

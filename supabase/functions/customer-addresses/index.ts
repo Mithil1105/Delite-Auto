@@ -12,6 +12,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getOdooConfig, odooCreate, odooSearchRead, type OdooConfig } from "../_shared/odoo/client.ts";
+import { resolveStructuredAddress } from "../_shared/address/resolveAddress.ts";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -24,6 +25,7 @@ interface AddressBody {
   city: string;
   state: string;
   pincode: string;
+  country?: string;
   label?: string;
 }
 
@@ -59,13 +61,35 @@ Deno.serve(async (req: Request) => {
   if (body.action === "list") {
     if (!profile?.odoo_partner_id) return json({ addresses: [] });
     try {
-      const rows = await odooSearchRead<{ id: number; name: string; street: string | false; street2: string | false; phone: string | false }>(
+      const rows = await odooSearchRead<{
+        id: number;
+        name: string;
+        street: string | false;
+        street2: string | false;
+        city: string | false;
+        zip: string | false;
+        state_id: [number, string] | false;
+        country_id: [number, string] | false;
+        phone: string | false;
+      }>(
         odooConfig,
         "res.partner",
         [["parent_id", "=", profile.odoo_partner_id], ["type", "=", "delivery"]],
-        ["id", "name", "street", "street2", "phone"]
+        ["id", "name", "street", "street2", "city", "zip", "state_id", "country_id", "phone"]
       );
-      return json({ addresses: rows.map((r) => ({ id: r.id, label: r.name, line1: r.street || "", line2: r.street2 || "", phone: r.phone || "" })) });
+      return json({
+        addresses: rows.map((r) => ({
+          id: r.id,
+          label: r.name,
+          line1: r.street || "",
+          line2: r.street2 || "",
+          city: r.city || "",
+          state: r.state_id ? r.state_id[1] : "",
+          pincode: r.zip || "",
+          country: r.country_id ? r.country_id[1] : "",
+          phone: r.phone || "",
+        })),
+      });
     } catch (err) {
       console.error("[customer-addresses] list failed", err instanceof Error ? err.message : err);
       return json({ addresses: [] });
@@ -79,13 +103,17 @@ Deno.serve(async (req: Request) => {
     }
     try {
       const parentId = await resolveOrCreateParent(db, odooConfig, user.id, user.email ?? "", profile);
-      const street2 = [a.line2, a.city, a.state, a.pincode].filter((p) => p?.trim()).join(", ");
+      const structured = await resolveStructuredAddress(odooConfig, a);
       const newId = await odooCreate(odooConfig, "res.partner", {
         parent_id: parentId,
         type: "delivery",
         name: a.label?.trim() || `${profile?.full_name ?? "Delivery"} address`,
-        street: a.line1,
-        street2,
+        street: structured.street,
+        street2: structured.street2 || undefined,
+        city: structured.city || undefined,
+        zip: structured.zip || undefined,
+        state_id: structured.state_id,
+        country_id: structured.country_id,
         phone: profile?.phone || undefined,
       });
       return json({ id: newId }, 200);
