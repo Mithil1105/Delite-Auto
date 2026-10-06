@@ -16,7 +16,7 @@
 // Documentations MD/odoo-supabase-edge-functions.md for the broader architecture, and
 // Documentations MD/odoo-checkout-finalization.md for the Phase 4 tax/fiscal-position/pricing audit.
 
-import { getOdooConfig, odooExecuteKw, odooFieldsGet, odooSearchRead, type OdooConfig, type OdooFieldMeta } from "../_shared/odoo/client.ts";
+import { getOdooConfig, odooExecuteKw, odooFieldsGet, odooSearchCount, odooSearchRead, type OdooConfig, type OdooFieldMeta } from "../_shared/odoo/client.ts";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -138,6 +138,8 @@ Deno.serve(async (req: Request) => {
     const addressResolutionProbe = await probeAddressResolution(config);
     await sleep(350);
     const pricingMethodProbe = await probePricingMethod(config);
+    await sleep(350);
+    const embedCodeCapabilityProbe = await probeEmbedCodeCapability(config);
 
     return json({
       configured: true,
@@ -148,6 +150,7 @@ Deno.serve(async (req: Request) => {
       },
       addressResolutionProbe,
       pricingMethodProbe,
+      embedCodeCapabilityProbe,
     });
   } catch (err) {
     return json({ configured: true, error: err instanceof Error ? err.message : "Schema introspection failed" }, 500);
@@ -241,6 +244,29 @@ async function probePricingMethod(config: OdooConfig): Promise<Record<string, un
       knownVariantId: KNOWN_VARIANT_ID,
       error: err instanceof Error ? err.message.slice(0, 300) : "onchange probe failed",
     };
+  }
+}
+
+/**
+ * Phase 6A (odoo-native-checkout.md): without interactive Website Editor access, this is the one
+ * read-only way to get real evidence on whether this Odoo instance's website views already
+ * contain embedded <script> content (proving the "Embed Code" mechanism is live/renderable here,
+ * not just theoretically available in some Odoo editions). Only searches for the SUBSTRING
+ * "<script" inside ir.ui.view.arch_db (website page/template content) and returns id/name/key —
+ * never the full page markup, never customer data. search_count + a small search_read only.
+ */
+async function probeEmbedCodeCapability(config: OdooConfig): Promise<Record<string, unknown>> {
+  try {
+    const domain = [
+      ["type", "=", "qweb"],
+      ["arch_db", "ilike", "<script"],
+    ];
+    const count = await odooSearchCount(config, "ir.ui.view", domain);
+    await sleep(300);
+    const sample = await odooSearchRead<{ id: number; name: string; key: string }>(config, "ir.ui.view", domain, ["id", "name", "key"], { limit: 15 });
+    return { scriptEmbeddingViewCount: count, sample };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message.slice(0, 200) : "embed code capability probe failed" };
   }
 }
 

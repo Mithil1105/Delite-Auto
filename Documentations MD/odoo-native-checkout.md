@@ -108,8 +108,24 @@ Per your instruction, nothing has been removed. Classification pending the outco
 
 All read-only or safely-reversible (abandoned cart only): live navigation through shop→cart→address→delivery→payment; cross-origin form-POST test (`example.com` → `deliteauto.com`); cross-origin `fetch()` test; `website` model read via the existing `odoo-schema` diagnostic (extended this pass to include it, deployed, read-only).
 
+## 12. Phase 6A — Embed Code capability: inconclusive without interactive access
+
+Attempted a read-only, non-interactive proxy for this question: searched `ir.ui.view` (type `qweb`) for any view whose `arch_db` contains the substring `<script` (id/name/key only — never full page content). Result: **41 matches**, but every one sampled is a **stock Odoo module template** (`website.layout`, `website_sale.website_sale_layout`, `im_livechat.external_loader`, `web.frontend_layout`, etc.) — normal built-in script usage by already-installed apps (website, website_sale, livechat, documents, sign, pos). **None of this proves or disproves whether the Website Builder's "Embed Code" snippet is available to create NEW custom page content** — that can only be answered by actually opening the page editor.
+
+**STOP — I need you to check this one thing:**
+1. Log into Odoo and open **https://www.deliteauto.com** (or any page on the live site) while logged in as an internal/admin user.
+2. You should see an **"Edit"** button, usually top-right of the page (Odoo's website-editor toolbar). Click it.
+3. This opens a right-hand panel of draggable content blocks (sometimes labeled "Blocks" or shown immediately). Scroll through it, or use its search box if there is one.
+4. Look for a block named **"Embed Code"** (it may also appear as "Custom Code" or just "Code" depending on your Odoo version).
+5. **Screenshot of that blocks panel is enough** — nothing sensitive, just the list of available snippet names. You don't need to actually drag it onto a page or save anything.
+
+If it's there, I can proceed with Phase 6B (building the hidden proof-of-concept page) — though creating/editing that page will still need either your hands-on help in the editor, or you granting me a way to do it (Odoo doesn't expose website-page-content editing via the XML-RPC API I have, only data read/write on `ir.ui.view` directly, which I'd rather not touch blind without your sign-off given it's the live production site's content layer).
+
+If it's **not** there, this specific handoff mechanism is dead and we should talk about Option C (keep the already-built, already-working custom checkout as the real production path, rather than a fallback).
+
 ## 11. Revision log
 
 | Date       | Author | Change                                                        |
 |------------|--------|----------------------------------------------------------------|
+| 2026-10-06 | Claude | Phase 6A: added a read-only ir.ui.view script-embedding probe to odoo-schema (deployed) — found 41 matches, all stock Odoo module templates, inconclusive for the actual question (whether the Website Builder exposes "Embed Code" for new custom pages). Stopping per the explicit instruction for this one item — needs interactive Website Editor access to resolve. No Phase 6B-L work attempted since it's gated on this. |
 | 2026-10-06 | Claude | Initial version. Confirmed the real production site is Odoo Online; mapped all native checkout routes live; empirically disproved both candidate browser-side cart-handoff mechanisms (form-POST → 415, fetch → CORS block); confirmed via live `website` model read that subdomain support needs either modifying the live domain (risky) or a new Website record (real config change) or DNS (needs access); identified Embed-Code Website Page as the one remaining credible path, pending Odoo Website Editor access. No code written, no Odoo writes performed beyond the diagnostic's own read-only queries and one harmless abandoned test cart/contact from live navigation testing.
