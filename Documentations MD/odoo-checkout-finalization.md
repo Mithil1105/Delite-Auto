@@ -8,9 +8,17 @@
 | File           | `Documentations MD/odoo-checkout-finalization.md` |
 | Branch         | `feature/odoo-checkout` |
 | Owner          | Claude (this pass) |
-| Status         | Backend code-complete, type-checked, unit-tested — **not yet deployed to production as of this writing** |
+| Status         | **SUPERSEDED as the primary production checkout path** — deployed and working (see below for what's still live/used), but no Checkout CTA routes here anymore as of 2026-10-07. Kept as LEGACY/FALLBACK. |
 | Created        | 2026-10-06 |
-| Last updated   | 2026-10-06 |
+| Last updated   | 2026-10-07 |
+
+> **2026-10-07 update:** the production checkout path changed — the app now hands the cart off to
+> Odoo's own native checkout instead of using this pipeline directly (see
+> [odoo-native-checkout.md](odoo-native-checkout.md)). Everything documented below is still real,
+> deployed, and working — `checkout-quote`, `create-order`, `payment-create`, etc. are untouched —
+> but `/checkout`, the Cart page, and the cart drawer no longer route to `Checkout.tsx`/this
+> pipeline. It remains available as a fallback (e.g. if the Odoo-native handoff needs to be rolled
+> back) rather than being deleted.
 
 ---
 

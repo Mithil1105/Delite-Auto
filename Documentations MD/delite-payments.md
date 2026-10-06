@@ -10,7 +10,13 @@
 | Owner          | Claude |
 | Status         | Code complete, live-verified in "unconfigured" mode (COD works end-to-end; online payment gracefully reports "temporarily unavailable" until real Razorpay secrets are added) — no real Razorpay test-mode payment has been run in this session, see Known gaps |
 | Created        | 2026-09-29 |
-| Last updated   | 2026-10-06 (see odoo-checkout-finalization.md for the superseding change) |
+| Last updated   | 2026-10-07 (see odoo-native-checkout.md — this Razorpay integration is no longer the production payment path) |
+
+> **2026-10-07 update:** the production checkout path changed again — React now hands the cart off
+> to Odoo's own native checkout, which uses Odoo's own (already-live, real) Razorpay integration,
+> not this one. This `payment-create`/`payment-verify`/`razorpay-webhook` flow is no longer reached
+> by any Checkout CTA in the app. Kept as LEGACY/FALLBACK, not deleted. See
+> [odoo-native-checkout.md](odoo-native-checkout.md).
 
 > **2026-10-06 update:** the `amount`/`price_unit` this flow charges and writes to Odoo now comes
 > from a server-authoritative quote (`computeAuthoritativeQuote`), not raw `list_price` — and
