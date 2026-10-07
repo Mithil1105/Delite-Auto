@@ -18,6 +18,31 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/**
+ * One retry on top of fetchOdooMediaBytes — a homepage load fires 10-20+ of these in parallel
+ * (every curated category's cover image at once), and Odoo occasionally 502s a fraction of that
+ * burst (confirmed live via Supabase edge-function logs, 2026-10-07 — several `catalog-media`
+ * calls failing with "Odoo request failed" while sibling calls in the same burst succeeded).
+ * `fetchOdooMediaBytes` only ever calls Odoo's `read` (never a write), so retrying it is always
+ * safe — unlike `odooExecuteKw` generally, which `catalog-media` deliberately does NOT wrap here
+ * since that's shared with non-idempotent write endpoints. See
+ * Documentations MD/frontend-foundation-uiux-refactor.md, "Category image load glitches".
+ */
+async function fetchOdooMediaBytesWithRetry(
+  config: Parameters<typeof fetchOdooMediaBytes>[0],
+  model: MediaModel,
+  id: number,
+  field: MediaField
+): Promise<{ bytes: Uint8Array; contentType: string } | null> {
+  try {
+    return await fetchOdooMediaBytes(config, model, id, field);
+  } catch (err) {
+    console.error("[catalog-media] first attempt failed, retrying once", err instanceof Error ? err.message : err);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return fetchOdooMediaBytes(config, model, id, field);
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
 
@@ -35,7 +60,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const media = await fetchOdooMediaBytes(config, model as MediaModel, id, field);
+    const media = await fetchOdooMediaBytesWithRetry(config, model as MediaModel, id, field);
     if (!media) return json({ error: "No image" }, 404);
     return new Response(media.bytes, {
       status: 200,

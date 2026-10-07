@@ -10,7 +10,7 @@
 | Owner          | Claude |
 | Status         | Done. Stabilized 2026-09-17 — availability semantics split into honest, separately-named fields (see "Stock decision" below); no architectural change. |
 | Created        | 2026-09-16 |
-| Last updated   | 2026-09-17 |
+| Last updated   | 2026-10-07 (real `product.public.category` images found — `cover_image` field, not the standard image.mixin fields — wired through catalog-categories/catalog-media/CategoryIconStrip; see "Media") |
 
 ## Summary
 
@@ -233,6 +233,39 @@ Playwright inspection of the actual browser response, not assumed). Fixed by cha
 59KB — for the same record); this is also simply better practice regardless of the bug (909KB is
 excessive for a product photo). See `tests/interaction/product-image.spec.ts` for the regression
 test against the real affected record (id 14).
+
+**2026-10-07 — `product.public.category` real images found; wrong field assumed at first, then
+corrected:** a real user report ("category icons showing a broken-looking question-mark icon")
+turned out to have a genuine code gap behind it: `catalog-categories` only ever requested
+`id`/`name`/`parent_id` from Odoo and never exposed any category image at all — `CategoryIconStrip`
+could only ever show a manually-uploaded CMS override, never Odoo's own category photo. The user
+(relaying the store owner) pushed back that Odoo "already has images and names" for categories —
+right to push back: it does. First attempt assumed `product.public.category` carries Odoo's
+standard `image.mixin` fields (`image_1920`/`image_1024`/etc.), the same ones every other model in
+this file uses — reasonable for a stock Odoo model, but **wrong for this instance**: a live
+`fields_get` + real-data sample (new diagnostic, `category-image-diag`, kept deployed) showed those
+fields genuinely empty (`false`) on every sampled category (CAR, BIKE, WURTH, 4N, DOLPHIN), while a
+separate, non-resized `cover_image` field held real, substantial image data for every one of them
+(e.g. id 25 "4N" → a 1MB PNG of the actual "4N MATS" brand logo, confirmed by downloading and
+viewing it, not just a non-404 status code). `product.public.category`'s full real field list
+(captured live) also shows this is a `website_sale` category **page** model, not a bare
+`image.mixin` category — it carries `website_meta_*`/`website_description`/`website_footer`/
+`show_category_*` fields alongside `cover_image`, consistent with Odoo rendering a real per-category
+landing page, not just a tag.
+
+Fixed: `MediaField`/`MEDIA_FIELD_WHITELIST` gained `"cover_image"`; `catalog-categories` now
+includes `imageUrl: buildMediaUrl(..., "product.public.category", id, "cover_image")` on every
+category (cheap — a URL string, not inline bytes, same as every other media URL in this file);
+`Category.imageUrl` threaded through `supabaseCatalogService.mapCategory`; `CategoryIconStrip`'s CMS
+path falls back to it when no CMS-uploaded override image is set, with a new `onError`-driven
+per-tile fallback to the generic icon for a category that genuinely has no `cover_image` (never a
+browser broken-image glyph). A second, independent bug found in the same investigation: that
+question-mark icon was ALSO happening because the fallback branch rendered `<Icon name="Package">`,
+but `"Package"` was never added to `src/lib/icons.tsx`'s icon map — it silently fell back to
+Lucide's `CircleHelp` (a question mark in a circle) for any unrecognized name. Both fixes are
+independent and both real; either one alone would have left the symptom partially present. Full
+detail (including the Rail.tsx infinite-render-loop bug found in the same pass, unrelated to
+images): `Documentations MD/frontend-foundation-uiux-refactor.md`.
 
 ## Architecture
 
@@ -461,6 +494,7 @@ against the running dev server with `VITE_CATALOG_SOURCE=supabase`):**
 
 | Date       | Author | Change                                  |
 |------------|--------|------------------------------------------|
+| 2026-10-07 | Claude | Real category images: found that `catalog-categories` never exposed any Odoo category image at all (only a manually-uploaded CMS override), via a live user bug report ("category icons showing a question mark"). First attempt assumed the standard Odoo `image.mixin` fields — wrong for this instance, caught by a live `fields_get` + real-data check (new kept diagnostic `category-image-diag`) before shipping it: those fields are genuinely empty on every real category, while a separate `cover_image` field holds real brand-logo/category photos for all of them. Fixed: `MediaField`/whitelist gained `cover_image`; `catalog-categories` now returns a real `imageUrl` per category via the existing `catalog-media` proxy; `CategoryIconStrip` falls back to it when no CMS override image is set, with a graceful per-tile `onError` fallback to a generic icon for a category that genuinely has none. A second, independent bug in the same report (the literal question-mark icon) was `lib/icons.tsx` never having `"Package"` in its icon map at all — documented fully in `frontend-foundation-uiux-refactor.md`. |
 | 2026-09-16 | Claude | Initial version — real Odoo catalog implementation: shared Deno client/catalog/media modules, four production Edge Functions + one diagnostic, verified category classification (37 real categories, 28 confirmed brands) and catalog eligibility domain, verified stock decision (98% of catalog has no tracked quantity — purchasability driven by `active`, not stock), Shop/PDP/Brands/Home wired to real paginated/filtered data, cart persistence bug fix (real cart lines were being silently discarded on reload), three recommendation-engine real-data scoring bugs fixed, new Playwright coverage. |
 | 2026-09-17 | Claude | Stabilization pass — re-verified full live recovery after an Odoo API key rotation (345 products, 37 categories, non-catalog exclusion, car/bike/brand/fitment filters, multi-variant + gallery product all re-confirmed against live data). Fixed the availability-semantics audit finding from this pass: the single conflated `available`/`stock` fields (silently `= active`, not real inventory) were replaced with five honest fields — `catalogActive`, `inventoryQuantity`, `inventoryTracked` (now an exported `STORE_INVENTORY_TRACKED` constant), `inStock`, `purchasable` — on both `CatalogVariant` and `CatalogProduct`, threaded through `supabaseCatalogService.ts` and `src/data/types.ts` (`Product.available`/`ProductVariant.available`/`.stock` renamed to `purchasable`/`inventoryQuantity`). Fixed a real bug found while auditing consumers: `ProductDetail.tsx`'s `canAddToCart` didn't check the selected/implicit variant's own purchasability for a single-variant or variant-less product. No architectural change — same live data, same business rule, now honestly named and fully documented. See `odoo-supabase-edge-functions.md`'s new "Operational note: API key rotation" section for the recovery procedure. |
 | 2026-09-17 | Claude | Found and fixed two real, live product-image bugs from a user screenshot showing a broken-image placeholder on a real PDP: (1) `catalog-media` required Supabase's platform JWT verification, which silently 401'd every `<img src>` request — fixed by redeploying with `--no-verify-jwt` (the function's own allowlist was already the real security gate). (2) One real product's `image_1920` is 5108×5479px/909KB, an upstream Odoo data-quality issue — Chromium silently refuses to decode it. Fixed by defaulting `buildMediaUrl` to `image_1024` (confirmed correctly sized for the same record). Verified end-to-end via a live Playwright browser check (`naturalWidth` 0 → 954, screenshot confirmed) plus curl/byte-level inspection, not assumed. Added `tests/interaction/product-image.spec.ts` as a permanent regression test. |

@@ -4,53 +4,41 @@ import { useLang } from "../i18n/LanguageContext";
 import { track } from "../lib/analytics/client";
 
 /**
- * Figma-redesign hero. Car/bike photography (public/images/hero/car.png, bike.png) are real,
- * background-removed stock photos (Pixabay Content License — free for commercial use, no
- * attribution required) sourced to stand in for the Figma mock's own photography, which we
- * don't have export access to. See Documentations MD/figma-homepage-redesign.md.
+ * Bold-background-photo hero (2026-10-07 redesign, replacing the prior dual car+bike floating
+ * composition — see Documentations MD/frontend-foundation-uiux-refactor.md, "Hero redesign" for
+ * the reference this was modeled on). Composition: a giant fixed "DELITEFY" wordmark behind the
+ * vehicle photo, the vehicle itself large and prominent, then a headline/subheading/CTA stack
+ * below — kept in our own established navy/gold brand palette rather than the reference's light
+ * theme, for visual consistency with the rest of the site (Announcement bar, buttons, etc. all
+ * already use this dark/gold language). `car.png` is the same real, background-removed stock
+ * photo (Pixabay Content License) used by the prior Hero design.
  *
- * The Figma mock fans real accessory-product renders in front of each vehicle. We don't have the
- * exact Figma exports, but the repo already ships real, isolated (alpha-cut) product photography
- * under public/images/products/ that's otherwise unused — `seat-black`/`seat-grey` are the actual
- * Dolphin seat-cover photos behind the "Dolphin Orbit Seat Cover" products in the catalog, and
- * `pillow-black` is a real 4N Mats headrest-pillow pair — so `AccessoryCluster` fans genuine
- * product photos instead of a drawn stand-in.
+ * The "DELITEFY" wordmark is intentionally a fixed design element, NOT CMS-editable — the user's
+ * own explicit instruction: the three text lines below (heading/subheading/CTA) stay editable
+ * from Delite Admin, the wordmark in the background does not.
  */
-function AccessoryCluster({
-  items,
-}: {
-  items: { src: string; width: number; rotate: number; y: number }[];
-}) {
+function DelitefyWordmark() {
   return (
-    <div className="flex items-end justify-center -space-x-6">
-      {items.map((item, i) => (
-        <img
-          key={item.src}
-          src={item.src}
-          alt=""
-          className="h-auto object-contain pointer-events-none select-none drop-shadow-[0_10px_14px_rgba(0,0,0,0.45)]"
-          style={{
-            width: item.width,
-            transform: `rotate(${item.rotate}deg) translateY(${item.y}px)`,
-            zIndex: i,
-          }}
-        />
-      ))}
+    <div
+      aria-hidden
+      className="pointer-events-none select-none absolute inset-x-0 top-6 sm:top-8 lg:top-10 flex justify-center overflow-hidden"
+    >
+      <span className="font-display font-bold uppercase tracking-tightish leading-none text-[88px] sm:text-[140px] lg:text-[200px] xl:text-[240px] text-white/10 whitespace-nowrap">
+        DELITEFY
+      </span>
     </div>
   );
 }
 
 /**
  * Every prop is optional and defaults to today's i18n copy/link — passing none behaves exactly as
- * before (the live storefront's `<Hero />` call in Home.tsx is unchanged). Added so the Delite
- * Admin homepage editor's live preview can reuse this REAL component fed draft CMS content,
- * instead of a separate fake preview renderer — see Documentations MD/delite-admin.md. The live
- * storefront itself isn't wired to pass these yet (a deliberately separate, later change); this is
- * additive only. Hero's imagery (car/bike + accessory cluster) is a fixed multi-photo composition,
- * not a single swappable banner, so it deliberately isn't made CMS-editable this pass.
+ * before (the live storefront's `<Hero />` call in Home.tsx is unchanged). Reused by the Delite
+ * Admin homepage editor's live preview (fed draft CMS content) instead of a separate fake preview
+ * renderer — see Documentations MD/delite-admin.md. `eyebrow` was dropped from this design (no
+ * small pre-headline line in the new layout, matching the reference) — the Admin Hero editor's
+ * own Eyebrow field was removed alongside it, not just hidden.
  */
 export interface HeroContentOverride {
-  eyebrow?: string;
   headingLine1?: string;
   headingLine2?: string;
   subheading?: string;
@@ -58,7 +46,7 @@ export interface HeroContentOverride {
   ctaLink?: string;
 }
 
-export function Hero({ eyebrow, headingLine1, headingLine2, subheading, ctaLabel, ctaLink }: HeroContentOverride = {}) {
+export function Hero({ headingLine1, headingLine2, subheading, ctaLabel, ctaLink }: HeroContentOverride = {}) {
   const { t } = useLang();
 
   // Analytics: hero impression once per page view (the admin editor preview is never tracked).
@@ -70,45 +58,27 @@ export function Hero({ eyebrow, headingLine1, headingLine2, subheading, ctaLabel
     <section className="relative overflow-hidden bg-brand-700 text-white">
       <div className="absolute inset-0 bg-grain-navy" aria-hidden />
       <div className="absolute inset-0 bg-grid-navy [background-size:32px_32px] opacity-40" aria-hidden />
-      <div className="container-wide relative py-14 sm:py-16 lg:py-20 grid lg:grid-cols-3 gap-6 items-center">
-        <div className="hidden lg:flex justify-center">
-          <div className="relative w-full max-w-[400px] motion-safe:animate-fadeUp">
-            <img src="/images/hero/car.png" alt="" className="w-full h-auto object-contain" />
-            <div className="absolute -bottom-1 inset-x-0 translate-x-2">
-              <AccessoryCluster
-                items={[
-                  { src: "/images/hero/seat-black.png", width: 105, rotate: -6, y: 8 },
-                  { src: "/images/hero/seat-grey.png", width: 115, rotate: 6, y: 0 },
-                ]}
-              />
-            </div>
-          </div>
-        </div>
+      <DelitefyWordmark />
 
-        <div className="text-center">
-          <p className="font-display italic text-white/60 text-lg mb-1">{eyebrow ?? t("hero.tiredLine")}</p>
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold leading-[1.02] mb-3">
-            <span className="block">{headingLine1 ?? t("hero.upgradeLine1")}</span>
-            <span className="block text-gold">{headingLine2 ?? t("hero.upgradeLine2")}</span>
-          </h1>
-          <p className="text-white/70 text-[15px] mb-8">{subheading ?? t("hero.subtitle")}</p>
-          <Link
-            to={ctaLink ?? "/shop"}
-            onClick={() => track("promotion_click", { surface: "home_hero", metadata: { label: ctaLabel ?? t("hero.cta") } })}
-            className="btn-pill-gold px-10"
-          >
-            {ctaLabel ?? t("hero.cta")}
-          </Link>
+      <div className="relative container-wide pt-10 sm:pt-14 lg:pt-16">
+        <div className="relative mx-auto w-full max-w-[720px] motion-safe:animate-fadeUp">
+          <img src="/images/hero/car.png" alt="" className="relative z-10 w-full h-auto object-contain drop-shadow-[0_30px_40px_rgba(0,0,0,0.45)]" />
         </div>
+      </div>
 
-        <div className="hidden lg:flex justify-center">
-          <div className="relative w-full max-w-[220px] motion-safe:animate-fadeUp" style={{ animationDelay: "0.1s" }}>
-            <img src="/images/hero/bike.png" alt="" className="w-full h-auto object-contain" />
-            <div className="absolute -bottom-2 inset-x-0">
-              <AccessoryCluster items={[{ src: "/images/hero/pillow-black.png", width: 128, rotate: 0, y: 2 }]} />
-            </div>
-          </div>
-        </div>
+      <div className="relative container-wide pb-14 sm:pb-16 lg:pb-20 text-center">
+        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-bold leading-[1.1] mb-3">
+          <span>{headingLine1 ?? t("hero.headingLine1")}</span>{" "}
+          <span className="text-gold">{headingLine2 ?? t("hero.headingLine2")}</span>
+        </h1>
+        <p className="text-white/70 text-[14px] sm:text-[15px] mb-8">{subheading ?? t("hero.subtitle")}</p>
+        <Link
+          to={ctaLink ?? "/shop"}
+          onClick={() => track("promotion_click", { surface: "home_hero", metadata: { label: ctaLabel ?? t("hero.cta") } })}
+          className="btn-pill-gold px-10"
+        >
+          {ctaLabel ?? t("hero.cta")}
+        </Link>
       </div>
     </section>
   );

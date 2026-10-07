@@ -265,7 +265,14 @@ export default function ProductDetail() {
               ) : (
                 <span className="text-[12.5px] text-steel-500">{t("product.noReviewsYet")}</span>
               )}
-              <button type="button" onClick={() => setTab("reviews")} className="text-[12.5px] font-semibold text-brand-700 hover:underline ml-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setTab("reviews");
+                  document.getElementById("product-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="text-[12.5px] font-semibold text-brand-700 hover:underline ml-1"
+              >
                 + {t("product.writeReview")}
               </button>
             </div>
@@ -367,7 +374,7 @@ export default function ProductDetail() {
         </div>
 
         {/* Tabs */}
-        <div className="border-b border-line mb-8 overflow-x-auto">
+        <div id="product-tabs" className="border-b border-line mb-8 overflow-x-auto">
           <div className="flex gap-6 min-w-max">
             {tabs.map((tb) => (
               <button

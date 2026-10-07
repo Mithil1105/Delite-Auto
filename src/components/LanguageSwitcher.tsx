@@ -3,7 +3,20 @@ import { Languages, Check } from "lucide-react";
 import { useLang, languageMeta } from "../i18n/LanguageContext";
 import clsx from "clsx";
 
-export function LanguageSwitcher({ light = false }: { light?: boolean }) {
+export function LanguageSwitcher({
+  light = false,
+  className,
+  buttonClassName,
+  dropUp = false,
+}: {
+  light?: boolean;
+  className?: string;
+  buttonClassName?: string;
+  /** Opens the option list above the button instead of below — for triggers that sit at the
+   * bottom of their container (e.g. MobileNavDrawer's bottom row), where a downward list would
+   * run off the bottom of the viewport. */
+  dropUp?: boolean;
+}) {
   const { lang, setLang } = useLang();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -19,7 +32,7 @@ export function LanguageSwitcher({ light = false }: { light?: boolean }) {
   const current = languageMeta.find((l) => l.code === lang) ?? languageMeta[0];
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={clsx("relative", className)} ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -28,7 +41,8 @@ export function LanguageSwitcher({ light = false }: { light?: boolean }) {
         aria-label="Change language"
         className={clsx(
           "flex items-center gap-1.5 h-9 px-2.5 text-[12.5px] font-semibold border transition-colors",
-          light ? "border-white/20 text-white/80 hover:text-white hover:border-white/40" : "border-line text-ink/70 hover:text-ink hover:border-ink"
+          light ? "border-white/20 text-white/80 hover:text-white hover:border-white/40" : "border-line text-ink/70 hover:text-ink hover:border-ink",
+          buttonClassName
         )}
       >
         <Languages className="w-3.5 h-3.5" />
@@ -37,7 +51,10 @@ export function LanguageSwitcher({ light = false }: { light?: boolean }) {
       {open && (
         <ul
           role="listbox"
-          className="absolute right-0 mt-1.5 w-40 bg-white border border-line shadow-lift z-50 py-1"
+          className={clsx(
+            "absolute right-0 w-40 bg-white border border-line shadow-lift z-50 py-1",
+            dropUp ? "bottom-full mb-1.5" : "top-full mt-1.5"
+          )}
         >
           {languageMeta.map((l) => (
             <li key={l.code}>

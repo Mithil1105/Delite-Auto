@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Star, Check, X } from "lucide-react";
+import { Star, Check, X, BadgeCheck } from "lucide-react";
 import clsx from "clsx";
 import { supabase } from "../../../lib/supabaseClient";
 import { useLang } from "../../../i18n/LanguageContext";
 import { useActivityLog } from "../../hooks/useActivityLog";
 import { Drawer, KeyValue, Badge } from "../../analytics/ui";
+import { reviewMediaPublicUrl } from "../../../lib/media/reviewMedia";
 
 type StatusTab = "pending" | "approved" | "rejected" | "all";
 
@@ -22,6 +23,8 @@ interface ReviewRow {
   moderated_by: string | null;
   moderated_at: string | null;
   product_name?: string;
+  verified_purchase: boolean;
+  photo_paths: string[];
 }
 
 const PAGE_SIZE = 50;
@@ -139,10 +142,23 @@ export default function AdminReviews() {
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <Stars rating={r.rating} />
                   <span className="text-[11.5px] text-steel-500">{r.product_name}</span>
+                  {r.verified_purchase && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700">
+                      <BadgeCheck className="w-3.5 h-3.5" /> Verified
+                    </span>
+                  )}
                   {tab === "all" && <Badge tone={r.status === "approved" ? "good" : r.status === "rejected" ? "bad" : "neutral"}>{r.status}</Badge>}
                 </div>
                 {r.title && <div className="font-semibold text-[13.5px]">{r.title}</div>}
                 {r.body && <p className="text-[13.5px] text-ink/75 mt-1 max-w-lg line-clamp-2">{r.body}</p>}
+                {r.photo_paths?.length > 0 && (
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    {r.photo_paths.slice(0, 4).map((p) => (
+                      <img key={p} src={reviewMediaPublicUrl(p)} alt="" className="w-8 h-8 rounded object-cover border border-line" />
+                    ))}
+                    {r.photo_paths.length > 4 && <span className="text-[11px] text-steel-500">+{r.photo_paths.length - 4}</span>}
+                  </div>
+                )}
                 <div className="text-[11.5px] text-steel-500 mt-1">
                   {r.customer_name || r.customer_email || "Unknown customer"} · {new Date(r.created_at).toLocaleString()}
                 </div>
@@ -178,10 +194,20 @@ export default function AdminReviews() {
             <Stars rating={selected.rating} />
             {selected.title && <p className="font-semibold text-[14px] mt-2">{selected.title}</p>}
             {selected.body && <p className="text-[13.5px] whitespace-pre-wrap mt-1">{selected.body}</p>}
+            {selected.photo_paths?.length > 0 && (
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                {selected.photo_paths.map((p) => (
+                  <a key={p} href={reviewMediaPublicUrl(p)} target="_blank" rel="noreferrer" className="block w-16 h-16 rounded-lg overflow-hidden border border-line">
+                    <img src={reviewMediaPublicUrl(p)} alt="" className="w-full h-full object-cover" />
+                  </a>
+                ))}
+              </div>
+            )}
             <div className="mt-4">
               <KeyValue
                 rows={[
                   ["Customer", selected.customer_name || selected.customer_email || "Unknown"],
+                  ["Verified purchase", selected.verified_purchase ? "Yes" : "No"],
                   ["Product", selected.product_name ?? "—"],
                   ["Submitted", new Date(selected.created_at).toLocaleString()],
                   ["Status", <Badge key="st" tone={selected.status === "approved" ? "good" : selected.status === "rejected" ? "bad" : "neutral"}>{selected.status}</Badge>],

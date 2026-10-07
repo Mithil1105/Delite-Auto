@@ -190,8 +190,13 @@ export function odooIdFromSlug(slug: string): number | null {
 // Media
 // ---------------------------------------------------------------------------------------------
 
-export type MediaModel = "product.template" | "product.product" | "product.image";
-export type MediaField = "image_1920" | "image_1024" | "image_512" | "image_256" | "image_128";
+export type MediaModel = "product.template" | "product.product" | "product.image" | "product.public.category";
+/** `cover_image` is product.public.category-only — this model does NOT use Odoo's standard
+ * image.mixin fields (image_1920 etc. are genuinely empty on every real category on this
+ * instance, confirmed live via fields_get + a real-data sample); its real category photo lives in
+ * a separate, non-resized `cover_image` field instead. See "Category image fix" in
+ * Documentations MD/frontend-foundation-uiux-refactor.md. */
+export type MediaField = "image_1920" | "image_1024" | "image_512" | "image_256" | "image_128" | "cover_image";
 
 /**
  * Default field changed from `image_1920` to `image_1024` (2026-09-17) — a real, live bug found

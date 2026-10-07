@@ -18,11 +18,12 @@ export const hi: Translations = {
     account: "खाता",
   },
   hero: {
-    tiredLine: "थक गए पुरानी सवारी से",
-    upgradeLine1: "अपग्रेड करें",
-    upgradeLine2: "अपनी राइड को",
-    subtitle: "प्रीमियम ब्राउन टेक्सचर्ड डिज़ाइन",
-    cta: "अभी खरीदें",
+    // English pending a real translation — same documented scope trade-off as the rest of this
+    // session's new copy (see Documentations MD/frontend-foundation-uiux-refactor.md).
+    headingLine1: "Everything Your Car Needs.",
+    headingLine2: "Delitefy It.",
+    subtitle: "Premium accessories. Smarter upgrades. Made for every drive.",
+    cta: "Shop Accessories",
   },
   trust: {
     freeDeliveryTitle: "मुफ़्त डिलीवरी",
@@ -461,6 +462,21 @@ export const hi: Translations = {
     submit: "समीक्षा जमा करें",
     alreadyReviewed: "आपने पहले ही इस उत्पाद की समीक्षा कर दी है।",
     submitFailed: "आपकी समीक्षा जमा नहीं हो सकी। कृपया फिर से प्रयास करें।",
+    // English pending a real translation — same documented scope trade-off as the rest of this
+    // session's new copy (see Documentations MD/frontend-foundation-uiux-refactor.md).
+    anonymous: "Anonymous",
+    verifiedPurchase: "Verified Purchase",
+    addPhotos: "Add photos (optional)",
+    photoLimitReached: "Up to 6 photos",
+    uploadingPhotos: "Uploading photos…",
+    photoUploadFailed: "Couldn't upload one of your photos. Please try again.",
+    sortNewest: "Newest",
+    sortHighest: "Highest rated",
+    sortLowest: "Lowest rated",
+    filterAllStars: "All ratings",
+    filterStars: "{n} stars",
+    filterStar: "1 star",
+    noReviewsMatchFilter: "No reviews match this filter.",
   },
   admin: {
     title: "एडमिन",

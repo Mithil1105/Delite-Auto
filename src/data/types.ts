@@ -22,6 +22,10 @@ export interface Category {
   role?: "vehicle" | "brand" | "other";
   /** Real, storefront-eligibility-filtered server-side count — only populated for `role: "brand"` categories (see `catalog-categories`). Absent otherwise. */
   productCount?: number;
+  /** Odoo's own category image, via the catalog-media proxy — always a URL (never inline bytes),
+   * may 404 if this category genuinely has no image set in Odoo. Absent for the local mock
+   * catalog. */
+  imageUrl?: string;
 }
 
 export interface Brand {
