@@ -98,35 +98,49 @@ export async function createPromotion(input: PromotionInput, actorId: string): P
   return { id: data?.id, error: error?.message };
 }
 
+// `.select()` + a row-count check on every update turns an RLS-blocked write (role lacks
+// permission) into a real error instead of a silent no-op that still reports success — see
+// Documentations MD/delite-admin.md, "CMS save silent-failure fix".
+const PERMISSION_ERROR = "Save blocked — your admin role doesn't have permission to edit this content.";
+
 export async function updatePromotion(id: string, input: PromotionInput, actorId: string): Promise<{ error?: string }> {
   if (!supabase) return { error: "cms-not-configured" };
-  const { error } = await supabase.from("cms_promotions").update(toRow(input, actorId)).eq("id", id);
-  return { error: error?.message };
+  const { data, error } = await supabase.from("cms_promotions").update(toRow(input, actorId)).eq("id", id).select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: PERMISSION_ERROR };
+  return {};
 }
 
 export async function publishPromotion(id: string, actorId: string): Promise<{ error?: string }> {
   if (!supabase) return { error: "cms-not-configured" };
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("cms_promotions")
     .update({ status: "published", published_at: new Date().toISOString(), published_by: actorId })
-    .eq("id", id);
-  return { error: error?.message };
+    .eq("id", id)
+    .select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: PERMISSION_ERROR };
+  return {};
 }
 
 export async function deletePromotion(id: string): Promise<{ error?: string }> {
   if (!supabase) return { error: "cms-not-configured" };
-  const { error } = await supabase.from("cms_promotions").delete().eq("id", id);
-  return { error: error?.message };
+  const { data, error } = await supabase.from("cms_promotions").delete().eq("id", id).select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: PERMISSION_ERROR };
+  return {};
 }
 
 export async function reorderPromotions(updates: { id: string; displayOrder: number }[], actorId: string): Promise<{ error?: string }> {
   if (!supabase) return { error: "cms-not-configured" };
   for (const u of updates) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("cms_promotions")
       .update({ display_order: u.displayOrder, updated_at: new Date().toISOString(), updated_by: actorId })
-      .eq("id", u.id);
+      .eq("id", u.id)
+      .select("id");
     if (error) return { error: error.message };
+    if (!data || data.length === 0) return { error: PERMISSION_ERROR };
   }
   return {};
 }

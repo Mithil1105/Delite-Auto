@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Icon } from "../../lib/icons";
 import { Rail, RailItem } from "../Rail";
@@ -55,6 +56,16 @@ function CategoryStripCell({ href, label, children }: CategoryStripCellProps) {
   );
 }
 
+/** `item.image` is a URL that may genuinely 404 (a category with no image set in Odoo, and no
+ * manually-uploaded CMS override either) — the browser can't know that until it tries, so this
+ * tracks per-tile load failure locally and swaps to the generic icon instead of a broken-image
+ * glyph, same graceful-degradation the rest of this component already follows. */
+function CategoryTileImage({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <Icon name="Package" strokeWidth={1.5} />;
+  return <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />;
+}
+
 /**
  * `cmsItems`, when provided (non-empty), REPLACES the hardcoded items with real, CMS-curated Odoo
  * public categories — same additive-prop pattern as Hero/AnnouncementBar: omit the prop and this
@@ -69,7 +80,7 @@ export function CategoryIconStrip({ cmsItems }: { cmsItems?: CmsCategoryItem[] }
       <Rail centerWhenFits arrowStyle="circle" arrowTop="top-[72px]">
         {cmsItems.map((item) => (
           <CategoryStripCell key={item.categoryId} href={`/shop?category=${item.categoryId}`} label={item.name}>
-            {item.image ? <img src={item.image} alt="" loading="lazy" decoding="async" /> : <Icon name="Package" strokeWidth={1.5} />}
+            {item.image ? <CategoryTileImage src={item.image} /> : <Icon name="Package" strokeWidth={1.5} />}
           </CategoryStripCell>
         ))}
       </Rail>

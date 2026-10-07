@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
-import { X, Heart, User } from "lucide-react";
+import { X, User } from "lucide-react";
 import clsx from "clsx";
+import { LanguageSwitcher } from "./LanguageSwitcher";
 
 export interface MobileNavLink {
   to: string;
@@ -14,7 +15,8 @@ export interface MobileNavLink {
  * and the six CMS-driven nav links; this component owns the drawer's own behaviour: backdrop,
  * body-scroll lock, Escape-to-close, focus trap while open, and focus restored to the hamburger
  * button on close. Desktop mobile search stays a separate toggle in Header.tsx — not duplicated
- * in here.
+ * in here. Wishlist lives in the always-visible mobile top bar now, not here — the drawer's
+ * bottom row is Account + Language only (2026-10-07 header restructure, explicit instruction).
  */
 export function MobileNavDrawer({
   open,
@@ -25,9 +27,7 @@ export function MobileNavDrawer({
   triggerRef,
   showAccountWishlist,
   accountHref,
-  wishlistCount,
   accountLabel,
-  wishlistLabel,
 }: {
   open: boolean;
   onClose: () => void;
@@ -35,12 +35,10 @@ export function MobileNavDrawer({
   currentPath: string;
   onNavigate: (to: string) => void;
   triggerRef: React.RefObject<HTMLButtonElement | null>;
-  /** Gates the Account link only — Wishlist has no auth requirement, same as the header icon row. */
+  /** Gates the Account link only. */
   showAccountWishlist: boolean;
   accountHref: string;
-  wishlistCount: number;
   accountLabel: string;
-  wishlistLabel: string;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -145,14 +143,7 @@ export function MobileNavDrawer({
               <User className="w-4 h-4" /> {accountLabel}
             </Link>
           )}
-          <Link
-            to="/shop?wishlist=1"
-            onClick={() => onNavigate("/shop?wishlist=1")}
-            className="flex-1 inline-flex items-center justify-center gap-2 h-11 rounded-full border border-line text-[13px] font-semibold hover:bg-steel-50"
-          >
-            <Heart className="w-4 h-4" /> {wishlistLabel}
-            {wishlistCount > 0 && <span className="text-steel-500">({wishlistCount})</span>}
-          </Link>
+          <LanguageSwitcher dropUp className="flex-1" buttonClassName="w-full h-11 justify-center rounded-full border-line" />
         </div>
       </div>
     </div>

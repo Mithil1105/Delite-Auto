@@ -77,19 +77,27 @@ export async function saveSectionDraft(
   if (updates.visible !== undefined) patch.visible = updates.visible;
   if (updates.displayOrder !== undefined) patch.display_order = updates.displayOrder;
 
-  const { error } = await supabase.from("cms_section_drafts").update(patch).eq("section_id", sectionId);
-  return { error: error?.message };
+  // RLS silently filters rows the caller's admin_role isn't allowed to write — `.update()` alone
+  // returns no error in that case, just zero rows affected, so the UI would show "Draft saved"
+  // for a write that never happened. `.select()` + a row-count check turns that into a real error
+  // (see Documentations MD/delite-admin.md, "CMS save silent-failure fix").
+  const { data, error } = await supabase.from("cms_section_drafts").update(patch).eq("section_id", sectionId).select("section_id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: "Save blocked — your admin role doesn't have permission to edit this content." };
+  return {};
 }
 
 /** Batch-reorders every section on a page in one round trip — used by the Homepage drag-reorder list. */
 export async function reorderSections(updates: { sectionId: string; displayOrder: number }[], actorId: string): Promise<{ error?: string }> {
   if (!supabase) return { error: "cms-not-configured" };
   for (const u of updates) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("cms_section_drafts")
       .update({ display_order: u.displayOrder, updated_at: new Date().toISOString(), updated_by: actorId })
-      .eq("section_id", u.sectionId);
+      .eq("section_id", u.sectionId)
+      .select("section_id");
     if (error) return { error: error.message };
+    if (!data || data.length === 0) return { error: "Save blocked — your admin role doesn't have permission to edit this content." };
   }
   return {};
 }

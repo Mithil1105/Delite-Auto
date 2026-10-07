@@ -33,6 +33,8 @@ interface ReviewRow {
   moderated_by: string | null;
   moderated_at: string | null;
   product_name?: string;
+  verified_purchase: boolean;
+  photo_paths: string[];
 }
 
 interface Body {

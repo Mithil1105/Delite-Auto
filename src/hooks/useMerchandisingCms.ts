@@ -89,23 +89,36 @@ export function useResolvedCategorySelections(selections: CategorySelection[]): 
       return;
     }
     let cancelled = false;
-    catalogService.getCategories().then((categories) => {
-      if (cancelled) return;
-      const byId = new Map(categories.map((c) => [c.odooId, c]));
-      const resolved = selections
-        .filter((s) => s.visible)
-        .map((s): CmsCategoryItem | null => {
-          const category = byId.get(s.categoryId);
-          if (!category) return null;
-          return {
-            categoryId: s.categoryId,
-            name: s.heading || category.name,
-            image: s.imageStoragePath ? mediaPublicUrl(s.imageStoragePath) : undefined,
-          };
-        })
-        .filter((c): c is CmsCategoryItem => c !== null);
-      setItems(resolved);
-    });
+    catalogService
+      .getCategories()
+      .then((categories) => {
+        if (cancelled) return;
+        const byId = new Map(categories.map((c) => [c.odooId, c]));
+        const resolved = selections
+          .filter((s) => s.visible)
+          .map((s): CmsCategoryItem | null => {
+            const category = byId.get(s.categoryId);
+            if (!category) return null;
+            return {
+              categoryId: s.categoryId,
+              name: s.heading || category.name,
+              // A manually-uploaded CMS image always wins when set; otherwise fall back to
+              // Odoo's own real category image (see catalog-categories' `imageUrl`) rather than
+              // showing a generic icon just because nobody separately uploaded an override.
+              image: s.imageStoragePath ? mediaPublicUrl(s.imageStoragePath) : category.imageUrl,
+            };
+          })
+          .filter((c): c is CmsCategoryItem => c !== null);
+        setItems(resolved);
+      })
+      .catch((err) => {
+        // A transient Odoo/Edge Function failure (seen in practice as a 503 from
+        // catalog-categories) must never hang this hook forever or throw an unhandled rejection —
+        // `items` stays `null`, so the caller's own `cmsItems.length > 0 ? cmsItems : undefined`
+        // check falls back to the component's hardcoded default items, same as "no CMS curation
+        // yet". Logged, not swallowed silently, so a real outage is still visible in dev tools.
+        if (!cancelled) console.error("[useResolvedCategorySelections] category resolution failed", err instanceof Error ? err.message : err);
+      });
     return () => {
       cancelled = true;
     };

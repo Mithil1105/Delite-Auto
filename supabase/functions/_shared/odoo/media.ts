@@ -1,14 +1,20 @@
 // supabase/functions/_shared/odoo/media.ts
 //
 // Allowlisted binary-image proxy logic shared by catalog-media/index.ts. Only product.template /
-// product.product + the confirmed image_* fields may ever be requested — this must never become
-// a general Odoo record reader. See Documentations MD/odoo-real-catalog.md, "Media behavior".
+// product.product / product.image / product.public.category + the confirmed image_*/cover_image
+// fields may ever be requested — this must never become a general Odoo record reader.
+// product.public.category added so real Odoo category images can be shown instead of requiring a
+// manually-uploaded CMS override for every curated category — NOTE this model's real photo lives
+// in a non-standard `cover_image` field, NOT Odoo's usual image.mixin fields (image_1920 etc.),
+// which are genuinely empty on every real category on this instance; confirmed live via
+// fields_get + a real-data sample, not assumed from Odoo's general framework defaults. See
+// "Category image fix" in Documentations MD/frontend-foundation-uiux-refactor.md.
 
 import { odooExecuteKw, type OdooConfig } from "./client.ts";
 import type { MediaField, MediaModel } from "./catalog.ts";
 
-export const MEDIA_MODEL_WHITELIST: readonly MediaModel[] = ["product.template", "product.product", "product.image"];
-export const MEDIA_FIELD_WHITELIST: readonly MediaField[] = ["image_1920", "image_1024", "image_512", "image_256", "image_128"];
+export const MEDIA_MODEL_WHITELIST: readonly MediaModel[] = ["product.template", "product.product", "product.image", "product.public.category"];
+export const MEDIA_FIELD_WHITELIST: readonly MediaField[] = ["image_1920", "image_1024", "image_512", "image_256", "image_128", "cover_image"];
 
 export function isWhitelistedMediaRequest(model: string, field: string): model is MediaModel {
   return (MEDIA_MODEL_WHITELIST as readonly string[]).includes(model) && (MEDIA_FIELD_WHITELIST as readonly string[]).includes(field);

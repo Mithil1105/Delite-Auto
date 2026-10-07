@@ -81,16 +81,12 @@ export default function HeroEditor() {
 
         <div className="flex flex-col gap-4">
           <div>
-            <label htmlFor="hero-eyebrow" className={labelClass}>Eyebrow</label>
-            <input id="hero-eyebrow" className={inputClass} value={form.eyebrow ?? ""} onChange={(e) => update({ eyebrow: e.target.value })} placeholder="Tired to lose…" />
-          </div>
-          <div>
             <label htmlFor="hero-heading-1" className={labelClass}>Heading — line 1</label>
-            <input id="hero-heading-1" className={inputClass} value={form.headingLine1 ?? ""} onChange={(e) => update({ headingLine1: e.target.value })} placeholder="UPGRADE" />
+            <input id="hero-heading-1" className={inputClass} value={form.headingLine1 ?? ""} onChange={(e) => update({ headingLine1: e.target.value })} placeholder="Everything Your Car Needs." />
           </div>
           <div>
             <label htmlFor="hero-heading-2" className={labelClass}>Heading — line 2 (gold)</label>
-            <input id="hero-heading-2" className={inputClass} value={form.headingLine2 ?? ""} onChange={(e) => update({ headingLine2: e.target.value })} placeholder="YOUR RIDE" />
+            <input id="hero-heading-2" className={inputClass} value={form.headingLine2 ?? ""} onChange={(e) => update({ headingLine2: e.target.value })} placeholder="Delitefy It." />
           </div>
           <div>
             <label htmlFor="hero-subheading" className={labelClass}>Subheading</label>

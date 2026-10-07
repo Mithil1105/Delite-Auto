@@ -6,10 +6,14 @@
 // record's parent_id is false), so no hierarchy is fabricated. Each row carries a `role`
 // ("vehicle" | "brand" | "other") derived from the verified classification config in
 // _shared/odoo/catalog.ts — Delite metadata, never written back to Odoo, never duplicating the
-// category's own name (always read live from Odoo).
+// category's own name (always read live from Odoo). `imageUrl` always points at Odoo's own
+// category image via the catalog-media proxy (added so a curated homepage category shows its real
+// Odoo image by default — see Documentations MD/frontend-foundation-uiux-refactor.md,
+// "Category image fix" — previously the frontend had no way to show it at all, only a manually
+// uploaded CMS override).
 
 import { getOdooConfig, odooExecuteKw, odooSearchRead } from "../_shared/odoo/client.ts";
-import { CATALOG_ELIGIBILITY_DOMAIN, normalizeCategoryRecord } from "../_shared/odoo/catalog.ts";
+import { CATALOG_ELIGIBILITY_DOMAIN, buildMediaUrl, normalizeCategoryRecord } from "../_shared/odoo/catalog.ts";
 import type { OdooPublicCategoryRecord } from "../_shared/odoo/types.ts";
 
 const CORS_HEADERS: Record<string, string> = {
@@ -28,7 +32,18 @@ Deno.serve(async (req: Request) => {
       order: "name asc",
       limit: 1000,
     });
-    const withRole = records.map(normalizeCategoryRecord);
+    // `imageUrl` is just a URL string pointing at the existing catalog-media proxy (same pattern
+    // every product image already uses) — never the base64 bytes themselves, so this list stays
+    // cheap regardless of category count. `cover_image` (NOT the standard image_* fields — see
+    // _shared/odoo/media.ts) is confirmed live to hold every real category's actual photo on this
+    // instance. A category with no image set in Odoo gets a URL that 404s when actually requested;
+    // callers (CategoryIconStrip) fall back to a generic icon on that, exactly like a missing
+    // product image would.
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const withRole = records.map(normalizeCategoryRecord).map((cat) => ({
+      ...cat,
+      imageUrl: buildMediaUrl(supabaseUrl, "product.public.category", cat.id, "cover_image"),
+    }));
 
     // Real, storefront-honest counts — same eligibility domain the actual product listing uses,
     // so "42 products" here matches what a customer filtering by that brand would actually see.

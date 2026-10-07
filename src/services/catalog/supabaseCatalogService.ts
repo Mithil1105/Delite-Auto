@@ -86,6 +86,7 @@ interface CatalogCategoryDto {
   name: string;
   role: "vehicle" | "brand" | "other";
   productCount?: number;
+  imageUrl?: string;
 }
 
 async function callFunction<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
@@ -171,7 +172,7 @@ function mapProductDetail(dto: CatalogProductDto): ProductDetail {
 }
 
 function mapCategory(dto: CatalogCategoryDto): Category {
-  return { slug: slugify(dto.name), name: dto.name, vehicle: "unknown", odooId: dto.id, role: dto.role, productCount: dto.productCount };
+  return { slug: slugify(dto.name), name: dto.name, vehicle: "unknown", odooId: dto.id, role: dto.role, productCount: dto.productCount, imageUrl: dto.imageUrl };
 }
 
 export const supabaseCatalogService: CatalogService = {

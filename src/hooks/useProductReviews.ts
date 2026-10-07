@@ -8,11 +8,16 @@ export interface ReviewRow {
   title: string | null;
   body: string | null;
   created_at: string;
+  reviewer_name: string | null;
+  verified_purchase: boolean;
+  photo_paths: string[];
 }
 
 export interface ReviewAggregate {
   average: number | null;
   count: number;
+  /** Count of approved reviews at each star rating (1-5) — powers the breakdown bars. */
+  breakdown: Record<1 | 2 | 3 | 4 | 5, number>;
 }
 
 /**
@@ -34,7 +39,7 @@ export function useProductReviews(odooTemplateId: number | undefined) {
     setLoading(true);
     const { data } = await supabase
       .from("product_reviews")
-      .select("id, user_id, rating, title, body, created_at")
+      .select("id, user_id, rating, title, body, created_at, reviewer_name, verified_purchase, photo_paths")
       .eq("odoo_template_id", odooTemplateId)
       .eq("status", "approved")
       .order("created_at", { ascending: false });
@@ -46,9 +51,14 @@ export function useProductReviews(odooTemplateId: number | undefined) {
     refresh();
   }, [refresh]);
 
+  const breakdown: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  for (const r of reviews) {
+    if (r.rating >= 1 && r.rating <= 5) breakdown[r.rating as 1 | 2 | 3 | 4 | 5]++;
+  }
   const aggregate: ReviewAggregate = {
     count: reviews.length,
     average: reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : null,
+    breakdown,
   };
 
   return { reviews, aggregate, loading, refresh };

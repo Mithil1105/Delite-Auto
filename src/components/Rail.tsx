@@ -49,6 +49,16 @@ export const Rail = forwardRef<RailHandle, RailProps>(function Rail(
   const ref = useRef<HTMLDivElement>(null);
   const [atStart, setAtStart] = useState(true);
   const [atEnd, setAtEnd] = useState(false);
+  // Snapshot of the last bounds actually reported to `onBoundsChange` — a parent typically stores
+  // this in its own `useState`, and `onBoundsChange({...})` builds a brand-new object literal
+  // every call. A new object is never `Object.is`-equal to the last one even when its booleans are
+  // identical, so an ungated call guarantees a parent re-render on every single invocation —
+  // recreating this Rail's `children`, which re-triggers the bounds recompute below, which calls
+  // `onBoundsChange` again: a real infinite render loop ("Maximum update depth exceeded"), seen in
+  // practice wherever a parent (e.g. HomeCategoryProductSection) wires this straight into
+  // `useState`. Only actually calling the callback when the booleans change closes this off at the
+  // source for every current and future consumer, rather than requiring each one to deep-compare.
+  const lastReported = useRef<{ canScrollPrev: boolean; canScrollNext: boolean } | null>(null);
 
   const updateBounds = useCallback(() => {
     const el = ref.current;
@@ -58,16 +68,33 @@ export const Rail = forwardRef<RailHandle, RailProps>(function Rail(
     const nextAtEnd = el.scrollLeft >= max - 1;
     setAtStart(nextAtStart);
     setAtEnd(nextAtEnd);
-    onBoundsChange?.({ canScrollPrev: !nextAtStart, canScrollNext: !nextAtEnd });
+    const next = { canScrollPrev: !nextAtStart, canScrollNext: !nextAtEnd };
+    const prev = lastReported.current;
+    if (!prev || prev.canScrollPrev !== next.canScrollPrev || prev.canScrollNext !== next.canScrollNext) {
+      lastReported.current = next;
+      onBoundsChange?.(next);
+    }
   }, [onBoundsChange]);
 
+  // Split in two deliberately: observing is expensive (ResizeObserver.observe() fires its own
+  // async notification the instant it's called) and must stay stable across renders, while
+  // recomputing bounds needs to happen whenever the rendered items change. A single effect keyed
+  // on `[updateBounds, children]` used to do both together — since `children` is a new JSX
+  // reference on every parent render, that tore down and recreated the ResizeObserver every
+  // render, and each fresh `observe()` call fired another async notification -> another possible
+  // setState -> another render -> another teardown/recreate, a real infinite-render loop ("Maximum
+  // update depth exceeded") across every Rail on a page with several of them mounted at once (e.g.
+  // the homepage's category strip + product rails).
   useEffect(() => {
     const el = ref.current;
-    updateBounds();
     if (!el) return;
     const ro = new ResizeObserver(updateBounds);
     ro.observe(el);
     return () => ro.disconnect();
+  }, [updateBounds]);
+
+  useEffect(() => {
+    updateBounds();
   }, [updateBounds, children]);
 
   const scrollBy = (dir: 1 | -1) => {

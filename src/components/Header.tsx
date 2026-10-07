@@ -101,31 +101,57 @@ export function Header({
       <AnnouncementBar {...announcementContent} />
 
       <div className="bg-white border-b border-line">
-        <div className="container-page flex items-center gap-4 h-16">
-          <nav className="hidden lg:flex items-center gap-5">
-            {navItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                onClick={() => track("navigation_click", { surface: navSurface(item.to), metadata: { target: item.to } })}
-                className={clsx(
-                  "inline-flex items-center gap-1 font-sans text-[13.5px] font-medium transition-colors whitespace-nowrap",
-                  currentPath === item.to ? "text-brand-700" : "text-ink/80 hover:text-brand-700"
-                )}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+        {/* Logo is absolutely centered (true center regardless of how wide the left/right clusters
+            are — flex `mx-auto` only centers when both siblings are equal width, which nav vs.
+            icons never are) — see Documentations MD/frontend-foundation-uiux-refactor.md,
+            "Header restructure". */}
+        <div className="container-page relative flex items-center h-16">
+          <div className="flex items-center gap-1 lg:gap-5">
+            <button
+              ref={menuTriggerRef}
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-label="Toggle menu"
+              aria-expanded={open}
+              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+            >
+              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileSearchOpen((v) => !v)}
+              aria-label={t("header.searchPlaceholder")}
+              aria-pressed={mobileSearchOpen}
+              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+            >
+              <Search className="w-5 h-5" />
+            </button>
 
-          <Link to="/" className="shrink-0 mx-auto lg:mx-0">
+            <nav className="hidden lg:flex items-center gap-5">
+              {navItems.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => track("navigation_click", { surface: navSurface(item.to), metadata: { target: item.to } })}
+                  className={clsx(
+                    "inline-flex items-center gap-1 font-sans text-[12.5px] font-semibold uppercase tracking-wide transition-colors whitespace-nowrap",
+                    currentPath === item.to ? "text-brand-700" : "text-ink/80 hover:text-brand-700"
+                  )}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+
+          <Link to="/" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 shrink-0">
             <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-brand-500 text-white font-display font-semibold uppercase tracking-tightish">
               Delite
             </span>
           </Link>
 
-          <div className="hidden md:flex items-center ml-auto">
-            <form onSubmit={submitSearch} className="flex items-center w-64 lg:w-80 relative">
+          <div className="flex items-center gap-1 ml-auto">
+            <form onSubmit={submitSearch} className="hidden lg:flex items-center w-64 xl:w-80 relative mr-1">
               <Search className="w-4 h-4 absolute left-3 text-steel-500" />
               <input
                 value={query}
@@ -135,29 +161,22 @@ export function Header({
                 className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[13px] focus:outline-none focus:border-brand-600"
               />
             </form>
-          </div>
-
-          <div className="flex items-center gap-1 ml-auto md:ml-2">
-            <button
-              type="button"
-              onClick={() => setMobileSearchOpen((v) => !v)}
-              aria-label={t("header.searchPlaceholder")}
-              aria-pressed={mobileSearchOpen}
-              className="md:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
-            >
-              <Search className="w-5 h-5" />
-            </button>
-            <LanguageSwitcher />
-            {authConfigured && (
-              <Link
-                to={session ? "/account" : "/login"}
-                aria-label={t("header.account")}
-                className="hidden sm:grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
-              >
-                <User className="w-5 h-5" />
-              </Link>
-            )}
-            <Link to="/shop?wishlist=1" aria-label={t("header.wishlist")} className="relative hidden sm:grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
+            {/* Account + language: desktop (lg+) only — below lg both live at the bottom of the
+                hamburger drawer instead, per explicit instruction (top bar stays to wishlist/cart
+                + the hamburger/search pair on mobile). */}
+            <div className="hidden lg:flex items-center">
+              <LanguageSwitcher />
+              {authConfigured && (
+                <Link
+                  to={session ? "/account" : "/login"}
+                  aria-label={t("header.account")}
+                  className="grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+                >
+                  <User className="w-5 h-5" />
+                </Link>
+              )}
+            </div>
+            <Link to="/shop?wishlist=1" aria-label={t("header.wishlist")} className="relative grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50">
               <Heart className="w-5 h-5" />
               {wishlist.length > 0 && (
                 <span className="absolute top-1 right-1 w-4 h-4 grid place-items-center bg-sale text-white text-[10px] font-semibold rounded-full">
@@ -188,22 +207,12 @@ export function Header({
               )}
               <MobileCartAddedIndicator />
             </Link>
-            <button
-              ref={menuTriggerRef}
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              aria-label="Toggle menu"
-              aria-expanded={open}
-              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
-            >
-              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
           </div>
         </div>
       </div>
 
       {mobileSearchOpen && (
-        <div className="md:hidden bg-white border-b border-line px-4 py-3">
+        <div className="lg:hidden bg-white border-b border-line px-4 py-3">
           <form onSubmit={submitSearch} className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-steel-500" />
             <input
@@ -231,8 +240,6 @@ export function Header({
         showAccountWishlist={authConfigured}
         accountHref={session ? "/account" : "/login"}
         accountLabel={t("header.account")}
-        wishlistLabel={t("header.wishlist")}
-        wishlistCount={wishlist.length}
       />
     </header>
   );
