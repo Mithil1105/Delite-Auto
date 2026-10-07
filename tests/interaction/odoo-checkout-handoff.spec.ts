@@ -30,7 +30,7 @@ async function addFirstProduct(page: Page) {
   await addToCart.click();
 }
 
-const HANDOFF_URL_PATTERN = /^https:\/\/www\.deliteauto\.com\/checkout-handoff-test#/;
+const HANDOFF_URL_PATTERN = /^https:\/\/www\.deliteauto\.com\/checkout\/handoff#/;
 
 test.describe("Odoo checkout handoff", () => {
   test("Cart page Checkout button navigates to the Odoo handoff URL", async ({ page }) => {

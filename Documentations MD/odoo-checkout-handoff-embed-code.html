@@ -1,134 +1,114 @@
 <!--
-  Paste the content below into the "Embed Code" block on a new, unlisted Odoo Website page.
-  Page name: Checkout Handoff Test
-  URL (must match exactly — src/lib/odooCheckoutHandoff.ts hardcodes this path): /checkout-handoff-test
-  Do NOT add to navigation/footer. Mark unindexed/unlisted if Odoo offers that option.
+  PRODUCTION Odoo checkout handoff page — paste the content below into an "Embed Code" block.
 
-  See Documentations MD/odoo-native-checkout.md for the full investigation this supports.
+  Page name: Checkout Handoff
+  URL (must match exactly — src/lib/odooCheckoutHandoff.ts hardcodes this path): /checkout/handoff
+  Do NOT add to navigation/footer/menu. Mark unindexed/unlisted if Odoo offers that option.
 
-  THIS IS NOW THE PRODUCTION HANDOFF PAGE, not just a test — the React app (src/lib/
-  odooCheckoutHandoff.ts, wired from Cart.tsx/CartDrawerSummary.tsx/CheckoutRedirect.tsx) navigates
-  real customers here. AUTO_REDIRECT_ON_SUCCESS is true: once all lines are added, the browser is
-  sent straight to /shop/checkout automatically — no manual click.
+  This is the real page React navigates real customers to (Cart.tsx, CartDrawerSummary.tsx,
+  CheckoutRedirect.tsx — see Documentations MD/odoo-native-checkout.md). It shows only
+  "Preparing your secure checkout…" with a spinner — no test controls, no debug output, no
+  engineering text, nothing customer-facing beyond that and the failure state below.
 
-  Manual diagnostics (harmless, only run when no #payload fragment is present):
-    Opening the page with no fragment shows a "Run single-product test" button (product id 11,
-    qty 1) for a quick manual sanity check without needing a real React cart.
-
-  Multi-line fragment usage (what the React app actually sends — object lines, not tuples):
-    https://www.deliteauto.com/checkout-handoff-test#{"v":1,"lines":[{"productTemplateId":11,"productId":11,"quantity":1}]}
-    (URL-encoded by the browser automatically; the script also accepts a plain, un-encoded JSON
-    fragment.)
+  A separate, deliberately different page (/checkout-handoff-test, content in
+  odoo-checkout-handoff-test-debug.html) exists only for manual engineering diagnostics and is
+  never referenced by any production code path.
 -->
-<div id="checkout-handoff-root" style="max-width:480px;margin:64px auto;padding:32px;font-family:sans-serif;text-align:center;">
+<div id="checkout-handoff-root" style="max-width:420px;margin:96px auto;padding:32px;font-family:sans-serif;text-align:center;">
   <h3 id="checkout-handoff-title">Preparing your secure checkout&hellip;</h3>
   <div id="checkout-handoff-spinner" style="margin:24px auto;width:32px;height:32px;border:3px solid #ddd;border-top-color:#333;border-radius:50%;animation:chSpin 0.8s linear infinite;"></div>
   <style>@keyframes chSpin { to { transform: rotate(360deg); } }</style>
-  <p id="checkout-handoff-status" style="color:#555;font-size:14px;white-space:pre-wrap;"></p>
-  <pre id="checkout-handoff-log" style="text-align:left;background:#f4f4f4;padding:12px;font-size:12px;max-height:240px;overflow:auto;display:none;"></pre>
+  <p id="checkout-handoff-status" style="color:#555;font-size:14px;"></p>
   <div id="checkout-handoff-actions" style="margin-top:16px;display:none;"></div>
-  <div id="checkout-handoff-manual" style="margin-top:24px;border-top:1px solid #eee;padding-top:16px;">
-    <button id="checkout-handoff-run-single" type="button" style="padding:8px 16px;cursor:pointer;">
-      Run single-product test (id 11, qty 1)
-    </button>
-  </div>
 </div>
 
 <script>
 (function () {
   "use strict";
 
-  // --- config -------------------------------------------------------------
   var MAX_LINES = 20;
   var MAX_QTY = 50;
-  var AUTO_REDIRECT_ON_SUCCESS = true; // production mode — see header comment
 
-  // --- small DOM helpers ----------------------------------------------------
   function $(id) { return document.getElementById(id); }
   function setStatus(msg) { var el = $("checkout-handoff-status"); if (el) el.textContent = msg; }
   function setTitle(msg) { var el = $("checkout-handoff-title"); if (el) el.textContent = msg; }
-  function log(label, data) {
-    var el = $("checkout-handoff-log");
-    if (!el) return;
-    el.style.display = "block";
-    el.textContent += "[" + new Date().toISOString().slice(11, 19) + "] " + label + " " + JSON.stringify(data) + "\n";
-  }
   function showActions(buttons) {
     var el = $("checkout-handoff-actions");
     if (!el) return;
     el.style.display = "block";
     el.innerHTML = "";
     buttons.forEach(function (b) {
-      var btn = document.createElement(b.tag || "button");
+      var btn = document.createElement("button");
+      btn.type = "button";
       btn.textContent = b.label;
-      btn.style.cssText = "margin:4px;padding:8px 16px;cursor:pointer;";
-      if (b.href) btn.href = b.href;
-      if (b.onClick) btn.addEventListener("click", b.onClick);
+      btn.style.cssText = "margin:4px;padding:10px 18px;cursor:pointer;";
+      btn.addEventListener("click", b.onClick);
       el.appendChild(btn);
     });
   }
   var spinner = $("checkout-handoff-spinner");
   function stopSpinner() { if (spinner) spinner.style.display = "none"; }
 
-  // --- payload parsing + validation (Step 9) --------------------------------
-  // Only ever accepts product identity + quantity. Never price/tax/discount/shipping/total —
-  // Odoo is the sole authority for all of those. Shape MUST match src/lib/odooCheckoutHandoff.ts
-  // (OdooHandoffPayload) exactly — object lines, not tuples:
-  //   {v:1, lines:[{productTemplateId, productId, quantity}, ...]}
+  // Only ever reads product identity + quantity. Never price/discount/tax/shipping/total — Odoo
+  // is the sole authority for all of those; this page never calculates or transmits any of them.
+  // Shape must match src/lib/odooCheckoutHandoff.ts (OdooHandoffPayload) exactly.
   function parseFragmentPayload() {
     var hash = window.location.hash.replace(/^#/, "");
-    if (!hash) return null;
+    if (!hash) return { error: "Missing checkout data." };
     var raw;
     try {
       raw = decodeURIComponent(hash);
     } catch (e) {
-      raw = hash; // already-decoded / plain JSON in the fragment
+      raw = hash;
     }
     var decoded;
     try {
       decoded = JSON.parse(raw);
     } catch (e) {
-      return { error: "Malformed payload (not valid JSON)" };
+      return { error: "Invalid checkout data." };
     }
-    if (!decoded || decoded.v !== 1 || !Array.isArray(decoded.lines)) {
-      return { error: "Invalid payload shape (expected {v:1, lines:[{productTemplateId,productId,quantity}, ...]})" };
+    if (!decoded || decoded.v !== 1 || !Array.isArray(decoded.lines) || decoded.lines.length === 0 || decoded.lines.length > MAX_LINES) {
+      return { error: "Invalid checkout data." };
     }
-    if (decoded.lines.length === 0 || decoded.lines.length > MAX_LINES) {
-      return { error: "Invalid line count (1-" + MAX_LINES + " lines allowed)" };
-    }
-    var lines = [];
+    var byProductId = {};
+    var order = [];
     for (var i = 0; i < decoded.lines.length; i++) {
       var entry = decoded.lines[i];
-      if (!entry || typeof entry !== "object") return { error: "Invalid line entry at index " + i };
+      if (!entry || typeof entry !== "object") return { error: "Invalid checkout data." };
       var productId = entry.productId, templateId = entry.productTemplateId, qty = entry.quantity;
-      if (!Number.isInteger(productId) || productId <= 0) return { error: "Invalid product id at index " + i };
-      if (templateId !== undefined && (!Number.isInteger(templateId) || templateId <= 0)) return { error: "Invalid product template id at index " + i };
-      if (!Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) return { error: "Invalid quantity at index " + i };
-      lines.push({ productId: productId, productTemplateId: templateId, qty: qty });
+      if (!Number.isInteger(productId) || productId <= 0) return { error: "Invalid checkout data." };
+      if (!Number.isInteger(templateId) || templateId <= 0) return { error: "Invalid checkout data." };
+      if (!Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) return { error: "Invalid checkout data." };
+      // Merge duplicate productId entries rather than issuing two add calls for the same product.
+      if (byProductId[productId]) {
+        byProductId[productId].qty = Math.min(byProductId[productId].qty + qty, MAX_QTY);
+      } else {
+        byProductId[productId] = { productId: productId, productTemplateId: templateId, qty: qty };
+        order.push(productId);
+      }
     }
-    return { lines: lines };
+    return { lines: order.map(function (id) { return byProductId[id]; }) };
   }
 
-  // --- Odoo JSON-RPC call (same-origin — this is the entire point) ----------
   function jsonRpc(url, params) {
     return fetch(url, {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), params: params }),
-    })
-      .then(function (res) {
-        return res.json().then(function (data) {
-          if (data.error) {
-            var msg = (data.error.data && data.error.data.message) || data.error.message || "Odoo RPC error";
-            throw new Error(msg);
-          }
-          return data.result;
-        });
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (data.error) {
+          var msg = (data.error.data && data.error.data.message) || data.error.message || "Checkout preparation failed.";
+          throw new Error(msg);
+        }
+        return data.result;
       });
+    });
   }
 
-  // --- read the CURRENT cart's line ids (same-origin fetch + parse, Step 7) -
+  // No JSON "list cart" endpoint exists on this Odoo instance — the cart page is server-rendered
+  // HTML only, so the current line ids are read via a same-origin fetch + DOM parse.
   function getCurrentCartLineIds() {
     return fetch("/shop/cart", { credentials: "same-origin" })
       .then(function (res) { return res.text(); })
@@ -144,11 +124,10 @@
       });
   }
 
-  // Confirmed live (2026-10-06): POST /shop/cart/update {line_id, quantity:0} removes a line —
-  // this is how the real "Remove from cart" link behaves (captured via Network inspection).
+  // POST /shop/cart/update {line_id, quantity:0} removes a line — the exact route/contract the
+  // real "Remove from cart" link uses. Sequential, never concurrent.
   function clearCart() {
     return getCurrentCartLineIds().then(function (lineIds) {
-      log("existing cart lines", lineIds);
       var chain = Promise.resolve();
       lineIds.forEach(function (lineId) {
         chain = chain.then(function () {
@@ -159,58 +138,35 @@
     });
   }
 
-  function addLine(productId, templateId, qty) {
-    var params = { product_id: productId, add_qty: qty };
-    if (templateId) params.product_template_id = templateId;
-    return jsonRpc("/shop/cart/add", params);
+  function addLine(line) {
+    return jsonRpc("/shop/cart/add", {
+      product_template_id: line.productTemplateId,
+      product_id: line.productId,
+      add_qty: line.qty,
+    });
   }
 
-  // --- orchestration (Steps 7-8, sequential — never concurrent) -------------
+  // Sequential, never concurrent — these calls mutate the same Odoo cart/session.
   function runHandoff(lines) {
-    setTitle("Preparing your secure checkout…");
-    setStatus("Checking your current cart…");
     clearCart()
       .then(function () {
         var chain = Promise.resolve();
-        lines.forEach(function (line, idx) {
-          chain = chain.then(function () {
-            setStatus("Adding item " + (idx + 1) + " of " + lines.length + " (product " + line.productId + ")…");
-            return addLine(line.productId, line.productTemplateId, line.qty).then(function (result) {
-              log("add product " + line.productId + " x" + line.qty, {
-                line_id: result.line_id,
-                cart_quantity: result.cart_quantity,
-                amount: result.amount,
-                warning: result.warning,
-              });
-            });
-          });
+        lines.forEach(function (line) {
+          chain = chain.then(function () { return addLine(line); });
         });
         return chain;
       })
       .then(function () {
-        stopSpinner();
-        setTitle("Your cart is ready.");
-        setStatus("All items were added successfully.");
-        if (AUTO_REDIRECT_ON_SUCCESS) {
-          window.location.href = "/shop/checkout";
-          return;
-        }
-        showActions([
-          { label: "View Cart", onClick: function () { window.location.href = "/shop/cart"; } },
-          { label: "Continue to Checkout →", onClick: function () { window.location.href = "/shop/checkout"; } },
-        ]);
+        // Full success only — replace (not href) so the handoff page never sits in browser history.
+        window.location.replace("/shop/checkout");
       })
-      .catch(showFailure);
+      .catch(showFailure); // any single failure stops here — never redirects with a partial cart
   }
 
-  // --- failure UX (Step 11) --------------------------------------------------
-  // Never redirects to /shop/checkout with a partial cart — if any line fails, the chain of
-  // .then() calls in runHandoff() short-circuits straight to here instead of continuing.
-  function showFailure(err) {
+  function showFailure() {
     stopSpinner();
     setTitle("We couldn't prepare your checkout.");
-    setStatus(String((err && err.message) || err));
-    log("ERROR", String((err && err.message) || err));
+    setStatus("");
     showActions([
       { label: "Try Again", onClick: function () { window.location.reload(); } },
       { label: "View Cart", onClick: function () { window.location.href = "/shop/cart"; } },
@@ -218,26 +174,11 @@
     ]);
   }
 
-  // --- single-product manual test button (Steps 3-5) -------------------------
-  $("checkout-handoff-run-single").addEventListener("click", function () {
-    $("checkout-handoff-manual").style.display = "none";
-    if (spinner) spinner.style.display = "block";
-    runHandoff([{ productId: 11, productTemplateId: 11, qty: 1 }]);
-  });
-
-  // --- auto-run if a valid fragment payload is present (Step 9) --------------
   var parsed = parseFragmentPayload();
-  if (parsed) {
-    $("checkout-handoff-manual").style.display = "none";
-    if (parsed.error) {
-      showFailure(new Error(parsed.error));
-    } else {
-      runHandoff(parsed.lines);
-    }
+  if (parsed.error) {
+    showFailure();
   } else {
-    stopSpinner();
-    setTitle("Checkout Handoff Test");
-    setStatus("Click below for a single-product test, or load this page with a #payload fragment for a multi-line test.");
+    runHandoff(parsed.lines);
   }
 })();
 </script>

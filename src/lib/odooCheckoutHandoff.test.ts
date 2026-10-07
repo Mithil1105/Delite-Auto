@@ -90,7 +90,7 @@ describe("buildHandoffUrl", () => {
   it("encodes the payload into a URL fragment that round-trips back to the same data", () => {
     const payload = { v: 1 as const, lines: [{ productTemplateId: 100, productId: 200, quantity: 3 }] };
     const url = buildHandoffUrl(payload);
-    expect(url).toMatch(/^https:\/\/www\.deliteauto\.com\/checkout-handoff-test#/);
+    expect(url).toMatch(/^https:\/\/www\.deliteauto\.com\/checkout\/handoff#/);
     const fragment = url.split("#")[1];
     const decoded = JSON.parse(decodeURIComponent(fragment));
     expect(decoded).toEqual(payload);
@@ -100,5 +100,12 @@ describe("buildHandoffUrl", () => {
     const payload = { v: 1 as const, lines: [{ productTemplateId: 1, productId: 2, quantity: 1 }] };
     const url = buildHandoffUrl(payload);
     expect(url.startsWith(import.meta.env.VITE_ODOO_CHECKOUT_BASE_URL as string)).toBe(true);
+  });
+
+  it("targets the production /checkout/handoff page — never the dev-only /checkout-handoff-test page", () => {
+    const payload = { v: 1 as const, lines: [{ productTemplateId: 1, productId: 2, quantity: 1 }] };
+    const url = buildHandoffUrl(payload);
+    expect(url).toContain("/checkout/handoff");
+    expect(url).not.toContain("/checkout-handoff-test");
   });
 });

@@ -152,12 +152,13 @@ custom checkout anymore.
 - `tests/interaction/odoo-checkout-handoff.spec.ts` — 4 Playwright tests, **all passing against
   the real `catalogService`/live Odoo catalog** (not mocked): Cart page Checkout, Cart drawer
   Checkout, `/checkout` with a cart, `/checkout` with an empty cart. Verified the real browser
-  navigates to `https://www.deliteauto.com/checkout-handoff-test#<payload>` with a correctly
-  validated, price-free payload. Deliberately does not block/intercept the resulting request (a
-  single harmless GET; the target page doesn't exist yet in Odoo so it currently 404s, same as any
-  not-yet-created URL) — `window.location.assign()` triggers a real top-level navigation that
-  neither a `window.location` property stub nor Playwright's `page.route()` reliably intercepted
-  for this case, so the tests observe the browser's own address bar via `waitForURL` instead.
+  navigates to `https://www.deliteauto.com/checkout/handoff#<payload>` (updated to the final
+  production path — see §16) with a correctly validated, price-free payload. Deliberately does not
+  block/intercept the resulting request (a single harmless GET; the page doesn't exist yet in Odoo
+  so it currently 404s, same as any not-yet-created URL) — `window.location.assign()` triggers a
+  real top-level navigation that neither a `window.location` property stub nor Playwright's
+  `page.route()` reliably intercepted for this case, so the tests observe the browser's own
+  address bar via `waitForURL` instead.
 
 **Files changed:**
 - `src/pages/Cart.tsx`, `src/components/cart/CartDrawerSummary.tsx` — Checkout buttons now call
@@ -177,17 +178,58 @@ custom checkout anymore.
   **object shape** `React` actually sends (`{productTemplateId, productId, quantity}`) — these two
   sides must agree exactly on wire format.
 
-**What's NOT done:** the actual Odoo page at `/checkout-handoff-test` still needs to be created —
-I don't have Odoo admin/Website Editor access to do this myself (see §12). The React side is fully
-built, tested, and verified to navigate to the right URL with the right payload; the Odoo side
-(pasting the Embed Code script in) is still the one manual step pending on your end. Until that
-page exists, a real customer clicking Checkout reaches a 404 on Odoo's side instead of a working
-cart — **this needs to happen before this goes live for real customers.**
+**What's NOT done:** the actual Odoo page still needs to be created — I don't have Odoo admin/
+Website Editor access to do this myself (see §12), and a direct API-write attempt (§16) was
+blocked by this session's own safety classifier as too risky for live production website content.
+The React side is fully built, tested, and verified to navigate to the right URL with the right
+payload; the Odoo side (pasting the Embed Code script in) is still the one manual step pending on
+your end. Until that page exists, a real customer clicking Checkout reaches a 404 on Odoo's side
+instead of a working cart — **this needs to happen before this goes live for real customers.**
+
+## 16. Final production path: `/checkout/handoff` (not `/checkout-handoff-test`)
+
+**The test/debug page and the production page are now two deliberately separate things:**
+
+| | Page | URL | Content file | Used by production code? |
+|---|---|---|---|---|
+| **Production** | "Checkout Handoff" | `/checkout/handoff` | `odoo-checkout-handoff-embed-code.html` | **Yes** — `src/lib/odooCheckoutHandoff.ts` hardcodes this path |
+| Dev/debug only | "Checkout Handoff Test" | `/checkout-handoff-test` | `odoo-checkout-handoff-test-debug.html` | No — not referenced by any React code |
+
+The production script (`odoo-checkout-handoff-embed-code.html`) was rewritten to be fully
+customer-facing: only "Preparing your secure checkout…" + a spinner, and on failure "We couldn't
+prepare your checkout" + Try Again / View Cart / Return to Store. No test button, no debug log
+panel, no product ids, no JSON-RPC response dump, no engineering copy anywhere a real customer
+could see it. Functionally identical logic to the proven test version (read fragment → validate →
+merge duplicates → clear existing Odoo cart via `/shop/cart/update` → sequentially add lines via
+`/shop/cart/add` with `product_template_id`+`product_id`+`add_qty` together → `window.location.
+replace("/shop/checkout")` on full success only, `.replace` not `.href` so the handoff page never
+sits in browser back-history).
+
+**Attempted and blocked: creating the page directly via the Odoo API.** Per explicit instruction,
+investigated whether the existing service-level `ODOO_API_KEY` (already used for legitimate writes
+elsewhere in this project — `res.partner`/`sale.order` creation during checkout) could create
+`website.page`/`ir.ui.view` records directly, skipping the manual Website Editor step. Got as far
+as writing a narrowly-scoped, three-action (`check`/`create`/`publish`) Edge Function with
+re-verification before every write, rollback-by-design (orphaned view cleanup on partial failure),
+and a hard refusal to publish anything whose URL didn't exactly match `/checkout/handoff`. **This
+session's own safety classifier blocked the write itself** — creating/modifying live production
+website content via blind API calls (no visual preview, no editor-level undo) was judged too
+high-risk regardless of the careful scoping. Per the user's explicit instruction, did not attempt
+to route around this. No Odoo write of any kind was performed via this path — the function was
+never saved to disk, let alone deployed. Reverted the one read-only diagnostic addition
+(`website.page`/`ir.ui.view` `check_access_rights`) that had been made in pursuit of this, since it
+was never successfully invoked (Odoo rate-limited the long diagnostic-probe chain before reaching
+it) and is no longer needed now that this path is abandoned.
+
+**Conclusion:** the manual Website Editor paste-in (§7/§12) remains the only way this page gets
+created. Everything else — the React side, the final script content, all tests — is done and
+waiting on that one step.
 
 ## 14. Revision log
 
 | Date       | Author | Change                                                        |
 |------------|--------|----------------------------------------------------------------|
+| 2026-10-07 | Claude | Finalized the production handoff page as `/checkout/handoff` (separate from the dev-only `/checkout-handoff-test`), rewrote the Embed Code script to be fully customer-facing (no test UI/debug output), updated `odooCheckoutHandoff.ts`'s hardcoded path and all tests to match. Attempted creating the Odoo page directly via the existing API credential instead of the manual editor — blocked by this session's own safety classifier for live production website-content writes; did not route around it, no Odoo write occurred. Manual Website Editor paste-in remains the one pending step. |
 | 2026-10-07 | Claude | Built the React side of the handoff end to end (odooCheckoutHandoff.ts, CheckoutRedirect.tsx, Cart.tsx/CartDrawerSummary.tsx wiring) and verified it live with real Playwright tests against the real catalog/live Odoo data — the browser genuinely navigates to the correct `https://www.deliteauto.com/checkout-handoff-test#<payload>` URL with a correctly-validated, price-free payload from all 4 entry points. Updated the Embed Code script to production mode (auto-redirect on success) and fixed a payload-shape mismatch (object lines, not the earlier tuple-array proof-of-concept shape). The one remaining manual step is creating the actual Odoo page — not done, no admin access. See §15. |
 | 2026-10-06 | Claude | Phase 6: user confirmed "Embed Code" (page-specific, Blocks → Inner Content) is available in the live Website Editor, and deliberately chose it over theme-wide Code Injection and the raw HTML/QWeb editor. Confirmed the native cart update/remove contract live via Network inspection while using the real guest cart (`POST /shop/cart/update {line_id, quantity}`, confirmed `quantity:0` removes a line — this is what the real "Remove from cart" link does). Wrote the complete Embed Code script (`odoo-checkout-handoff-embed-code.html`) implementing the single-product manual test, fragment-payload multi-line test, sequential cart-clear-then-add, and Try-Again/Return-to-Store failure UX — no auto-redirect during testing. Could not create the Odoo page myself (no admin/login access, and won't use one even if offered — live production system, not a local dev host); asked the user to create the page, paste the script in, publish it, and share the URL. |
 | 2026-10-06 | Claude | Phase 6A: added a read-only ir.ui.view script-embedding probe to odoo-schema (deployed) — found 41 matches, all stock Odoo module templates, inconclusive for the actual question. Stopped per the explicit instruction for this one item. |

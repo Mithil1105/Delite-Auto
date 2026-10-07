@@ -15,11 +15,14 @@ import type { Product } from "../data/types";
 const MAX_LINES = 20;
 const MAX_QTY = 50;
 
-/** The Odoo checkout handoff page's path, relative to VITE_ODOO_CHECKOUT_BASE_URL. Fixed — not
- * environment-configurable, since the page itself (not just its domain) is a specific, known
- * route the Odoo-side Embed Code script was written for. Only the base URL changes between the
- * development domain (www.deliteauto.com) and the eventual shop.deliteauto.com. */
-const HANDOFF_PATH = "/checkout-handoff-test";
+/** The PRODUCTION Odoo checkout handoff page's path, relative to VITE_ODOO_CHECKOUT_BASE_URL.
+ * Fixed — not environment-configurable, since the page itself (not just its domain) is a
+ * specific, known route the Odoo-side Embed Code script was written for. Only the base URL
+ * changes between the development domain (www.deliteauto.com) and the eventual
+ * shop.deliteauto.com. Matches Documentations MD/odoo-checkout-handoff-embed-code.html — NOT the
+ * separate /checkout-handoff-test dev/debug page (odoo-checkout-handoff-test-debug.html), which
+ * no production code path ever references. */
+const HANDOFF_PATH = "/checkout/handoff";
 
 export interface OdooHandoffLine {
   productTemplateId: number;
