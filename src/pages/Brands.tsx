@@ -7,6 +7,7 @@ import type { Category } from "../data/types";
 import { catalogService } from "../services/catalog/catalogService";
 import { useCatalogProducts } from "../hooks/useCatalogProducts";
 import { useLang } from "../i18n/LanguageContext";
+import { SeoHead } from "../components/SeoHead";
 
 // Real Odoo data via Supabase — the "Brand" product.attribute (id 9) exists but is unused; real
 // brands are verified brand-named product.public.category entries instead. See
@@ -38,6 +39,7 @@ export default function Brands() {
 
   return (
     <div className="container-page py-14">
+      <SeoHead routeKey="brands" />
       <div className="max-w-2xl mb-12">
         <span className="eyebrow mb-3">{dict.brands.eyebrow}</span>
         <h1 className="text-4xl font-semibold mb-4">{dict.brands.title}</h1>

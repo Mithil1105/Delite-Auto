@@ -2,6 +2,7 @@ import { Phone, Mail, MapPin, Clock } from "lucide-react";
 import { ContactForm } from "../components/ContactForm";
 import { site } from "../data/site";
 import { useLang } from "../i18n/LanguageContext";
+import { SeoHead } from "../components/SeoHead";
 
 export default function Contact() {
   const { dict } = useLang();
@@ -10,6 +11,7 @@ export default function Contact() {
 
   return (
     <div>
+      <SeoHead routeKey="contact" />
       <section className="bg-charcoal-deep text-white py-16 sm:py-20 relative overflow-hidden">
         <div className="absolute inset-0 bg-diagonal-lines opacity-30" aria-hidden />
         <div className="container-page relative">

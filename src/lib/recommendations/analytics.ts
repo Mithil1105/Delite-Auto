@@ -1,4 +1,5 @@
 import type { RecommendationStrategy, RecommendationSurface } from "./types";
+import { track } from "../analytics/client";
 
 export type RecommendationAnalyticsEventType =
   | "recommendation_impression"
@@ -8,17 +9,18 @@ export type RecommendationAnalyticsEventType =
 export interface RecommendationAnalyticsEvent {
   type: RecommendationAnalyticsEventType;
   productId: string;
-  strategy: RecommendationStrategy;
-  surface: RecommendationSurface;
+  /** "curated" = CMS-curated homepage rail, "default" = the rail's automatic fallback. */
+  strategy: RecommendationStrategy | "curated" | "default";
+  surface: RecommendationSurface | "home_trending" | "home_featured" | "home_new_arrivals";
 }
 
 /**
- * No analytics backend is wired up yet — this is the single seam a real provider (Segment, GA,
- * etc.) plugs into later without touching any call site. Deliberately carries only
- * product/strategy/surface metadata, never anything personally-identifying.
+ * The single recommendation-event seam (call sites unchanged): forwards to the first-party
+ * analytics client. Deliberately carries only product/strategy/surface metadata, never anything
+ * personally-identifying. Only real Odoo template ids are recorded (mock-catalog ids aren't numeric).
  */
 export function trackRecommendationEvent(event: RecommendationAnalyticsEvent) {
-  if (import.meta.env.DEV) {
-    console.debug("[recommendation]", event);
-  }
+  const templateId = Number(event.productId);
+  if (!Number.isSafeInteger(templateId) || templateId <= 0) return;
+  track(event.type, { odoo_template_id: templateId, strategy: event.strategy, surface: event.surface });
 }

@@ -6,10 +6,17 @@
 // secret values, image binary payloads, or customer/order record data (res.partner, sale.order,
 // sale.order.line are existence + field-metadata only, deliberately never sampled).
 //
+// One deliberate exception (added for Phase 4B's native-pricing-method discovery, see
+// probePricingMethod below): a single `onchange` RPC call on sale.order.line. `onchange` is a
+// core, non-private ORM method that NEVER persists anything — it's the same mechanism Odoo's own
+// web client uses for every live form computation — so it carries the same read-only guarantee
+// as fields_get/search_read even though it isn't literally one of those three methods.
+//
 // See Documentations MD/odoo-schema-report.md for how this feeds the schema report, and
-// Documentations MD/odoo-supabase-edge-functions.md for the broader architecture.
+// Documentations MD/odoo-supabase-edge-functions.md for the broader architecture, and
+// Documentations MD/odoo-checkout-finalization.md for the Phase 4 tax/fiscal-position/pricing audit.
 
-import { getOdooConfig, odooExecuteKw, odooFieldsGet, odooSearchRead, type OdooConfig, type OdooFieldMeta } from "../_shared/odoo/client.ts";
+import { getOdooConfig, odooExecuteKw, odooFieldsGet, odooSearchCount, odooSearchRead, type OdooConfig, type OdooFieldMeta } from "../_shared/odoo/client.ts";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -43,13 +50,41 @@ const FIELDS_OF_INTEREST: Record<string, string[]> = {
   "product.template.attribute.value": ["product_tmpl_id", "attribute_id", "product_attribute_value_id", "price_extra", "name"],
   "product.image": ["name", "sequence", "product_tmpl_id", "product_variant_id"],
   "product.pricelist": ["name", "currency_id"],
-  "product.pricelist.item": ["pricelist_id", "product_tmpl_id", "product_id", "applied_on", "compute_price", "fixed_price", "price_discount"],
+  "product.pricelist.item": [
+    "pricelist_id",
+    "product_tmpl_id",
+    "product_id",
+    "categ_id",
+    "applied_on",
+    "compute_price",
+    "fixed_price",
+    "percent_price",
+    "price_discount",
+    "price_round",
+    "price_surcharge",
+    "price_min_margin",
+    "price_max_margin",
+    "min_quantity",
+    "date_start",
+    "date_end",
+    "base",
+    "base_pricelist_id",
+  ],
   "product.tag": ["name"],
   "product.template.tag": ["name"],
-  "res.partner": ["name", "is_company", "supplier_rank", "customer_rank", "category_id"],
-  "sale.order": ["name", "partner_id", "amount_total", "state"],
-  "sale.order.line": ["order_id", "product_id", "price_unit", "qty_delivered"],
+  "res.partner": ["name", "is_company", "supplier_rank", "customer_rank", "category_id", "property_product_pricelist", "property_account_position_id"],
+  "sale.order": ["name", "partner_id", "amount_total", "state", "pricelist_id", "fiscal_position_id", "amount_untaxed", "amount_tax", "currency_id", "partner_shipping_id", "partner_invoice_id"],
+  "sale.order.line": ["order_id", "product_id", "price_unit", "qty_delivered", "tax_id", "discount", "price_subtotal", "price_tax", "price_total", "product_uom_qty"],
   "stock.quant": ["product_id", "quantity", "reserved_quantity", "location_id"],
+  // --- Added for Phase 4 tax/delivery/fiscal-position audit (odoo-checkout-finalization.md) ---
+  "account.tax": ["name", "amount", "amount_type", "type_tax_use", "price_include", "include_base_amount", "country_id", "active", "company_id"],
+  "account.fiscal.position": ["name", "auto_apply", "country_id", "country_group_id", "state_ids", "zip_from", "zip_to", "active", "tax_ids"],
+  "account.fiscal.position.tax": ["position_id", "tax_src_id", "tax_dest_id"],
+  "res.country": ["name", "code"],
+  "res.country.state": ["name", "code", "country_id"],
+  "delivery.carrier": ["name", "delivery_type", "fixed_price", "free_over", "product_id", "active", "website_published", "integration_level", "company_id"],
+  // --- Added for Phase 1/6 native-checkout domain/handoff audit (odoo-native-checkout.md) ---
+  "website": ["name", "domain", "company_id", "default_lang_id", "theme_id"],
 };
 
 /** Models never sampled even if they exist — customer/order data, per explicit instruction not
@@ -65,6 +100,12 @@ const SAMPLE_LIMITS: Record<string, number> = {
   "product.template.attribute.line": 25,
   "product.tag": 10,
   "product.pricelist.item": 10,
+  "account.tax": 30,
+  "account.fiscal.position": 20,
+  "account.fiscal.position.tax": 20,
+  "res.country": 3, // shape-check only — targeted lookup below answers the real question
+  "res.country.state": 3, // shape-check only — targeted lookup below answers the real question
+  "delivery.carrier": 10,
 };
 const DEFAULT_SAMPLE_LIMIT = 3;
 
@@ -93,6 +134,12 @@ Deno.serve(async (req: Request) => {
     const productSchema = await introspectProductModels(config);
     await sleep(350);
     const otherModels = await introspectOtherModels(config);
+    await sleep(350);
+    const addressResolutionProbe = await probeAddressResolution(config);
+    await sleep(350);
+    const pricingMethodProbe = await probePricingMethod(config);
+    await sleep(350);
+    const embedCodeCapabilityProbe = await probeEmbedCodeCapability(config);
 
     return json({
       configured: true,
@@ -101,11 +148,127 @@ Deno.serve(async (req: Request) => {
         "product.product": productSchema.variant,
         ...otherModels,
       },
+      addressResolutionProbe,
+      pricingMethodProbe,
+      embedCodeCapabilityProbe,
     });
   } catch (err) {
     return json({ configured: true, error: err instanceof Error ? err.message : "Schema introspection failed" }, 500);
   }
 });
+
+/**
+ * Targeted (not blind-sampled) res.country/res.country.state lookup — proves whether the exact
+ * resolution path the Phase 6 address fix needs (country code "IN" -> a handful of real Indian
+ * states this store actually ships to) is safe and unambiguous, rather than just confirming the
+ * models/fields exist. search_read only — read-only.
+ */
+async function probeAddressResolution(config: OdooConfig): Promise<Record<string, unknown>> {
+  try {
+    const countries = await odooSearchRead<{ id: number; name: string; code: string }>(
+      config,
+      "res.country",
+      [["code", "=", "IN"]],
+      ["id", "name", "code"],
+      { limit: 1 }
+    );
+    const india = countries[0];
+    if (!india) return { indiaFound: false };
+
+    await sleep(300);
+    const probeNames = ["Gujarat", "Maharashtra"];
+    const stateMatches: Record<string, unknown[]> = {};
+    for (const name of probeNames) {
+      const matches = await odooSearchRead<{ id: number; name: string; code: string }>(
+        config,
+        "res.country.state",
+        [
+          ["country_id", "=", india.id],
+          ["name", "ilike", name],
+        ],
+        ["id", "name", "code"],
+        { limit: 5 }
+      );
+      stateMatches[name] = matches;
+      await sleep(300);
+    }
+
+    return { indiaFound: true, india, stateMatches };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message.slice(0, 200) : "address resolution probe failed" };
+  }
+}
+
+/**
+ * Phase 4B: does this Odoo instance expose a safe, non-mutating, externally-callable method that
+ * computes the SAME price_unit/tax_id Odoo's own Sales app would use for a real product+qty,
+ * instead of us re-implementing the pricelist engine?
+ *
+ * `onchange` is a core, non-private ORM method (no leading underscore, so NOT blocked by Odoo's
+ * external-API private-method guard) — it is literally the same RPC call the Odoo web client
+ * itself makes for every form field edit. Calling it NEVER persists anything to the database; it
+ * only returns a computed `value` diff for the requested field. This is the one addition to this
+ * file that isn't fields_get/search_read/search_count, but it carries the same safety guarantee
+ * (no create/write/unlink) the rest of this diagnostic promises — see file header.
+ *
+ * Tested against a real, already-known product (ACTIVA SET OF 3, product.product id 10, which
+ * Phase 2 already found has a pricelist fixed_price of 1500 equal to its list_price) so the
+ * result is independently checkable against known-good evidence, not just "did it not error".
+ */
+async function probePricingMethod(config: OdooConfig): Promise<Record<string, unknown>> {
+  const KNOWN_VARIANT_ID = 10; // ACTIVA SET OF 3 — real id confirmed in Phase 2 live audit
+  try {
+    const result = await odooExecuteKw<{ value?: Record<string, unknown>; warning?: unknown }>(
+      config,
+      "sale.order.line",
+      "onchange",
+      [
+        [],
+        { order_id: false, product_id: KNOWN_VARIANT_ID, product_uom_qty: 1, price_unit: 0 },
+        "product_id",
+        { product_id: "1", product_uom_qty: "1", price_unit: "1", tax_id: "1", product_uom: "1" },
+      ],
+      {}
+    );
+    return {
+      attempted: true,
+      callable: true,
+      knownVariantId: KNOWN_VARIANT_ID,
+      returnedValue: result?.value ?? null,
+      hasWarning: !!result?.warning,
+    };
+  } catch (err) {
+    return {
+      attempted: true,
+      callable: false,
+      knownVariantId: KNOWN_VARIANT_ID,
+      error: err instanceof Error ? err.message.slice(0, 300) : "onchange probe failed",
+    };
+  }
+}
+
+/**
+ * Phase 6A (odoo-native-checkout.md): without interactive Website Editor access, this is the one
+ * read-only way to get real evidence on whether this Odoo instance's website views already
+ * contain embedded <script> content (proving the "Embed Code" mechanism is live/renderable here,
+ * not just theoretically available in some Odoo editions). Only searches for the SUBSTRING
+ * "<script" inside ir.ui.view.arch_db (website page/template content) and returns id/name/key —
+ * never the full page markup, never customer data. search_count + a small search_read only.
+ */
+async function probeEmbedCodeCapability(config: OdooConfig): Promise<Record<string, unknown>> {
+  try {
+    const domain = [
+      ["type", "=", "qweb"],
+      ["arch_db", "ilike", "<script"],
+    ];
+    const count = await odooSearchCount(config, "ir.ui.view", domain);
+    await sleep(300);
+    const sample = await odooSearchRead<{ id: number; name: string; key: string }>(config, "ir.ui.view", domain, ["id", "name", "key"], { limit: 15 });
+    return { scriptEmbeddingViewCount: count, sample };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message.slice(0, 200) : "embed code capability probe failed" };
+  }
+}
 
 /**
  * product.template and product.product get special handling: their custom fields (names starting
@@ -134,6 +297,7 @@ async function introspectProductModels(config: OdooConfig): Promise<{ template: 
     "product_variant_count",
     "attribute_line_ids",
     "write_date",
+    "taxes_id",
   ];
   const STANDARD_VARIANT_OF_INTEREST = [
     "name",
@@ -147,6 +311,7 @@ async function introspectProductModels(config: OdooConfig): Promise<{ template: 
     "product_tmpl_id",
     "product_template_attribute_value_ids",
     "write_date",
+    "taxes_id",
   ];
 
   const templateFieldsRaw = await odooFieldsGet(config, "product.template").catch(() => null);

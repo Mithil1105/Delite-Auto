@@ -189,6 +189,7 @@ export const supabaseCatalogService: CatalogService = {
       vehicle: query.vehicle,
       brand: query.brandCategoryId,
       fitment: query.fitmentValueId,
+      ids: query.ids && query.ids.length > 0 ? query.ids.join(",") : undefined,
       sort: query.sort,
     });
     return { items: data.items.map(mapProduct), page: data.page, pageSize: data.pageSize, total: data.total, totalPages: data.totalPages };

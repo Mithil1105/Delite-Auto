@@ -1,0 +1,184 @@
+<!--
+  PRODUCTION Odoo checkout handoff page — paste the content below into an "Embed Code" block.
+
+  Page name: Checkout Handoff
+  URL (must match exactly — src/lib/odooCheckoutHandoff.ts hardcodes this path): /checkout/handoff
+  Do NOT add to navigation/footer/menu. Mark unindexed/unlisted if Odoo offers that option.
+
+  This is the real page React navigates real customers to (Cart.tsx, CartDrawerSummary.tsx,
+  CheckoutRedirect.tsx — see Documentations MD/odoo-native-checkout.md). It shows only
+  "Preparing your secure checkout…" with a spinner — no test controls, no debug output, no
+  engineering text, nothing customer-facing beyond that and the failure state below.
+
+  A separate, deliberately different page (/checkout-handoff-test, content in
+  odoo-checkout-handoff-test-debug.html) exists only for manual engineering diagnostics and is
+  never referenced by any production code path.
+-->
+<div id="checkout-handoff-root" style="max-width:420px;margin:96px auto;padding:32px;font-family:sans-serif;text-align:center;">
+  <h3 id="checkout-handoff-title">Preparing your secure checkout&hellip;</h3>
+  <div id="checkout-handoff-spinner" style="margin:24px auto;width:32px;height:32px;border:3px solid #ddd;border-top-color:#333;border-radius:50%;animation:chSpin 0.8s linear infinite;"></div>
+  <style>@keyframes chSpin { to { transform: rotate(360deg); } }</style>
+  <p id="checkout-handoff-status" style="color:#555;font-size:14px;"></p>
+  <div id="checkout-handoff-actions" style="margin-top:16px;display:none;"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var MAX_LINES = 20;
+  var MAX_QTY = 50;
+
+  function $(id) { return document.getElementById(id); }
+  function setStatus(msg) { var el = $("checkout-handoff-status"); if (el) el.textContent = msg; }
+  function setTitle(msg) { var el = $("checkout-handoff-title"); if (el) el.textContent = msg; }
+  function showActions(buttons) {
+    var el = $("checkout-handoff-actions");
+    if (!el) return;
+    el.style.display = "block";
+    el.innerHTML = "";
+    buttons.forEach(function (b) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = b.label;
+      btn.style.cssText = "margin:4px;padding:10px 18px;cursor:pointer;";
+      btn.addEventListener("click", b.onClick);
+      el.appendChild(btn);
+    });
+  }
+  var spinner = $("checkout-handoff-spinner");
+  function stopSpinner() { if (spinner) spinner.style.display = "none"; }
+
+  // Only ever reads product identity + quantity. Never price/discount/tax/shipping/total — Odoo
+  // is the sole authority for all of those; this page never calculates or transmits any of them.
+  // Shape must match src/lib/odooCheckoutHandoff.ts (OdooHandoffPayload) exactly.
+  function parseFragmentPayload() {
+    var hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return { error: "Missing checkout data." };
+    var raw;
+    try {
+      raw = decodeURIComponent(hash);
+    } catch (e) {
+      raw = hash;
+    }
+    var decoded;
+    try {
+      decoded = JSON.parse(raw);
+    } catch (e) {
+      return { error: "Invalid checkout data." };
+    }
+    if (!decoded || decoded.v !== 1 || !Array.isArray(decoded.lines) || decoded.lines.length === 0 || decoded.lines.length > MAX_LINES) {
+      return { error: "Invalid checkout data." };
+    }
+    var byProductId = {};
+    var order = [];
+    for (var i = 0; i < decoded.lines.length; i++) {
+      var entry = decoded.lines[i];
+      if (!entry || typeof entry !== "object") return { error: "Invalid checkout data." };
+      var productId = entry.productId, templateId = entry.productTemplateId, qty = entry.quantity;
+      if (!Number.isInteger(productId) || productId <= 0) return { error: "Invalid checkout data." };
+      if (!Number.isInteger(templateId) || templateId <= 0) return { error: "Invalid checkout data." };
+      if (!Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) return { error: "Invalid checkout data." };
+      // Merge duplicate productId entries rather than issuing two add calls for the same product.
+      if (byProductId[productId]) {
+        byProductId[productId].qty = Math.min(byProductId[productId].qty + qty, MAX_QTY);
+      } else {
+        byProductId[productId] = { productId: productId, productTemplateId: templateId, qty: qty };
+        order.push(productId);
+      }
+    }
+    return { lines: order.map(function (id) { return byProductId[id]; }) };
+  }
+
+  function jsonRpc(url, params) {
+    return fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), params: params }),
+    }).then(function (res) {
+      return res.json().then(function (data) {
+        if (data.error) {
+          var msg = (data.error.data && data.error.data.message) || data.error.message || "Checkout preparation failed.";
+          throw new Error(msg);
+        }
+        return data.result;
+      });
+    });
+  }
+
+  // No JSON "list cart" endpoint exists on this Odoo instance — the cart page is server-rendered
+  // HTML only, so the current line ids are read via a same-origin fetch + DOM parse.
+  function getCurrentCartLineIds() {
+    return fetch("/shop/cart", { credentials: "same-origin" })
+      .then(function (res) { return res.text(); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var inputs = doc.querySelectorAll(".js_quantity[data-line-id]");
+        var ids = [];
+        inputs.forEach(function (el) {
+          var id = parseInt(el.getAttribute("data-line-id"), 10);
+          if (Number.isInteger(id) && ids.indexOf(id) === -1) ids.push(id);
+        });
+        return ids;
+      });
+  }
+
+  // POST /shop/cart/update {line_id, quantity:0} removes a line — the exact route/contract the
+  // real "Remove from cart" link uses. Sequential, never concurrent.
+  function clearCart() {
+    return getCurrentCartLineIds().then(function (lineIds) {
+      var chain = Promise.resolve();
+      lineIds.forEach(function (lineId) {
+        chain = chain.then(function () {
+          return jsonRpc("/shop/cart/update", { line_id: lineId, quantity: 0 });
+        });
+      });
+      return chain;
+    });
+  }
+
+  function addLine(line) {
+    return jsonRpc("/shop/cart/add", {
+      product_template_id: line.productTemplateId,
+      product_id: line.productId,
+      add_qty: line.qty,
+    });
+  }
+
+  // Sequential, never concurrent — these calls mutate the same Odoo cart/session.
+  function runHandoff(lines) {
+    clearCart()
+      .then(function () {
+        var chain = Promise.resolve();
+        lines.forEach(function (line) {
+          chain = chain.then(function () { return addLine(line); });
+        });
+        return chain;
+      })
+      .then(function () {
+        // Full success only — replace (not href) so the handoff page never sits in browser history.
+        window.location.replace("/shop/checkout");
+      })
+      .catch(showFailure); // any single failure stops here — never redirects with a partial cart
+  }
+
+  function showFailure() {
+    stopSpinner();
+    setTitle("We couldn't prepare your checkout.");
+    setStatus("");
+    showActions([
+      { label: "Try Again", onClick: function () { window.location.reload(); } },
+      { label: "View Cart", onClick: function () { window.location.href = "/shop/cart"; } },
+      { label: "Return to Store", onClick: function () { window.location.href = "/shop"; } },
+    ]);
+  }
+
+  var parsed = parseFragmentPayload();
+  if (parsed.error) {
+    showFailure();
+  } else {
+    runHandoff(parsed.lines);
+  }
+})();
+</script>

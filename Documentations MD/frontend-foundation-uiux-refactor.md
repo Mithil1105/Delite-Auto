@@ -10,7 +10,7 @@
 | Owner          | Claude (pairing with the user)          |
 | Status         | Done — foundations fixed, Playwright visual regression tests added, VehicleShopSplit follow-up applied |
 | Created        | 2026-09-09                              |
-| Last updated   | 2026-09-09                              |
+| Last updated   | 2026-09-29 (PromoBannerPair: real curated-product imagery replaces the generic icon fallback; full re-verification of the 2026-09-22 Figma-fidelity pass against the actual Figma reference) |
 
 ## Summary
 
@@ -312,16 +312,148 @@ Verified three ways via Playwright:
 - This is currently scoped to `CategoryIconStrip` specifically (the component with the confirmed,
   reported symptom) rather than every `hover:`/`group-hover:` usage site-wide — see Known issues.
 
+### Follow-up: Figma-fidelity pass — category tabs, promo banners, Add-to-Cart state, header/mobile nav (2026-09-22)
+
+A 60-section spec asking for closer Figma fidelity on specific storefront areas, explicitly a
+*fidelity pass, not a redesign* — preserve Odoo-backed catalog, CMS architecture, cart drawer
+behavior, analytics, auth, accessibility, and the existing responsive foundations built above.
+"REUSE, DON'T FORK" was an explicit constraint throughout.
+
+1. **Compact segmented tab control** — `PillTabs` (`src/components/home/PillTabs.tsx`) gained an
+   opt-in `variant?: "pill" | "segmented"` prop (default unchanged, so Trending/Perfect-Vehicle/
+   Brands car-bike tabs and Popular/New tabs are byte-for-byte unaffected). `variant="segmented"`
+   renders the Figma capsule: one outer bordered rounded-full container (`.segment-tabs`, new CSS
+   in `index.css`), buttons immediately adjacent with no gap, active = dark fill/white text,
+   inactive = transparent/muted grey — both states share `.segment-tab`'s padding/height/border so
+   switching tabs never resizes anything. Never wraps to a second row (`overflow-x-auto` instead of
+   `flex-wrap` — an initial `flex-wrap` version broke the single-row capsule shape at 390px, caught
+   via screenshot review and fixed before shipping).
+2. **Icons for the 8 category tabs** — reused existing `lib/icons.tsx` entries only (`Armchair`,
+   `Camera`, `Grid2x2`, `SprayCan`, `HardHat`, `Umbrella`, `Backpack`, `ShieldCheck`); no new icon
+   import was needed. **Tab labels/filters were NOT renamed** — the reference screenshot's "Covers"
+   label for the car set doesn't match the real car category set (`Seat Covers`/`Dash Cams`/
+   `Mats`/`Care`, established as correct in the 2026-09-09 entry above after the *actual* Odoo/mock
+   category was verified); kept the real labels rather than re-introducing the mislabeling that
+   entry already fixed.
+3. **Denser product rail for these two sections only** — `ProductCarousel`
+   (`src/components/product/ProductCarousel.tsx`) gained `variant?: "default" | "home-category"`
+   (RailItem width `w-[260px] sm:w-[280px]` vs `w-[198px] sm:w-[216px] lg:w-[232px]`), plus
+   `hideArrows`/`onBoundsChange` and a forwarded `RailHandle` ref (`scrollPrev`/`scrollNext`).
+   `Rail` itself became `forwardRef` with the same two new opt-in props (`hideEdgeArrows`,
+   `onBoundsChange`) — every existing consumer (Trending, Perfect-Vehicle, CategoryIconStrip, Shop
+   grid, PDP related-products, Cart-drawer recommendations) passes neither and is unaffected.
+4. **New `src/components/home/HomeCategoryProductSection.tsx`** — the shared shell for "Shop by Top
+   Categories in Car/Bike": header (title + small circular scroll arrows next to "View All", using
+   the new `Rail` ref) + segmented tabs + `ProductCarousel variant="home-category"`. One component,
+   not a Car/Bike fork — `Home.tsx`'s two `blocks["top-categories-*"]` entries now just pass
+   different props into it. The section-level arrows (`.rail-control-btn`, new CSS) are visually
+   distinct from `Rail`'s own edge-overlay arrows used elsewhere (28-32px, neutral border, sit next
+   to "View All" — not overlaid on the rail edges).
+5. **`PromoBannerPair` rebuilt image-led** (`src/components/home/PromoBannerPair.tsx`) — was a full
+   `object-cover` image behind the text (could obscure it) with generic `Package`/`Sparkles` icon
+   fallbacks and a brand-orange/violet gradient pair not matching the Figma purple→blue /
+   purple→light-blue reference. Now: `object-contain` image constrained to the card's right side as
+   a flex sibling of the text block (can never cover it), moderate `rounded-xl` (was `rounded-2xl`),
+   new gradient pair (`from-[#5b3fc4] to-[#3f6fd8]` / `from-[#6a3fc4] to-[#8fb8f0]`). **CMS
+   ownership preserved exactly** — still reads real `cms_promotions` `image`/`heading`/`subheading`/
+   `ctaLabel`/`ctaUrl` when published (verified live: a real "E2E Promo Heading" promotion rendered
+   correctly, one card only — no fabricated second banner), falling back to the documented default
+   copy only when nothing is published.
+6. **ProductCard Add-to-Cart success state** (`src/components/product/ProductCard.tsx`) — the
+   default-variant button now has a local `justAdded` boolean (`useState`, cleared by a
+   `useRef`-tracked `setTimeout`, restarted on repeat clicks — same restart-cleanly pattern as
+   `MobileCartAddedIndicator`): outline `btn-pill-outline` → solid `btn-pill-solid-brand` (new CSS,
+   same `.btn-pill` shape so the button never resizes) with a `Check` icon and "Added to Cart" text
+   for 1.5s, then reverts. `CartContext.addToCart` is the only source of truth — the visual state
+   is purely transient/local, set only *after* the real (synchronous, cannot-fail-today) mutation,
+   never before it. **Also fixed a latent variant-safety gap**: the default variant previously
+   called `addToCart(product)` unconditionally, even for multi-variant products (silently adding a
+   default variant) — it now checks `productRequiresSelection(product)` (existing helper, already
+   used by the `cart-recommendation` variant) and renders a "Select Options" link to the PDP
+   instead, matching the cart-recommendation variant's existing correct behavior. `aria-live`
+   wraps the button's text/icon; `duration-200 motion-reduce:transition-none` respects reduced
+   motion while the text+icon still switch (never color/animation-only). Cart drawer / mobile
+   `MobileCartAddedIndicator` / badge / recommendation reranking are untouched — confirmed live via
+   screenshot on both desktop (drawer opens, correct state) and mobile (no drawer, indicator bubble
+   fires instead).
+7. **Desktop navbar phone number removed** (`src/components/Header.tsx`) — the `tel:` link and
+   `Phone` import are gone entirely (not hidden at another breakpoint); the search input widened
+   (`w-64` → `w-64 lg:w-72`) to use the freed space. Footer/Contact-page/CMS phone content is
+   untouched — this was specifically the main navbar.
+8. **Mobile nav rebuilt into a real sliding drawer** — new `src/components/MobileNavDrawer.tsx`,
+   wired from `Header.tsx`'s existing `open` state and CMS-driven `navItems` (no parallel nav
+   system). Left-side slide-in with backdrop, body-scroll lock, focus trap, Escape-to-close,
+   backdrop-click-to-close, closes on nav selection, focus returns to the hamburger button on
+   close, `role="dialog" aria-modal="true"` — **applied only while open** (`role`/`aria-modal`/
+   `aria-label` all become `undefined` when closed) specifically so a bare `page.getByRole('dialog')`
+   query elsewhere in the test suite (previously unambiguous, since `CartDrawer` was the only
+   `role="dialog"` element on any page) stays unambiguous; this was caught as a real regression via
+   the existing `cart-drawer.spec.ts`/`cart-recommendations.spec.ts` suites and fixed before
+   shipping. Account/Wishlist surfaced in a secondary drawer row (previously invisible below `sm`/
+   640px on real mobile widths — a pre-existing reachability gap now fixed); Wishlist has no auth
+   gate (matches the header icon row), Account is gated on `authConfigured`. Language switcher was
+   deliberately left in the header icon row, not duplicated into the drawer (judged not to be
+   crowding the compact header). Desktop mobile search (`mobileSearchOpen`) stays the separate,
+   pre-existing toggle — not merged into the new drawer.
+
+**Explicitly not touched** (per the spec's own "Do NOT touch" list): Odoo credentials/schema,
+Admin auth, CMS database architecture, payment/checkout, transactional email, analytics event
+architecture, recommendation scoring logic, product ownership.
+
+### Follow-up: real Figma reference supplied, PromoBannerPair image fixed, full re-verification (2026-09-29)
+
+The 2026-09-22 pass above was implemented and self-verified against the spec's *text* description
+only — no Figma screenshot had actually been supplied at the time. This follow-up obtained the
+real Figma reference (screenshots of the Car/Bike category sections, promo pair, PDP, and desktop
+header) and re-verified every item in the 2026-09-22 entry against it, live, at all 7 requested
+breakpoints. Everything held up (segmented capsule tabs, section arrows next to "View All", ~5-card
+desktop rail density, Bike mirroring Car, phone-free header, accessible mobile drawer, Add-to-Cart
+outline→solid→revert). One real gap remained, fixed here:
+
+- **`PromoBannerPair`'s default (no-published-CMS-promotion) banners still fell back to a generic
+  `Package`/`Sparkles` Lucide icon** — the 2026-09-22 entry's "image-led rebuild" only covered the
+  case where a *real* `cms_promotions` row is published; the hardcoded default copy (shown until an
+  admin publishes one) still used the old icon-on-gradient treatment, which the Figma reference does
+  not use (it shows real product-collage artwork on both cards). Fixed in
+  `src/components/home/PromoBannerPair.tsx` + `src/pages/Home.tsx`:
+  - New shared `PromoArt({ src })` (replaces the duplicated image/icon branches in both the
+    CMS-promotion and default render paths — one component, not two near-identical blocks).
+  - `PromoBannerPair` gained two optional props, `comboImage`/`newLaunchImage` (strings), used only
+    for the *default* banners (ignored the moment a real CMS promotion is published — CMS ownership
+    is unchanged from the 2026-09-22 entry).
+  - `Home.tsx` computes these from real data only, never fabricated: the same curated
+    `featuredCmsProducts`/`newArrivalCmsProducts` arrays it already computes for the "Find Your
+    Perfect Vehicles" Popular/New tabs (so "Best Combo Deals" and "New Launch" show a photo of an
+    actually-curated bestseller/new-arrival product — the literal destination the card links to,
+    `/shop?tag=bestseller` / `/shop?tag=new`), falling back to the mock catalog's own
+    `tag === "bestseller"`/`"trending"`/`"new"` products when no CMS curation is published (the
+    `tag` field is a mock-catalog-only concept — always absent on real Odoo products, matching the
+    graceful-degradation rule already established elsewhere in this file).
+  - **No image resolves to nothing (not a bug)** — with `VITE_CATALOG_SOURCE=supabase` (the local
+    default), real Odoo products carry no `tag`, and this environment has no CMS "featured"/
+    "new-arrivals" merchandising curated yet, so `comboImage`/`newLaunchImage` are both `undefined`
+    right now. `PromoArt` renders a small soft abstract rotated device instead of an icon in that
+    case — never a literal, potentially-misleading icon standing in for an unknown product, and
+    never a fabricated/unrelated product photo (verified live by intercepting the
+    `cms_promotions` REST call to force the default-banner path — see Testing).
+
 ## Interfaces / data
 
 - `PageContainer({ size?: "normal" | "wide"; as?; className?; children })`
 - `FullBleedSection({ as?; spacing?: "none" | "compact" | "normal" | "large"; containerSize?: "normal" | "wide"; className?; children })`
 - `ProductMedia({ src?: string; alt: string; icon: string; className?; iconClassName?; eager?: boolean })`
 - `ProductPlaceholder({ icon: string; className?; iconClassName? })`
-- `ProductCarousel({ products: Product[] })`
+- `ProductCarousel({ products: Product[]; tracking?; variant?: "default" | "home-category"; hideArrows?: boolean; onBoundsChange?: (b: {canScrollPrev, canScrollNext}) => void })`, now `forwardRef<RailHandle, ...>`
+- `Rail({ children; centerWhenFits?; arrowStyle?; arrowTop?; hideEdgeArrows?: boolean; onBoundsChange?: (b: {canScrollPrev, canScrollNext}) => void })`, now `forwardRef<RailHandle, ...>` exposing `{ scrollPrev(): void; scrollNext(): void }`
+- `PillTabs({ options; value; onChange; variant?: "pill" | "segmented" })` — `variant` defaults to `"pill"` (unchanged existing behavior)
+- New `HomeCategoryProductSection({ title, ctaLabel, ctaHref, tabs, activeTab, onTabChange, products })`
+- `PromoBannerPair({ promotions?; comboImage?: string; newLaunchImage?: string })` — new
+  `comboImage`/`newLaunchImage`, used only for the default (no-CMS-promotion) banners; new internal
+  `PromoArt({ src? })` (not exported)
+- New `MobileNavDrawer({ open, onClose, navItems, currentPath, onNavigate, triggerRef, showAccountWishlist, accountHref, wishlistCount, accountLabel, wishlistLabel })`
 - `CartContextValue` gained `removeLine(productId: string): void`, `setQuantity(productId: string, qty: number): void`, `clearCart(): void`
-- New CSS: `.section-pad-compact` / `.section-pad-normal` / `.section-pad-large`, `.heading` / `.heading-upper`, `.inset-wide-l` (full-bleed-content left inset matching `.container-wide`)
-- New i18n keys (en/hi/gu, all three in lockstep): `home.tabMats`, `home.tabGuards`
+- New CSS: `.section-pad-compact` / `.section-pad-normal` / `.section-pad-large`, `.heading` / `.heading-upper`, `.inset-wide-l` (full-bleed-content left inset matching `.container-wide`), `.segment-tabs` / `.segment-tab` / `.segment-tab-active`, `.btn-pill-solid-brand`, `.rail-control-btn`
+- New i18n keys (en/hi/gu, all three in lockstep): `home.tabMats`, `home.tabGuards`, `home.addedToCart`
 - `Shop.tsx` now reads `?tag=` (`ProductTag`: `"new" | "trending" | "bestseller"`)
 
 ## Dependencies
@@ -337,7 +469,43 @@ Verified three ways via Playwright:
 
 ## Testing / verification
 
-- `npx tsc -b --noEmit` — clean after every phase, re-verified at the end.
+### Figma-fidelity pass (2026-09-22)
+
+- `npm run build` (`tsc -b && vite build`), `npm run lint` (oxlint, exit 0 — only pre-existing
+  warnings in untouched files), `npm run typecheck:server`, `npm run test:unit` (99 passed/1
+  skipped) — all clean.
+- Screenshots captured and reviewed at all 7 requested breakpoints (1920×1080, 1550×900, 1440×900,
+  1280×800, 1024×768, 820×1180, 390×844) against the Figma reference: segmented capsule tabs,
+  section-level scroll arrows next to "View All", denser ~5-card desktop rail, Bike mirroring Car,
+  phone-free desktop header, real single-promotion `PromoBannerPair` rendering, mobile nav drawer
+  (backdrop, 6 links, Account/Wishlist row), Add-to-Cart success state on both desktop (opens the
+  cart drawer, correct product highlighted, neighbors unaffected) and mobile (`MobileCartAddedIndicator`
+  bubble, no drawer). Caught and fixed one real visual bug this way: segmented tabs wrapped to a
+  second row at 390px (`flex-wrap` → `overflow-x-auto`).
+- New `tests/interaction/home-figma-fidelity.spec.ts` (12 tests): segmented-tab switching +
+  no-layout-jump, Bike mirrors Car, section arrow enabled/disabled state, desktop/mobile Add-to-Cart
+  success state (incl. drawer-vs-no-drawer split), double-click-during-success-state settles to qty
+  2 with one cart line (verified via the `/cart` page, scoped to `<main>` — the persistent-but-hidden
+  `CartDrawer` renders its own copy of the same line elsewhere in the DOM, a pre-existing fact
+  surfaced while writing this test), promo card renders real CMS content, no `tel:` link in the
+  header, and 5 mobile-nav-drawer tests (all six links present, closes via X/Escape/nav-selection,
+  focus returns to the hamburger, body-scroll lock).
+- Regenerated `tests/visual/home.spec.ts-snapshots/*.png` (all 4 projects) — expected, since this
+  pass intentionally changes the homepage's visual composition.
+- Re-ran the full pre-existing interaction suite touching shared components
+  (`cart-drawer.spec.ts`, `cart-recommendations.spec.ts`, `category-icon-strip.spec.ts`,
+  `product-image.spec.ts`, `shop-catalog.spec.ts`) to confirm no regression. Found and fixed one
+  real regression this surfaced: `MobileNavDrawer` was always mounted with `role="dialog"`, making
+  the pre-existing bare `page.getByRole('dialog')` queries (previously unambiguous — `CartDrawer`
+  was the only such element on any page) resolve to 2 elements — fixed by only applying
+  `role`/`aria-modal`/`aria-label` while the drawer is actually open. Also updated
+  `cart-drawer.spec.ts`'s "re-adding the same product" test, which used to select the target button
+  by its (now transient) "Add to Cart" text — switched to a position/container-scoped locator so it
+  isn't affected by the button briefly reading "Added to Cart". The remaining failures observed
+  during this pass (intermittent `waitForLoadState("networkidle")` timeouts on `/shop`, and
+  `cart-recommendations.spec.ts`'s "You Might Also Need" not appearing for one specific live Odoo
+  product) were root-caused to pre-existing environment characteristics, not this change — see
+  Known issues.
 - `npm run test:visual:update` — all 4 projects (desktop-1440, mobile-390, desktop-1280,
   desktop-1920) pass; `document.documentElement.scrollWidth <= window.innerWidth + 1` holds at
   every viewport (no horizontal overflow anywhere). Baseline screenshots committed under
@@ -368,6 +536,47 @@ Verified three ways via Playwright:
 - `npm run lint` / `npm run build` — run once at the very end of the pass (see the assistant's
   final report to the user in-conversation for exact output); no new warnings introduced beyond
   the 3 pre-existing `oxlint` warnings already present before this work.
+
+### Testing / verification (2026-09-29 follow-up)
+
+- `npx tsc --noEmit`, `npm run lint` (oxlint — 0 errors; only pre-existing warnings in files this
+  change doesn't touch, confirmed by grepping the warning list for `PromoBannerPair`/`Home.tsx`
+  lines changed here), `npm run build`, `npm run test:unit` (106 passed/1 skipped),
+  `npm run typecheck:server` — all clean.
+- Real Figma reference (screenshots, not the spec text alone) reviewed against a live Playwright
+  capture at all 7 requested breakpoints (1920×1080, 1550×900, 1440×900, 1280×800, 1024×768,
+  820×1180, 390×844): segmented capsule tabs match (dark active pill, single row, thin outer
+  border, arrows next to "View All"), ~5-card desktop rail density matches, Bike mirrors Car, no
+  phone number anywhere in the desktop header at 1920px, desktop nav/search/icons stay balanced
+  with no dead gap.
+- `tests/interaction/home-figma-fidelity.spec.ts` (12 tests, `--project=interaction`): all pass,
+  including the Add-to-Cart outline→solid→"Added to Cart"→revert flow (desktop opens the drawer
+  with the correct line item + working cross-sell rail; mobile shows the indicator without opening
+  a drawer), the double-click-settles-to-qty-2 test, and all 5 mobile-nav-drawer tests (6 links
+  present, X/Escape/backdrop/nav-selection close paths, focus-restore, body-scroll lock).
+- `PromoArt`'s default-banner path specifically verified live (not just by reading the diff): the
+  homepage currently has one real published `cms_promotions` row ("E2E Promo Heading"), so the
+  default-banner branch never renders under normal navigation. Intercepted the
+  `**/rest/v1/cms_promotions*` REST call to return `[]` and reloaded — confirmed both
+  "Best Combo Deals"/"New Launch" render the new soft abstract-device fallback (no `Package`/
+  `Sparkles` icon), correctly, since neither CMS merchandising curation nor mock-catalog `tag` data
+  exists in this environment right now; the image-resolution logic itself (`.map(productImage).find(Boolean)`
+  over `featuredCmsProducts`/`newArrivalCmsProducts` or the mock catalog's tagged products) was
+  verified by code inspection against `src/data/products.ts` (real `tag`/image entries exist there)
+  and the clean `tsc`/build.
+- **Pre-existing environmental flakiness re-confirmed, not caused by this change**: re-ran
+  `cart-drawer.spec.ts` and `category-icon-strip.spec.ts` (neither touched by this change or the
+  2026-09-22 pass's `Header`/`PillTabs`/`ProductCard`/`Rail`/`HomeCategoryProductSection`/
+  `MobileNavDrawer` work) and both showed the exact class of failure already logged below under
+  "Live Odoo/Supabase catalog latency" — every failure was a `page.goto("/shop")` +
+  `waitForLoadState("networkidle")` timeout, or (for the one `category-icon-strip` geometry test)
+  a layout measurement taken before a slow real-catalog fetch settled. Root-caused directly this
+  time (not just inferred): a throwaway script hitting `/shop` on the same dev server showed
+  `domcontentloaded` at 320ms but real product links (`a[href^="/product/"]`) still not present
+  after 15s, and `networkidle` itself only resolving at ~15.3s — confirms the live Supabase/Odoo
+  catalog fetch, not anything in this diff, is the slow path. `PromoBannerPair.tsx`/`Home.tsx` (the
+  only files this follow-up touched) have no code path anywhere near `Shop.tsx`, `CartContext`,
+  `Rail`, or `CategoryIconStrip`.
 
 ## Known issues / follow-ups
 
@@ -404,11 +613,64 @@ Verified three ways via Playwright:
   `figma-shop-product-odoo-integration.md` that this pass didn't touch (real OEM logos, hero
   `car.png` still a stock photo, Odoo scaffolding inert, Shop's "Model name" filter being a plain
   substring match, etc.) still applies unchanged — see those files.
+- **Live Odoo/Supabase catalog latency causes intermittent Playwright timeouts, unrelated to this
+  pass.** `.env.local` has `VITE_CATALOG_SOURCE=supabase` (real catalog, not mock) as the local
+  dev default; `catalog-products`/`catalog-categories` Edge Function responses were observed taking
+  anywhere from ~1s to >15s during this session (confirmed via direct network tracing — not a
+  frontend hang, a genuinely slow backend response). `Shop.tsx` deliberately has no
+  fallback-while-loading (unlike `Home.tsx`, which shows stale/mock data while the real fetch is in
+  flight — a documented, intentional exception), so any Shop-dependent test using a short
+  `waitForLoadState("networkidle")`/`toBeVisible` timeout can intermittently fail under load. Not
+  new — this exact pattern was already noted for the analytics tracking-journey test elsewhere in
+  the project.
+- **`src/lib/recommendations/engine.ts`'s candidate pool is the static mock catalog
+  (`data/products.ts`), not the live Odoo catalog** — a pre-existing architecture gap (recommendation
+  scoring logic is explicitly out of scope for this pass). Under `VITE_CATALOG_SOURCE=supabase`,
+  a real Odoo product's cross-sell "You Might Also Need" rail can legitimately be empty if nothing
+  in the mock pool shares its category/vehicle — observed with the real "GRASS 18 MM SET OF 5"
+  product (empty `categoryIds`/`vehicleTypes` from Odoo) during this session's test run. Revisit
+  only alongside real recommendation-engine work, not as part of a storefront fidelity pass.
+
+### Follow-up: CategoryIconStrip centering (2026-09-18)
+
+The 7-item category icon row under the Car/Bike hero was left-heavy on desktop when all items fit
+in the viewport — the generic `Rail` always left-aligned its flex track. Fixed with an opt-in
+`centerWhenFits` prop on `Rail` (nested scroll container + inner `w-max min-w-full justify-center`
+track; existing `ProductCarousel` callers unchanged). Product photo circles use a nested
+`overflow-hidden` wrapper so hover rings are not clipped.
+
+### Follow-up: CategoryIconStrip geometry + hover (2026-09-18, completion)
+
+Completed the surgical UI/UX fix prompt that Claude started before hitting its weekly limit.
+Four targeted fixes, no unrelated Rail consumers changed:
+
+1. **Center when fits** — `Rail centerWhenFits` on `CategoryIconStrip` only; scroll-from-start when
+   the 7 items overflow (mobile / narrow desktop).
+2. **No photo hover ring/halo** — photo circles keep the resting `ring-steel-300` only; no blue
+   hover ring or darkening. Icon circles still darken to brand-700 on fine-pointer hover.
+3. **Icon/image centering** — replaced `grid place-items-center` with flex on `.category-circle-*`,
+   `size-9 shrink-0 block` on SVGs, and `object-contain object-center` on PNGs inside the nested
+   clip wrapper. Inspected `categoryImages` assets: seat-covers (508.png) and audio-dashcams
+   (491.png) are usable; floor-mats (13.png) remains icon-only (marketing collage, not a product
+   photo).
+4. **Geometric cell consistency** — shared `CategoryStripCell` with fixed `.category-circle-slot`
+   (80×80) and reserved `.category-strip-label` region (`min-h-[2.5rem]`) so two-line labels do
+   not vertically misalign circles.
+
+Verified with `tests/interaction/category-icon-strip.spec.ts` (10 tests: centering at
+1920/1550/1440/1366/1024, mobile scroll-from-start, SVG centering inside icon circles, photo hover
+geometry stability, icon hover darken without layout shift).
 
 ## Revision log
 
 | Date       | Author | Change                                  |
 |------------|--------|------------------------------------------|
+| 2026-09-29 | Claude | Follow-up: obtained the real Figma reference (previously only the text spec) and re-verified the 2026-09-22 Figma-fidelity pass against it live at all 7 breakpoints — everything held up. Fixed one real remaining gap: `PromoBannerPair`'s default (no-published-CMS-promotion) banners still used a generic `Package`/`Sparkles` icon fallback, not covered by 2026-09-22's "image-led rebuild" (which only handled the real-CMS-promotion path). New `PromoArt` shared sub-component; `Home.tsx` now computes `comboImage`/`newLaunchImage` from real curated bestseller/new-arrival product photos (never fabricated), falling back to a clean abstract device (never an icon standing in for a product) when none exist. Full re-verification: build/lint/typecheck/unit clean, 12/12 `home-figma-fidelity.spec.ts` passing; re-confirmed (and this time root-caused directly) that `cart-drawer.spec.ts`/`category-icon-strip.spec.ts` failures are pre-existing live-Odoo-catalog latency, unrelated to any file this change or the 2026-09-22 pass touched. |
+| 2026-09-22 | Claude | Figma-fidelity pass: `PillTabs variant="segmented"` compact capsule control, denser `ProductCarousel variant="home-category"` rail, `Rail`/`ProductCarousel` forwardRef scroll controls, new `HomeCategoryProductSection` (Car+Bike share one component), image-led `PromoBannerPair` rebuild preserving CMS ownership, `ProductCard` Add-to-Cart success state + variant-safety fix, desktop phone number removed, new `MobileNavDrawer` real sliding drawer, 12-test Playwright suite added, visual-regression baselines regenerated, one real regression found+fixed (`MobileNavDrawer`'s always-mounted `role="dialog"` colliding with `CartDrawer`'s) |
+| 2026-09-18 | Cursor | CategoryIconStrip completion: fixed circle slot + label region, flex-based icon/photo centering, photo hover ring removed, shared `CategoryStripCell`, 10-test Playwright suite (1550/1366 viewports + SVG centering + icon hover) |
+| 2026-09-18 | Cursor | CategoryIconStrip desktop centering via `Rail.centerWhenFits`, nested photo clip wrapper retained for hover rings, 6-test Playwright interaction suite added |
+| 2026-09-21 | Claude | CategoryIconStrip redesigned to the Figma category tile after user review: circles/rings/icon discs removed — bare product art (`public/images/categories/*.png`, cropped from the Figma reference; not Odoo data) above a grey label, seven equal-width cells on a white band, Rail `arrowStyle="circle"` (outlined prev / blue next, image-row anchored, still hidden when everything fits), `.category-circle-*` CSS removed, 7-test Playwright suite rewritten for the new markup |
+| 2026-09-21 | Claude | "Shop by Brands" (car/bike makes) now shows real logos instead of the first-letter badge: `public/images/vehicle-brands/*.svg` (Simple Icons CC0 recoloured to brand colours + Wikimedia Commons SVGs for Maruti Suzuki, Mercedes-Benz, OLA, Royal Enfield, Hero), looked up by normalized make name via `vehicleBrandLogo()` so CMS-overridden names still resolve; TVS Motor and Chetak have no usable logo and keep the letter badge. Not Odoo data (Odoo has no make field). |
 | 2026-09-09 | Claude | Initial version — layout/spacing primitives, ProductMedia/ProductPlaceholder, ProductCard DOM+rating fixes, Rail boundary arrows + ProductCarousel, VehicleShopSplit extraction, cart removeLine/setQuantity/clearCart, PDP Buy Now honesty, Shop tag filter, VehicleBrandGrid real links, Header chevron removal, 3 Home.tsx semantic data fixes, scoped typography utilities, first Playwright visual-regression suite |
 | 2026-09-09 | Claude | Follow-up (same day, after user screenshot review): fixed VehicleShopSplit's left-edge misalignment (new `.inset-wide-l` utility) and restructured its vehicle-image positioning so ~1/3 of each vehicle overhangs below its panel without clipping or colliding with CategoryIconStrip |
 | 2026-09-09 | Claude | Follow-up (same day, after another user screenshot): fixed CategoryIconStrip's hover ring rendering as broken arcs (overflow-hidden was clipping its own box-shadow ring) by moving image-clipping to a nested wrapper span |

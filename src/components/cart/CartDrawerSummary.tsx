@@ -1,16 +1,36 @@
 import { useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { formatINR } from "../../lib/format";
 import { useLang } from "../../i18n/LanguageContext";
+import { useCart } from "../../context/CartContext";
+import { buildOdooHandoffUrl, HandoffValidationError } from "../../lib/odooCheckoutHandoff";
 
 /**
- * Sticky bottom area of the drawer. Checkout is intentionally rendered disabled — the real
- * checkout flow doesn't exist yet (see Documentations MD/responsive-cart-drawer.md) and an
- * active-looking button that does nothing is worse than an honest disabled one. View Cart is the
- * one working CTA.
+ * Sticky bottom area of the drawer. Checkout hands the cart off to Odoo's own native checkout
+ * (Documentations MD/odoo-native-checkout.md) — the production checkout path as of this pass.
+ * Only rendered by CartDrawer.tsx when the cart has at least one line, so there's no separate
+ * empty-cart gating needed here.
  */
 export function CartDrawerSummary({ subtotal, onClose }: { subtotal: number; onClose: () => void }) {
   const { t } = useLang();
   const navigate = useNavigate();
+  const { lines } = useCart();
+  const [preparing, setPreparing] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  const onCheckout = async () => {
+    if (preparing) return;
+    setCheckoutError(null);
+    setPreparing(true);
+    try {
+      const url = await buildOdooHandoffUrl(lines);
+      onClose();
+      window.location.assign(url);
+    } catch (err) {
+      setPreparing(false);
+      setCheckoutError(err instanceof HandoffValidationError ? err.message : "We couldn't start checkout — please try again.");
+    }
+  };
 
   return (
     <div className="shrink-0 border-t border-line px-5 py-4 bg-white">
@@ -19,6 +39,7 @@ export function CartDrawerSummary({ subtotal, onClose }: { subtotal: number; onC
         <span className="price text-[17px] font-bold">{formatINR(subtotal)}</span>
       </div>
       <p className="text-[11.5px] text-steel-500 mb-4">{t("cart.shippingNote")}</p>
+      {checkoutError && <p className="text-[12px] text-sale mb-2">{checkoutError}</p>}
 
       <button
         type="button"
@@ -30,10 +51,9 @@ export function CartDrawerSummary({ subtotal, onClose }: { subtotal: number; onC
       >
         {t("cart.viewCart")}
       </button>
-      <button type="button" disabled aria-disabled="true" className="btn-pill-outline w-full justify-center !py-3 mt-2 opacity-50 cursor-not-allowed">
-        {t("cart.checkout")}
+      <button type="button" onClick={onCheckout} disabled={preparing} className="btn-pill-outline w-full justify-center !py-3 mt-2 disabled:opacity-50 disabled:pointer-events-none">
+        {preparing ? "Preparing secure checkout…" : t("cart.checkout")}
       </button>
-      <p className="text-[11px] text-steel-500 text-center mt-2">{t("cart.checkoutComingSoon")}</p>
     </div>
   );
 }

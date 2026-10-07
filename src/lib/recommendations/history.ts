@@ -1,4 +1,5 @@
 import { products } from "../../data/products";
+import { track } from "../analytics/client";
 
 const RECENTLY_VIEWED_KEY = "delite-auto-recently-viewed";
 const MAX_TRACKED_VIEWS = 20;
@@ -15,6 +16,10 @@ function readViewedIds(): string[] {
 
 /** Called once per PDP visit (see ProductDetail.tsx). Most-recent-first, deduped, capped. */
 export function recordProductView(productId: string) {
+  // Server analytics is separate from the local recent-views list below (which feeds the
+  // recommendation engine). Counted once per page view; only real Odoo template ids qualify.
+  const odooId = Number(productId);
+  if (Number.isSafeInteger(odooId) && odooId > 0) track("product_view", { odoo_template_id: odooId });
   try {
     const existing = readViewedIds();
     const next = [productId, ...existing.filter((id) => id !== productId)].slice(0, MAX_TRACKED_VIEWS);

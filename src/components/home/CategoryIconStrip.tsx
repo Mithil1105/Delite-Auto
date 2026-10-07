@@ -2,80 +2,86 @@ import { Link } from "react-router-dom";
 import { Icon } from "../../lib/icons";
 import { Rail, RailItem } from "../Rail";
 import { useLang } from "../../i18n/LanguageContext";
-import { categoryImages } from "../../lib/categoryImages";
+import { track } from "../../lib/analytics/client";
+
+type T = ReturnType<typeof useLang>["t"];
 
 /**
- * `image` is only set where `categoryImages` (src/lib/categoryImages.ts) genuinely depicts what
- * the label claims — e.g. "bike-guards"' representative photo is a side stand, not handlebar
- * grips or a crash guard, so "Handle Grips" and "Steel Guard (SS)" deliberately keep their icon
- * fallback rather than show a misleading real photo (same rule `ProductArt` follows: never
- * borrow an unrelated product's photo). "Bike Seat Covers" has no real photo for the same reason
- * — the mock catalog has no bike seat-cover product yet, only car ones.
+ * Default (non-CMS) items. Images are dedicated category-tile art under public/images/categories/
+ * (cropped from the Figma reference — replace any file in place with a higher-resolution export,
+ * keeping the filename). They are NOT Odoo data and NOT the mock-catalog product photos: those
+ * were either the wrong subject (a side stand for "Handle Grips") or a marketing collage (floor
+ * mats). When Homepage Categories are curated in Delite Admin, `cmsItems` replaces all of this
+ * with real Odoo public categories.
  */
 const items = [
-  {
-    icon: "Car",
-    image: categoryImages["seat-covers"],
-    label: (t: ReturnType<typeof useLang>["t"]) => t("home.categoryStrip.carSeatCovers"),
-    href: "/shop?category=seat-covers&vehicle=car",
-  },
-  {
-    icon: "Bike",
-    label: (t: ReturnType<typeof useLang>["t"]) => t("home.categoryStrip.bikeSeatCovers"),
-    href: "/shop?category=seat-covers&vehicle=bike",
-  },
-  {
-    icon: "Grid2x2",
-    image: categoryImages["floor-mats"],
-    label: (t: ReturnType<typeof useLang>["t"]) => t("home.categoryStrip.carMats"),
-    href: "/shop?category=floor-mats",
-  },
-  {
-    icon: "Grip",
-    label: (t: ReturnType<typeof useLang>["t"]) => t("home.categoryStrip.handleGrips"),
-    href: "/shop?category=bike-guards",
-  },
-  {
-    icon: "Radio",
-    image: categoryImages["audio-dashcams"],
-    label: (t: ReturnType<typeof useLang>["t"]) => t("home.categoryStrip.audioSystem"),
-    href: "/shop?category=audio-dashcams",
-  },
-  {
-    icon: "Monitor",
-    label: (t: ReturnType<typeof useLang>["t"]) => t("home.categoryStrip.monitors"),
-    href: "/shop?category=audio-dashcams",
-  },
-  {
-    icon: "ShieldCheck",
-    label: (t: ReturnType<typeof useLang>["t"]) => t("home.categoryStrip.steelGuard"),
-    href: "/shop?category=bike-guards",
-  },
+  { image: "/images/categories/car-seat-covers.png", label: (t: T) => t("home.categoryStrip.carSeatCovers"), href: "/shop?category=seat-covers&vehicle=car" },
+  { image: "/images/categories/bike-seat-covers.png", label: (t: T) => t("home.categoryStrip.bikeSeatCovers"), href: "/shop?category=seat-covers&vehicle=bike" },
+  { image: "/images/categories/car-mats.png", label: (t: T) => t("home.categoryStrip.carMats"), href: "/shop?category=floor-mats" },
+  { image: "/images/categories/handle-grips.png", label: (t: T) => t("home.categoryStrip.handleGrips"), href: "/shop?category=bike-guards" },
+  { image: "/images/categories/audio-system.png", label: (t: T) => t("home.categoryStrip.audioSystem"), href: "/shop?category=audio-dashcams" },
+  { image: "/images/categories/monitors.png", label: (t: T) => t("home.categoryStrip.monitors"), href: "/shop?category=audio-dashcams" },
+  { image: "/images/categories/steel-guard.png", label: (t: T) => t("home.categoryStrip.steelGuard"), href: "/shop?category=bike-guards" },
 ];
 
-export function CategoryIconStrip() {
-  const { t } = useLang();
+/** A real, CMS-curated Odoo public category (Homepage Categories merchandising) — see
+ * Documentations MD/delite-admin.md, "Odoo-ID-only persistence". `image` is a resolved Storage
+ * public URL (already built by the caller), never a raw media id/path. */
+export interface CmsCategoryItem {
+  categoryId: number;
+  name: string;
+  image?: string;
+}
+
+type CategoryStripCellProps = {
+  href: string;
+  label: React.ReactNode;
+  children: React.ReactNode;
+};
+
+/** Equal-width cell: fixed-height media slot + reserved label region, so every image sits on one centerline and a two-line label never shifts a neighbour. */
+function CategoryStripCell({ href, label, children }: CategoryStripCellProps) {
   return (
-    <Rail>
+    <RailItem className="grow basis-[136px] min-w-[136px]">
+      <Link
+        to={href}
+        onClick={() => track("navigation_click", { surface: "home_category_strip", metadata: { target: href } })}
+        className="group flex w-full flex-col items-center gap-6 text-center outline-offset-4 rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-600"
+      >
+        <span className="category-tile-media">{children}</span>
+        <span className="category-strip-label">{label}</span>
+      </Link>
+    </RailItem>
+  );
+}
+
+/**
+ * `cmsItems`, when provided (non-empty), REPLACES the hardcoded items with real, CMS-curated Odoo
+ * public categories — same additive-prop pattern as Hero/AnnouncementBar: omit the prop and this
+ * renders the defaults. Visual design (tile, label, Rail) is identical either way — CMS controls
+ * content/selection, not layout.
+ */
+export function CategoryIconStrip({ cmsItems }: { cmsItems?: CmsCategoryItem[] } = {}) {
+  const { t } = useLang();
+
+  if (cmsItems && cmsItems.length > 0) {
+    return (
+      <Rail centerWhenFits arrowStyle="circle" arrowTop="top-[72px]">
+        {cmsItems.map((item) => (
+          <CategoryStripCell key={item.categoryId} href={`/shop?category=${item.categoryId}`} label={item.name}>
+            {item.image ? <img src={item.image} alt="" loading="lazy" decoding="async" /> : <Icon name="Package" strokeWidth={1.5} />}
+          </CategoryStripCell>
+        ))}
+      </Rail>
+    );
+  }
+
+  return (
+    <Rail centerWhenFits arrowStyle="circle" arrowTop="top-[72px]">
       {items.map((item) => (
-        <RailItem key={item.href + item.icon} className="w-[124px] sm:w-[136px]">
-          <Link to={item.href} className="flex flex-col items-center gap-3 text-center group">
-            <span className={item.image ? "category-circle-photo" : "category-circle-icon"}>
-              {item.image ? (
-                // The image is clipped to a circle by a NESTED overflow-hidden wrapper, not by
-                // the outer ring-bearing span itself — overflow-hidden on the same element as a
-                // ring/box-shadow clips that ring too (a browser box-shadow+overflow interaction),
-                // which made the hover ring render as broken arcs instead of one clean circle.
-                <span className="block w-full h-full rounded-full overflow-hidden">
-                  <img src={item.image} alt="" className="w-full h-full object-contain p-3.5" />
-                </span>
-              ) : (
-                <Icon name={item.icon} className="w-9 h-9" strokeWidth={1.75} />
-              )}
-            </span>
-            <span className="text-[12.5px] font-semibold leading-snug">{item.label(t)}</span>
-          </Link>
-        </RailItem>
+        <CategoryStripCell key={item.image} href={item.href} label={item.label(t)}>
+          <img src={item.image} alt="" loading="lazy" decoding="async" />
+        </CategoryStripCell>
       ))}
     </Rail>
   );

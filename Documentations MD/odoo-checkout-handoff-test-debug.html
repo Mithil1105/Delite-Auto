@@ -1,0 +1,246 @@
+<!--
+  DEV/DEBUG ONLY — NOT the production handoff page. See odoo-checkout-handoff-embed-code.html for
+  the real production script (page: /checkout/handoff, no test UI, no debug output).
+
+  This page (/checkout-handoff-test) is kept only for manual engineering diagnostics — e.g.
+  re-verifying the /shop/cart/add or /shop/cart/update contract if Odoo ever changes it. No
+  production code path references this URL; src/lib/odooCheckoutHandoff.ts hardcodes
+  /checkout/handoff. Do not wire any React code to this page.
+
+  Paste the content below into the "Embed Code" block on a new, unlisted Odoo Website page.
+  Page name: Checkout Handoff Test
+  URL: /checkout-handoff-test
+  Do NOT add to navigation/footer. Mark unindexed/unlisted if Odoo offers that option.
+
+  See Documentations MD/odoo-native-checkout.md for the full investigation this supports.
+
+  Manual diagnostics (harmless, only run when no #payload fragment is present):
+    Opening the page with no fragment shows a "Run single-product test" button (product id 11,
+    qty 1) for a quick manual sanity check without needing a real React cart.
+
+  Multi-line fragment usage (what the React app actually sends — object lines, not tuples):
+    https://www.deliteauto.com/checkout-handoff-test#{"v":1,"lines":[{"productTemplateId":11,"productId":11,"quantity":1}]}
+    (URL-encoded by the browser automatically; the script also accepts a plain, un-encoded JSON
+    fragment.)
+-->
+<div id="checkout-handoff-root" style="max-width:480px;margin:64px auto;padding:32px;font-family:sans-serif;text-align:center;">
+  <h3 id="checkout-handoff-title">Preparing your secure checkout&hellip;</h3>
+  <div id="checkout-handoff-spinner" style="margin:24px auto;width:32px;height:32px;border:3px solid #ddd;border-top-color:#333;border-radius:50%;animation:chSpin 0.8s linear infinite;"></div>
+  <style>@keyframes chSpin { to { transform: rotate(360deg); } }</style>
+  <p id="checkout-handoff-status" style="color:#555;font-size:14px;white-space:pre-wrap;"></p>
+  <pre id="checkout-handoff-log" style="text-align:left;background:#f4f4f4;padding:12px;font-size:12px;max-height:240px;overflow:auto;display:none;"></pre>
+  <div id="checkout-handoff-actions" style="margin-top:16px;display:none;"></div>
+  <div id="checkout-handoff-manual" style="margin-top:24px;border-top:1px solid #eee;padding-top:16px;">
+    <button id="checkout-handoff-run-single" type="button" style="padding:8px 16px;cursor:pointer;">
+      Run single-product test (id 11, qty 1)
+    </button>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // --- config -------------------------------------------------------------
+  var MAX_LINES = 20;
+  var MAX_QTY = 50;
+  var AUTO_REDIRECT_ON_SUCCESS = true; // production mode — see header comment
+
+  // --- small DOM helpers ----------------------------------------------------
+  function $(id) { return document.getElementById(id); }
+  function setStatus(msg) { var el = $("checkout-handoff-status"); if (el) el.textContent = msg; }
+  function setTitle(msg) { var el = $("checkout-handoff-title"); if (el) el.textContent = msg; }
+  function log(label, data) {
+    var el = $("checkout-handoff-log");
+    if (!el) return;
+    el.style.display = "block";
+    el.textContent += "[" + new Date().toISOString().slice(11, 19) + "] " + label + " " + JSON.stringify(data) + "\n";
+  }
+  function showActions(buttons) {
+    var el = $("checkout-handoff-actions");
+    if (!el) return;
+    el.style.display = "block";
+    el.innerHTML = "";
+    buttons.forEach(function (b) {
+      var btn = document.createElement(b.tag || "button");
+      btn.textContent = b.label;
+      btn.style.cssText = "margin:4px;padding:8px 16px;cursor:pointer;";
+      if (b.href) btn.href = b.href;
+      if (b.onClick) btn.addEventListener("click", b.onClick);
+      el.appendChild(btn);
+    });
+  }
+  var spinner = $("checkout-handoff-spinner");
+  function stopSpinner() { if (spinner) spinner.style.display = "none"; }
+
+  // --- payload parsing + validation (Step 9) --------------------------------
+  // Only ever accepts product identity + quantity. Never price/tax/discount/shipping/total —
+  // Odoo is the sole authority for all of those. Shape MUST match src/lib/odooCheckoutHandoff.ts
+  // (OdooHandoffPayload) exactly — object lines, not tuples:
+  //   {v:1, lines:[{productTemplateId, productId, quantity}, ...]}
+  function parseFragmentPayload() {
+    var hash = window.location.hash.replace(/^#/, "");
+    if (!hash) return null;
+    var raw;
+    try {
+      raw = decodeURIComponent(hash);
+    } catch (e) {
+      raw = hash; // already-decoded / plain JSON in the fragment
+    }
+    var decoded;
+    try {
+      decoded = JSON.parse(raw);
+    } catch (e) {
+      return { error: "Malformed payload (not valid JSON)" };
+    }
+    if (!decoded || decoded.v !== 1 || !Array.isArray(decoded.lines)) {
+      return { error: "Invalid payload shape (expected {v:1, lines:[{productTemplateId,productId,quantity}, ...]})" };
+    }
+    if (decoded.lines.length === 0 || decoded.lines.length > MAX_LINES) {
+      return { error: "Invalid line count (1-" + MAX_LINES + " lines allowed)" };
+    }
+    var lines = [];
+    for (var i = 0; i < decoded.lines.length; i++) {
+      var entry = decoded.lines[i];
+      if (!entry || typeof entry !== "object") return { error: "Invalid line entry at index " + i };
+      var productId = entry.productId, templateId = entry.productTemplateId, qty = entry.quantity;
+      if (!Number.isInteger(productId) || productId <= 0) return { error: "Invalid product id at index " + i };
+      if (templateId !== undefined && (!Number.isInteger(templateId) || templateId <= 0)) return { error: "Invalid product template id at index " + i };
+      if (!Number.isInteger(qty) || qty <= 0 || qty > MAX_QTY) return { error: "Invalid quantity at index " + i };
+      lines.push({ productId: productId, productTemplateId: templateId, qty: qty });
+    }
+    return { lines: lines };
+  }
+
+  // --- Odoo JSON-RPC call (same-origin — this is the entire point) ----------
+  function jsonRpc(url, params) {
+    return fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), params: params }),
+    })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (data.error) {
+            var msg = (data.error.data && data.error.data.message) || data.error.message || "Odoo RPC error";
+            throw new Error(msg);
+          }
+          return data.result;
+        });
+      });
+  }
+
+  // --- read the CURRENT cart's line ids (same-origin fetch + parse, Step 7) -
+  function getCurrentCartLineIds() {
+    return fetch("/shop/cart", { credentials: "same-origin" })
+      .then(function (res) { return res.text(); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, "text/html");
+        var inputs = doc.querySelectorAll(".js_quantity[data-line-id]");
+        var ids = [];
+        inputs.forEach(function (el) {
+          var id = parseInt(el.getAttribute("data-line-id"), 10);
+          if (Number.isInteger(id) && ids.indexOf(id) === -1) ids.push(id);
+        });
+        return ids;
+      });
+  }
+
+  // Confirmed live (2026-10-06): POST /shop/cart/update {line_id, quantity:0} removes a line —
+  // this is how the real "Remove from cart" link behaves (captured via Network inspection).
+  function clearCart() {
+    return getCurrentCartLineIds().then(function (lineIds) {
+      log("existing cart lines", lineIds);
+      var chain = Promise.resolve();
+      lineIds.forEach(function (lineId) {
+        chain = chain.then(function () {
+          return jsonRpc("/shop/cart/update", { line_id: lineId, quantity: 0 });
+        });
+      });
+      return chain;
+    });
+  }
+
+  function addLine(productId, templateId, qty) {
+    var params = { product_id: productId, add_qty: qty };
+    if (templateId) params.product_template_id = templateId;
+    return jsonRpc("/shop/cart/add", params);
+  }
+
+  // --- orchestration (Steps 7-8, sequential — never concurrent) -------------
+  function runHandoff(lines) {
+    setTitle("Preparing your secure checkout…");
+    setStatus("Checking your current cart…");
+    clearCart()
+      .then(function () {
+        var chain = Promise.resolve();
+        lines.forEach(function (line, idx) {
+          chain = chain.then(function () {
+            setStatus("Adding item " + (idx + 1) + " of " + lines.length + " (product " + line.productId + ")…");
+            return addLine(line.productId, line.productTemplateId, line.qty).then(function (result) {
+              log("add product " + line.productId + " x" + line.qty, {
+                line_id: result.line_id,
+                cart_quantity: result.cart_quantity,
+                amount: result.amount,
+                warning: result.warning,
+              });
+            });
+          });
+        });
+        return chain;
+      })
+      .then(function () {
+        stopSpinner();
+        setTitle("Your cart is ready.");
+        setStatus("All items were added successfully.");
+        if (AUTO_REDIRECT_ON_SUCCESS) {
+          window.location.href = "/shop/checkout";
+          return;
+        }
+        showActions([
+          { label: "View Cart", onClick: function () { window.location.href = "/shop/cart"; } },
+          { label: "Continue to Checkout →", onClick: function () { window.location.href = "/shop/checkout"; } },
+        ]);
+      })
+      .catch(showFailure);
+  }
+
+  // --- failure UX (Step 11) --------------------------------------------------
+  // Never redirects to /shop/checkout with a partial cart — if any line fails, the chain of
+  // .then() calls in runHandoff() short-circuits straight to here instead of continuing.
+  function showFailure(err) {
+    stopSpinner();
+    setTitle("We couldn't prepare your checkout.");
+    setStatus(String((err && err.message) || err));
+    log("ERROR", String((err && err.message) || err));
+    showActions([
+      { label: "Try Again", onClick: function () { window.location.reload(); } },
+      { label: "View Cart", onClick: function () { window.location.href = "/shop/cart"; } },
+      { label: "Return to Store", onClick: function () { window.location.href = "/shop"; } },
+    ]);
+  }
+
+  // --- single-product manual test button (Steps 3-5) -------------------------
+  $("checkout-handoff-run-single").addEventListener("click", function () {
+    $("checkout-handoff-manual").style.display = "none";
+    if (spinner) spinner.style.display = "block";
+    runHandoff([{ productId: 11, productTemplateId: 11, qty: 1 }]);
+  });
+
+  // --- auto-run if a valid fragment payload is present (Step 9) --------------
+  var parsed = parseFragmentPayload();
+  if (parsed) {
+    $("checkout-handoff-manual").style.display = "none";
+    if (parsed.error) {
+      showFailure(new Error(parsed.error));
+    } else {
+      runHandoff(parsed.lines);
+    }
+  } else {
+    stopSpinner();
+    setTitle("Checkout Handoff Test");
+    setStatus("Click below for a single-product test, or load this page with a #payload fragment for a multi-line test.");
+  }
+})();
+</script>

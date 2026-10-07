@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Heart, Plus, Star } from "lucide-react";
+import { Check, Heart, Plus, Star } from "lucide-react";
 import type { Product } from "../../data/types";
 import { ProductMedia } from "./ProductMedia";
 import { productImages } from "../../lib/productImages";
@@ -19,6 +20,8 @@ interface ProductCardProps {
   onQuickAdd?: () => void;
   /** cart-recommendation only: called when the product image/name is clicked (navigates to the PDP either way). */
   onView?: () => void;
+  /** default variant: called after the card's own Add to Cart, so a rail can attribute the add to itself. */
+  onAdd?: () => void;
 }
 
 /**
@@ -29,7 +32,7 @@ interface ProductCardProps {
  * both — see `Documentations MD/figma-shop-product-odoo-integration.md` and
  * `Documentations MD/personalized-product-recommendations.md`.
  */
-export function ProductCard({ product, className = "", variant = "default", onQuickAdd, onView }: ProductCardProps) {
+export function ProductCard({ product, className = "", variant = "default", onQuickAdd, onView, onAdd }: ProductCardProps) {
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const { t, dict } = useLang();
   const wishlisted = isWishlisted(product.id);
@@ -38,6 +41,15 @@ export function ProductCard({ product, className = "", variant = "default", onQu
   const hasRating = product.rating != null && !!product.reviewCount;
 
   const imageSrc = product.primaryImage ?? productImages[product.id];
+
+  // Transient "Added to Cart" success state for the default variant's button — CartContext's
+  // `lines` stay the source of truth for the actual cart; this is local, visual-only feedback
+  // (spec: "local visual state is acceptable ONLY for transient feedback"). addToCart is
+  // synchronous and cannot fail today, so the state flips right after the real mutation, never
+  // optimistically before it.
+  const [justAdded, setJustAdded] = useState(false);
+  const addedTimerRef = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(addedTimerRef.current), []);
 
   if (variant === "cart-recommendation") {
     const requiresSelection = productRequiresSelection(product);
@@ -73,7 +85,7 @@ export function ProductCard({ product, className = "", variant = "default", onQu
 
   return (
     <div className={clsx("group relative flex flex-col bg-white border border-line rounded-2xl overflow-hidden shadow-card transition-shadow hover:shadow-lift", className)}>
-      <Link to={`/product/${product.slug}`} className="block">
+      <Link to={`/product/${product.slug}`} onClick={onView} className="block">
         <ProductMedia src={imageSrc} alt={product.name} icon={product.icon} className="aspect-square w-full" />
       </Link>
       <button
@@ -87,7 +99,7 @@ export function ProductCard({ product, className = "", variant = "default", onQu
       </button>
       <div className="flex flex-col flex-1 p-5 gap-2">
         {eyebrow && <div className="font-mono text-[11px] uppercase tracking-widish text-steel-500">{eyebrow}</div>}
-        <Link to={`/product/${product.slug}`} className="font-semibold text-[15px] leading-snug hover:text-brand-700 transition-colors line-clamp-2">
+        <Link to={`/product/${product.slug}`} onClick={onView} className="font-semibold text-[15px] leading-snug hover:text-brand-700 transition-colors line-clamp-2">
           {product.name}
         </Link>
 
@@ -122,9 +134,42 @@ export function ProductCard({ product, className = "", variant = "default", onQu
           {product.mrp && <span className="price text-[13px] text-steel-500 line-through">{formatINR(product.mrp)}</span>}
         </div>
 
-        <button type="button" onClick={() => addToCart(product)} className="btn-pill-outline w-full mt-1 !py-2.5">
-          {t("home.addToCart")}
-        </button>
+        {productRequiresSelection(product) ? (
+          // Never silently pick a default variant — route to the PDP to select one, same
+          // correct behaviour the cart-recommendation variant already uses above.
+          <Link
+            to={`/product/${product.slug}`}
+            onClick={onView}
+            className="btn-pill-outline w-full mt-1 !py-2.5"
+          >
+            {t("cart.selectOptions")}
+          </Link>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              addToCart(product);
+              onAdd?.();
+              window.clearTimeout(addedTimerRef.current);
+              setJustAdded(true);
+              addedTimerRef.current = window.setTimeout(() => setJustAdded(false), 1500);
+            }}
+            className={clsx(
+              "w-full mt-1 !py-2.5 transition-colors duration-200 motion-reduce:transition-none",
+              justAdded ? "btn-pill-solid-brand" : "btn-pill-outline"
+            )}
+          >
+            <span aria-live="polite" className="inline-flex items-center gap-1.5">
+              {justAdded ? (
+                <>
+                  <Check className="w-4 h-4" /> {t("home.addedToCart")}
+                </>
+              ) : (
+                t("home.addToCart")
+              )}
+            </span>
+          </button>
+        )}
       </div>
     </div>
   );

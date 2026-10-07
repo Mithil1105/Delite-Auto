@@ -1,6 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Product, ProductDetail } from "../data/types";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { syncCart, track, type CartSnapshotItem } from "../lib/analytics/client";
+import { supabase } from "../lib/supabaseClient";
+import { useAuth } from "./AuthContext";
 
 interface CartLine {
   product: Product;
@@ -113,6 +116,7 @@ function loadWishlist(): string[] {
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
+  const { session } = useAuth();
   const [lines, setLines] = useState<CartLine[]>(loadCart);
   const [wishlist, setWishlist] = useState<string[]>(loadWishlist);
   const [toast, setToast] = useState<string | null>(null);
@@ -149,6 +153,65 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   }, [wishlist]);
 
+  // Analytics reads the latest state through refs so cart callbacks stay referentially stable and
+  // events are emitted OUTSIDE React state updaters (which StrictMode double-invokes).
+  const linesRef = useRef(lines);
+  const wishlistRef = useRef(wishlist);
+  const cartMutatedRef = useRef(false);
+  useEffect(() => {
+    linesRef.current = lines;
+  }, [lines]);
+  useEffect(() => {
+    wishlistRef.current = wishlist;
+  }, [wishlist]);
+
+  // Account-backed wishlist sync (guest = localStorage only, unchanged). On login: merges the
+  // guest wishlist into `wishlist_items` (dedupe, never drop a server item, never clear local
+  // state until the merge actually succeeds — #41), then the server becomes the source of truth
+  // for the rest of the session. On logout: reverts to whatever's in localStorage, so one
+  // account's wishlist never leaks into the next guest view on a shared device.
+  const previousUserId = useRef<string | null>(null);
+  useEffect(() => {
+    const userId = session?.user?.id ?? null;
+    if (userId === previousUserId.current) return;
+    const wasSignedOut = !previousUserId.current;
+    previousUserId.current = userId;
+    if (!supabase) return;
+
+    if (userId && wasSignedOut) {
+      (async () => {
+        const localIds = wishlistRef.current.map((id) => Number(id)).filter((n) => Number.isSafeInteger(n) && n > 0);
+        if (localIds.length > 0) {
+          await supabase!
+            .from("wishlist_items")
+            .upsert(
+              localIds.map((odoo_template_id) => ({ user_id: userId, odoo_template_id })),
+              { onConflict: "user_id,odoo_template_id", ignoreDuplicates: true }
+            );
+        }
+        const { data } = await supabase!.from("wishlist_items").select("odoo_template_id").eq("user_id", userId);
+        if (data) setWishlist(data.map((r) => String(r.odoo_template_id)));
+      })();
+    } else if (!userId) {
+      setWishlist(loadWishlist());
+    }
+  }, [session?.user?.id]);
+
+  // Observed cart snapshot for analytics (historical observed prices — never a price source).
+  // The first run is hydration from localStorage and must not count as cart activity.
+  useEffect(() => {
+    const items: CartSnapshotItem[] = lines
+      .filter((l) => typeof l.product.odooId === "number")
+      .map((l) => ({
+        odoo_template_id: l.product.odooId as number,
+        odoo_variant_id: l.variantId ? Number(l.variantId) || 0 : 0,
+        quantity: l.qty,
+        observed_unit_price: l.variantPrice ?? l.product.price,
+      }));
+    syncCart(items, cartMutatedRef.current);
+    cartMutatedRef.current = false;
+  }, [lines]);
+
   const showToast = useCallback((message: string) => {
     setToast(message);
     window.clearTimeout(toastTimer.current);
@@ -178,6 +241,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
         }
         return [...prev, { product, qty, variantId, variantLabel: variant?.label, variantPrice: variant?.price }];
       });
+      cartMutatedRef.current = true;
+      if (typeof product.odooId === "number") {
+        track("add_to_cart", {
+          odoo_template_id: product.odooId,
+          ...(variantId && Number(variantId) > 0 ? { odoo_variant_id: Number(variantId) } : {}),
+          quantity: qty, value: (variant?.price ?? product.price) * qty,
+        });
+      }
 
       if (options?.feedback === false) return;
 
@@ -196,6 +267,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
   // explicit, documented edge case once real variant selection lands: a caller that knows which
   // variant it means should always pass it.
   const removeLine = useCallback((productId: string, variantId?: string) => {
+    const removed = linesRef.current.filter((l) => l.product.id === productId && (variantId === undefined || l.variantId === variantId));
+    cartMutatedRef.current = true;
+    for (const line of removed) {
+      if (typeof line.product.odooId !== "number") continue;
+      track("remove_from_cart", {
+        odoo_template_id: line.product.odooId,
+        ...(line.variantId && Number(line.variantId) > 0 ? { odoo_variant_id: Number(line.variantId) } : {}),
+        quantity: line.qty, value: (line.variantPrice ?? line.product.price) * line.qty,
+      });
+    }
     setLines((prev) => prev.filter((l) => !(l.product.id === productId && (variantId === undefined || l.variantId === variantId))));
   }, []);
 
@@ -204,6 +285,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
       if (qty <= 0) {
         removeLine(productId, variantId);
         return;
+      }
+      const line = linesRef.current.find((l) => l.product.id === productId && (variantId === undefined || l.variantId === variantId));
+      if (line && line.qty !== qty) {
+        cartMutatedRef.current = true;
+        if (typeof line.product.odooId === "number") {
+          track("cart_quantity_changed", {
+            odoo_template_id: line.product.odooId,
+            ...(line.variantId && Number(line.variantId) > 0 ? { odoo_variant_id: Number(line.variantId) } : {}),
+            quantity: qty, value: (line.variantPrice ?? line.product.price) * qty,
+          });
+        }
       }
       setLines((prev) =>
         prev.map((l) => (l.product.id === productId && (variantId === undefined || l.variantId === variantId) ? { ...l, qty } : l))
@@ -216,11 +308,31 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const toggleWishlist = useCallback(
     (productId: string) => {
+      const templateId = Number(productId);
+      const wasOn = wishlistRef.current.includes(productId);
+      if (Number.isSafeInteger(templateId) && templateId > 0) {
+        track(wasOn ? "wishlist_remove" : "wishlist_add", { odoo_template_id: templateId });
+      }
       setWishlist((prev) => {
         const on = prev.includes(productId);
         showToast(on ? "Removed from wishlist" : "Saved to wishlist");
         return on ? prev.filter((id) => id !== productId) : [...prev, productId];
       });
+
+      // Signed-in: mirror the change to the account-backed table too — optimistic (local state
+      // already flipped above), reverted on a real backend failure (#42).
+      const userId = previousUserId.current;
+      if (supabase && userId && Number.isSafeInteger(templateId) && templateId > 0) {
+        const write = wasOn
+          ? supabase.from("wishlist_items").delete().eq("user_id", userId).eq("odoo_template_id", templateId)
+          : supabase.from("wishlist_items").insert({ user_id: userId, odoo_template_id: templateId });
+        write.then(({ error }) => {
+          if (error) {
+            setWishlist((prev) => (wasOn ? [...prev, productId] : prev.filter((id) => id !== productId)));
+            showToast("Couldn't update your wishlist — please try again");
+          }
+        });
+      }
     },
     [showToast]
   );
@@ -229,7 +341,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   const cartCount = useMemo(() => lines.reduce((sum, l) => sum + l.qty, 0), [lines]);
 
-  const openCartDrawer = useCallback(() => setIsCartDrawerOpenRaw(true), []);
+  const openCartDrawer = useCallback(() => {
+    setIsCartDrawerOpenRaw(true);
+    const current = linesRef.current;
+    track("cart_viewed", {
+      quantity: current.reduce((n, l) => n + l.qty, 0),
+      value: current.reduce((n, l) => n + (l.variantPrice ?? l.product.price) * l.qty, 0),
+    });
+  }, []);
   const closeCartDrawer = useCallback(() => setIsCartDrawerOpenRaw(false), []);
 
   const value: CartContextValue = {

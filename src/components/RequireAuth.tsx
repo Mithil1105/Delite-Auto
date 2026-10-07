@@ -20,17 +20,3 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   return <>{children}</>;
 }
-
-/** Same idea, but also requires profile.is_admin — used by /admin. */
-export function RequireAdmin({ children }: { children: ReactNode }) {
-  const { session, loading, configured, isAdmin, profile } = useAuth();
-
-  if (loading) return null;
-  if (!configured || !session) return <Navigate to="/login?returnTo=%2Fadmin" replace />;
-  // profile can briefly be null right after session restores (still loading the profiles row) —
-  // wait for it rather than bouncing a genuine admin before their role has loaded.
-  if (profile === null) return null;
-  if (!isAdmin) return <Navigate to="/" replace />;
-
-  return <>{children}</>;
-}

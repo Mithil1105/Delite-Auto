@@ -4,10 +4,11 @@
 // (Authorization: Bearer <user access token>, same convention as create-order) AND
 // profiles.is_admin = true. Returns the constructed "Open in Odoo" URL for one record —
 // ODOO_BASE_URL itself is never returned as its own field, only baked into the final URL, per
-// server/odoo/adminLink.ts's original design note. Model is allowlisted (sale.order only, for
-// now — the one thing /admin currently links out to).
+// server/odoo/adminLink.ts's original design note. Model is allowlisted (sale.order,
+// product.template — the two things /admin currently links out to; product.template added for
+// the read-only product browser, never used to edit anything).
 
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { requireAdmin } from "../_shared/auth/requireAdmin.ts";
 import { buildOdooAdminUrl } from "../_shared/odoo/adminLink.ts";
 
 const CORS_HEADERS: Record<string, string> = {
@@ -15,25 +16,16 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const ALLOWED_MODELS = new Set(["sale.order"]);
+// product.template added for the read-only admin product browser's "Open in Odoo" action (spec:
+// this only ever LINKS to Odoo's own record editor, never edits anything from Delite Admin).
+const ALLOWED_MODELS = new Set(["sale.order", "product.template"]);
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS_HEADERS });
 
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) return json({ error: "Missing Authorization header" }, 401);
-  const jwt = authHeader.replace(/^Bearer\s+/i, "");
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return json({ error: "Not configured" }, 500);
-  const adminClient = createClient(supabaseUrl, serviceRoleKey);
-
-  const { data: userData, error: userError } = await adminClient.auth.getUser(jwt);
-  if (userError || !userData.user) return json({ error: "Invalid or expired session" }, 401);
-
-  const { data: profile } = await adminClient.from("profiles").select("is_admin").eq("id", userData.user.id).maybeSingle();
-  if (!profile?.is_admin) return json({ error: "Forbidden" }, 403);
+  // Matches the pages that call this (Orders/Payments/Products) — owner/admin/support.
+  const auth = await requireAdmin(req, ["owner", "admin", "support"]);
+  if (auth instanceof Response) return auth;
 
   let body: { model?: string; id?: number };
   try {
