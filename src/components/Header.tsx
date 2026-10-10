@@ -101,57 +101,35 @@ export function Header({
       <AnnouncementBar {...announcementContent} />
 
       <div className="bg-white border-b border-line">
-        {/* Logo is absolutely centered (true center regardless of how wide the left/right clusters
-            are — flex `mx-auto` only centers when both siblings are equal width, which nav vs.
-            icons never are) — see Documentations MD/frontend-foundation-uiux-refactor.md,
-            "Header restructure". */}
-        <div className="container-page relative flex items-center h-16">
-          <div className="flex items-center gap-1 lg:gap-5">
-            <button
-              ref={menuTriggerRef}
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              aria-label="Toggle menu"
-              aria-expanded={open}
-              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
-            >
-              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileSearchOpen((v) => !v)}
-              aria-label={t("header.searchPlaceholder")}
-              aria-pressed={mobileSearchOpen}
-              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
-            >
-              <Search className="w-5 h-5" />
-            </button>
-
-            <nav className="hidden lg:flex items-center gap-5">
-              {navItems.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => track("navigation_click", { surface: navSurface(item.to), metadata: { target: item.to } })}
-                  className={clsx(
-                    "inline-flex items-center gap-1 font-sans text-[12.5px] font-semibold uppercase tracking-wide transition-colors whitespace-nowrap",
-                    currentPath === item.to ? "text-brand-700" : "text-ink/80 hover:text-brand-700"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-
-          <Link to="/" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 shrink-0">
+        {/* Logo sits on the left (UI/UX pass, branch `uiux`): [logo] [nav ……] [search · lang · account ·
+            wishlist · cart]. Below lg the nav collapses into the hamburger drawer, which now lives with
+            the right-hand icon cluster. The pill is a placeholder until the PNG logo is supplied —
+            swap the inner span for an <img> then (see Documentations MD/uiux-shop-toolbar-and-header.md). */}
+        <div className="container-page flex items-center h-16 gap-3 lg:gap-8">
+          <Link to="/" aria-label="Delite — home" className="shrink-0">
             <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-brand-500 text-white font-display font-semibold uppercase tracking-tightish">
               Delite
             </span>
           </Link>
 
+          <nav className="hidden lg:flex items-center gap-5 xl:gap-7">
+            {navItems.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                onClick={() => track("navigation_click", { surface: navSurface(item.to), metadata: { target: item.to } })}
+                className={clsx(
+                  "inline-flex items-center gap-1 font-sans text-[12.5px] font-semibold uppercase tracking-wide transition-colors whitespace-nowrap",
+                  currentPath === item.to ? "text-brand-700" : "text-ink/80 hover:text-brand-700"
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+
           <div className="flex items-center gap-1 ml-auto">
-            <form onSubmit={submitSearch} className="hidden lg:flex items-center w-64 xl:w-80 relative mr-1">
+            <form onSubmit={submitSearch} className="hidden lg:flex items-center w-56 xl:w-72 relative mr-1">
               <Search className="w-4 h-4 absolute left-3 text-steel-500" />
               <input
                 value={query}
@@ -161,9 +139,17 @@ export function Header({
                 className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[13px] focus:outline-none focus:border-brand-600"
               />
             </form>
+            <button
+              type="button"
+              onClick={() => setMobileSearchOpen((v) => !v)}
+              aria-label={t("header.searchPlaceholder")}
+              aria-pressed={mobileSearchOpen}
+              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+            >
+              <Search className="w-5 h-5" />
+            </button>
             {/* Account + language: desktop (lg+) only — below lg both live at the bottom of the
-                hamburger drawer instead, per explicit instruction (top bar stays to wishlist/cart
-                + the hamburger/search pair on mobile). */}
+                hamburger drawer instead (top bar stays to search/wishlist/cart + the hamburger). */}
             <div className="hidden lg:flex items-center">
               <LanguageSwitcher />
               {authConfigured && (
@@ -207,6 +193,16 @@ export function Header({
               )}
               <MobileCartAddedIndicator />
             </Link>
+            <button
+              ref={menuTriggerRef}
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-label="Toggle menu"
+              aria-expanded={open}
+              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+            >
+              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
       </div>

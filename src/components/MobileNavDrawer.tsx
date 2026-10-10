@@ -96,9 +96,9 @@ export function MobileNavDrawer({
         aria-modal={open || undefined}
         aria-label={open ? "Menu" : undefined}
         className={clsx(
-          "absolute inset-y-0 left-0 w-[82%] max-w-[320px] bg-white shadow-lift flex flex-col",
+          "absolute inset-y-0 right-0 w-[82%] max-w-[320px] bg-white shadow-lift flex flex-col",
           "transition-transform duration-300 ease-in-out motion-reduce:transition-none",
-          open ? "translate-x-0" : "-translate-x-full"
+          open ? "translate-x-0" : "translate-x-full"
         )}
       >
         <div className="flex items-center justify-between h-16 px-4 border-b border-line shrink-0">
