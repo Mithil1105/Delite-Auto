@@ -246,8 +246,8 @@ export default function Homepage() {
             <div>
               <h3 className="font-display uppercase text-[12px] text-steel-500 mb-3">{SECTION_LABELS[selected.sectionKey]}</h3>
               <div className="text-[12.5px] text-steel-600 space-y-1 mb-4">
-                <p className="font-semibold">{(selected.content as HeroContentOverride).headingLine1 || "—"} {(selected.content as HeroContentOverride).headingLine2 || ""}</p>
-                <p>{(selected.content as HeroContentOverride).subheading || "No subheading set"}</p>
+                <p>Fixed banner image — only the "Shop Now" link target is editable.</p>
+                <p className="font-mono text-[11.5px]">{(selected.content as HeroContentOverride).ctaLink || "/shop"}</p>
               </div>
               <Link to={DEDICATED_EDITOR[selected.sectionKey]} className="text-[12.5px] font-semibold text-brand-700 hover:underline">
                 Open full editor →

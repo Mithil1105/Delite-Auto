@@ -22,6 +22,8 @@ interface ProductCardProps {
   onView?: () => void;
   /** default variant: called after the card's own Add to Cart, so a rail can attribute the add to itself. */
   onAdd?: () => void;
+  /** default variant only: "list" renders a horizontal row (image left, details right) — used by Shop's list view. */
+  layout?: "grid" | "list";
 }
 
 /**
@@ -32,7 +34,8 @@ interface ProductCardProps {
  * both — see `Documentations MD/figma-shop-product-odoo-integration.md` and
  * `Documentations MD/personalized-product-recommendations.md`.
  */
-export function ProductCard({ product, className = "", variant = "default", onQuickAdd, onView, onAdd }: ProductCardProps) {
+export function ProductCard({ product, className = "", variant = "default", onQuickAdd, onView, onAdd, layout = "grid" }: ProductCardProps) {
+  const isList = layout === "list";
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const { t, dict } = useLang();
   const wishlisted = isWishlisted(product.id);
@@ -84,9 +87,15 @@ export function ProductCard({ product, className = "", variant = "default", onQu
   }
 
   return (
-    <div className={clsx("group relative flex flex-col bg-white border border-line rounded-2xl overflow-hidden shadow-card transition-shadow hover:shadow-lift", className)}>
-      <Link to={`/product/${product.slug}`} onClick={onView} className="block">
-        <ProductMedia src={imageSrc} alt={product.name} icon={product.icon} className="aspect-square w-full" />
+    <div
+      className={clsx(
+        "group relative flex bg-white border border-line rounded-2xl overflow-hidden shadow-card transition-shadow hover:shadow-lift",
+        isList ? "flex-row" : "flex-col",
+        className
+      )}
+    >
+      <Link to={`/product/${product.slug}`} onClick={onView} className={clsx("block", isList && "w-32 sm:w-52 shrink-0 self-stretch")}>
+        <ProductMedia src={imageSrc} alt={product.name} icon={product.icon} className={clsx("w-full", isList ? "h-full min-h-[8rem]" : "aspect-square")} />
       </Link>
       <button
         type="button"
@@ -97,7 +106,7 @@ export function ProductCard({ product, className = "", variant = "default", onQu
       >
         <Heart className={clsx("w-4 h-4", wishlisted ? "fill-sale text-sale" : "text-ink")} />
       </button>
-      <div className="flex flex-col flex-1 p-5 gap-2">
+      <div className={clsx("flex flex-col flex-1 min-w-0 gap-2", isList ? "p-3.5 sm:p-5 sm:justify-center pr-12" : "p-5")}>
         {eyebrow && <div className="font-mono text-[11px] uppercase tracking-widish text-steel-500">{eyebrow}</div>}
         <Link to={`/product/${product.slug}`} onClick={onView} className="font-semibold text-[15px] leading-snug hover:text-brand-700 transition-colors line-clamp-2">
           {product.name}
@@ -140,7 +149,7 @@ export function ProductCard({ product, className = "", variant = "default", onQu
           <Link
             to={`/product/${product.slug}`}
             onClick={onView}
-            className="btn-pill-outline w-full mt-1 !py-2.5"
+            className={clsx("btn-pill-outline mt-1 !py-2.5", isList ? "w-full sm:w-auto sm:self-start sm:!px-6" : "w-full")}
           >
             {t("cart.selectOptions")}
           </Link>
@@ -155,7 +164,8 @@ export function ProductCard({ product, className = "", variant = "default", onQu
               addedTimerRef.current = window.setTimeout(() => setJustAdded(false), 1500);
             }}
             className={clsx(
-              "w-full mt-1 !py-2.5 transition-colors duration-200 motion-reduce:transition-none",
+              "mt-1 !py-2.5 transition-colors duration-200 motion-reduce:transition-none",
+              isList ? "w-full sm:w-auto sm:self-start sm:!px-6" : "w-full",
               justAdded ? "btn-pill-solid-brand" : "btn-pill-outline"
             )}
           >
