@@ -80,22 +80,10 @@ export default function HeroEditor() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <div>
-            <label htmlFor="hero-heading-1" className={labelClass}>Heading — line 1</label>
-            <input id="hero-heading-1" className={inputClass} value={form.headingLine1 ?? ""} onChange={(e) => update({ headingLine1: e.target.value })} placeholder="Everything Your Car Needs." />
-          </div>
-          <div>
-            <label htmlFor="hero-heading-2" className={labelClass}>Heading — line 2 (gold)</label>
-            <input id="hero-heading-2" className={inputClass} value={form.headingLine2 ?? ""} onChange={(e) => update({ headingLine2: e.target.value })} placeholder="Delitefy It." />
-          </div>
-          <div>
-            <label htmlFor="hero-subheading" className={labelClass}>Subheading</label>
-            <input id="hero-subheading" className={inputClass} value={form.subheading ?? ""} onChange={(e) => update({ subheading: e.target.value })} />
-          </div>
-          <div>
-            <label htmlFor="hero-cta-label" className={labelClass}>CTA label</label>
-            <input id="hero-cta-label" className={inputClass} value={form.ctaLabel ?? ""} onChange={(e) => update({ ctaLabel: e.target.value })} placeholder="Shop Now" />
-          </div>
+          <p className="text-[12.5px] text-steel-500 bg-steel-50 border border-line p-3">
+            The Hero banner (image, headline, and button artwork) is a fixed design asset, not editable here — only
+            where the "Shop Now" button links to.
+          </p>
           <div>
             <label htmlFor="hero-cta-link" className={labelClass}>CTA link</label>
             <input id="hero-cta-link" className={inputClass} value={form.ctaLink ?? ""} onChange={(e) => update({ ctaLink: e.target.value })} placeholder="/shop" />
