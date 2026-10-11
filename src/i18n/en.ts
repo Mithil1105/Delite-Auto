@@ -19,7 +19,7 @@ export const en = {
     headingLine1: "Everything Your Car Needs.",
     headingLine2: "Delitefy It.",
     subtitle: "Premium accessories. Smarter upgrades. Made for every drive.",
-    cta: "Shop Accessories",
+    cta: "Shop Now",
   },
   trust: {
     freeDeliveryTitle: "Free Delivery",

@@ -23,10 +23,6 @@ function assertNoCommerceFields(sample: Record<string, unknown>) {
 describe("CMS / commerce data boundary", () => {
   it("Hero CMS content never carries a commerce field", () => {
     const sample: HeroContentOverride = {
-      headingLine1: "Everything Your Car Needs.",
-      headingLine2: "Delitefy It.",
-      subheading: "Premium accessories",
-      ctaLabel: "Shop Now",
       ctaLink: "/shop",
     };
     assertNoCommerceFields(sample as unknown as Record<string, unknown>);

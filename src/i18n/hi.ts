@@ -23,7 +23,7 @@ export const hi: Translations = {
     headingLine1: "Everything Your Car Needs.",
     headingLine2: "Delitefy It.",
     subtitle: "Premium accessories. Smarter upgrades. Made for every drive.",
-    cta: "Shop Accessories",
+    cta: "अभी खरीदें",
   },
   trust: {
     freeDeliveryTitle: "मुफ़्त डिलीवरी",

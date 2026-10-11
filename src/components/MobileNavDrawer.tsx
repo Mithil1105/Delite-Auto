@@ -103,9 +103,7 @@ export function MobileNavDrawer({
       >
         <div className="flex items-center justify-between h-16 px-4 border-b border-line shrink-0">
           <Link to="/" onClick={() => onNavigate("/")} className="shrink-0">
-            <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-brand-500 text-white font-display font-semibold uppercase tracking-tightish">
-              Delite
-            </span>
+            <img src="/images/brand/delite-logo.png" alt="Delite" className="h-8 w-auto" />
           </Link>
           <button
             type="button"

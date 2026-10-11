@@ -44,6 +44,10 @@ Included:
   Reviews section and scrolls to it. The Figma reference's "2-year warranty" chip was deliberately
   **not** added — there's no warranty data in the catalog.
 
+- Home hero CTA text "Shop Accessories" → "Shop Now" in all views (`Hero.tsx`, admin editor hints,
+  `hero.cta` i18n). On phones the arrow is hidden and padding tightened so the label fits inside the
+  pill and fully covers the baked-in button pixels (it previously overflowed at 375px).
+
 Not included (deferred): the review-card visual redesign (awaiting user's photos + link); the real
 PNG logo; a mega-menu.
 
@@ -95,4 +99,5 @@ None new.
 | Date       | Author | Change                                                    |
 |------------|--------|------------------------------------------------------------|
 | 2026-10-10 | Claude | Initial version: Shop toolbar/filters/grid-list view, header logo-left, drawer from right |
+| 2026-10-11 | Claude | Hero CTA renamed "Shop Now" everywhere; mobile pill no longer overflows |
 | 2026-10-10 | Claude | PDP details tabs → accordion + quick-facts chips; header specs re-run (12/12) |
