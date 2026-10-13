@@ -215,9 +215,10 @@ of writing this doc.
   storefront code (React, router, Supabase client, catalog/cart logic, i18n). Further reduction
   wasn't attempted this pass; would need a dedicated bundle audit to find additional safe
   splits without the same level of proof this pass already has for the items above.
-- **The pre-existing Vercel SPA-rewrite 404 on direct deep-link navigation** (flagged in a prior,
-  separate pass — `www.deliteauto.com/shop` 404s on a hard refresh/direct link, works fine via
-  in-app navigation) is unrelated to this performance work and was left untouched, as before.
+- ~~The pre-existing Vercel SPA-rewrite 404 on direct deep-link navigation~~ — **resolved
+  2026-10-13**, see [vercel-spa-fallback-routing.md](vercel-spa-fallback-routing.md). Was
+  unrelated to this performance work and intentionally left untouched here; fixed as its own
+  separate pass per explicit instruction.
 
 ## Revision log
 
