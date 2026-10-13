@@ -13,6 +13,7 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useLang } from "../i18n/LanguageContext";
 import { useSiteChromeCms } from "../hooks/useSiteChromeCms";
 import type { AnnouncementContentOverride } from "./AnnouncementBar";
+import { HERO_WIDTH_CAP_CSS } from "../lib/layout/heroWidthCap";
 
 /** Stable analytics surface code for a header link — derived from the destination so it keeps
  * working when the links are edited in Delite Admin (Navigation). */
@@ -162,8 +163,18 @@ export function Header({
             transparent-over-hero state.
             `w-full px-5 sm:px-6 lg:px-8` (no `container-page` max-width) per explicit instruction —
             the nav fills the full browser width edge-to-edge instead of being capped/centered with
-            empty margin on wide screens; every OTHER page keeps `.container-page`, unchanged. */}
-        <div className="w-full px-5 sm:px-6 lg:px-8 flex items-center h-16 gap-3 lg:gap-8">
+            empty margin on wide screens; every OTHER page keeps `.container-page`, unchanged.
+            2026-10-13: `maxWidth: HERO_WIDTH_CAP_CSS` + `mx-auto` added on top of that — on a
+            normal-to-large screen it's a no-op (100% is always the smaller side of the `min()`, so
+            the nav still spans full width exactly as above), but on a genuinely ultra-wide monitor
+            it caps and centers the nav to the SAME width Hero.tsx caps its own photo to, so the nav
+            lines up with the crisp image instead of extending across its blurred side margins
+            (explicit instruction, with a screenshot showing the nav spanning past the capped hero
+            photo into the blur). Applied to every page, not just the homepage — Header has no
+            per-page knowledge of whether a hero is present, and a consistent nav width across the
+            site (only ever capped on screens wide enough to need it at all) is simpler and more
+            predictable than conditioning this on the current route. */}
+        <div className="w-full px-5 sm:px-6 lg:px-8 mx-auto flex items-center h-16 gap-3 lg:gap-8" style={{ maxWidth: HERO_WIDTH_CAP_CSS }}>
           <Link to="/" aria-label="Delite — home" className="shrink-0">
             <img src="/images/brand/delite-logo.png" alt="Delite" className="h-8 sm:h-9 w-auto" />
           </Link>

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Hero, type HeroContentOverride } from "../components/Hero";
 import { PageContainer } from "../components/layout/PageContainer";
@@ -17,6 +17,7 @@ import { SeoHead } from "../components/SeoHead";
 import { products as fallbackProducts } from "../data/products";
 import { productImages } from "../lib/productImages";
 import { useCatalogProducts } from "../hooks/useCatalogProducts";
+import { catalogService } from "../services/catalog/catalogService";
 import { useLang } from "../i18n/LanguageContext";
 import { useHomepageCms } from "../hooks/useHomepageCms";
 import { useMerchandisingCms, useMerchandisedProducts, useResolvedCategorySelections, type CategorySelection } from "../hooks/useMerchandisingCms";
@@ -66,6 +67,16 @@ export default function Home() {
   // same product-card components render regardless of which array backs them.
   const catalogProducts = useCatalogProducts();
   const products = catalogProducts ?? fallbackProducts;
+
+  // Fire-and-forget, as early as possible: getCategories() is cached/deduped (see
+  // supabaseCatalogService.ts), so this just starts the real network request immediately instead
+  // of leaving it to start only once useResolvedCategorySelections (below, via
+  // useMerchandisingCms) happens to get around to it — confirmed live via a production network
+  // waterfall to otherwise delay that request by ~700ms for no real reason (it doesn't actually
+  // depend on merchandising CMS data, only incidentally runs after it resolves).
+  useEffect(() => {
+    catalogService.getCategories().catch(() => {});
+  }, []);
 
   const { bySectionKey: homeSections } = useHomepageCms();
   const sectionText = (section: string, key: string, fallback: string) => {

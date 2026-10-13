@@ -7,6 +7,8 @@ import { useUndoRedo } from "../../hooks/useUndoRedo";
 import { useUnsavedChangesGuard } from "../../hooks/useUnsavedChangesGuard";
 import { PreviewFrame } from "../../components/PreviewFrame";
 import { EditorToolbar } from "../../components/EditorToolbar";
+import { AdminMediaField, mediaPublicUrl } from "../../components/AdminMediaPicker";
+import { ImagePositionControl } from "../../components/ImagePositionControl";
 import { Hero as HeroPreview, type HeroContentOverride } from "../../../components/Hero";
 
 const inputClass = "w-full h-11 px-3.5 border border-line bg-white text-[14px] focus:outline-none focus:border-ink transition-colors";
@@ -81,9 +83,58 @@ export default function HeroEditor() {
 
         <div className="flex flex-col gap-4">
           <p className="text-[12.5px] text-steel-500 bg-steel-50 border border-line p-3">
-            The Hero banner (image, headline, and button artwork) is a fixed design asset, not editable here — only
-            where the "Shop Now" button links to.
+            The headline and button artwork baked into the default hero photo aren't editable here — only the image
+            itself (optional replacement) and where the "Shop Now" button links to.
           </p>
+          <AdminMediaField
+            label="Hero image (optional — replaces the default photo)"
+            value={form.imageStoragePath ?? undefined}
+            onChange={(path) => update({ imageStoragePath: path ?? "", ...(path ? {} : { buttonPosition: undefined, imagePosition: undefined }) })}
+          />
+          {form.imageStoragePath && (
+            <ImagePositionControl
+              imageUrl={mediaPublicUrl(form.imageStoragePath)}
+              value={form.imagePosition ?? undefined}
+              onChange={(pos) => update({ imagePosition: pos })}
+            />
+          )}
+          {form.imageStoragePath && (
+            <div className="border border-line p-3 flex flex-col gap-3">
+              <p className="text-[11.5px] text-steel-500">
+                "Shop Now" button position on your photo — watch the preview on the right and adjust until it lands
+                where you want.
+              </p>
+              <div>
+                <label htmlFor="hero-button-left" className={labelClass}>Horizontal: {form.buttonPosition?.left ?? 50}%</label>
+                <input
+                  id="hero-button-left"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={form.buttonPosition?.left ?? 50}
+                  onChange={(e) => update({ buttonPosition: { left: Number(e.target.value), top: form.buttonPosition?.top ?? 86 } })}
+                  className="w-full"
+                />
+              </div>
+              <div>
+                <label htmlFor="hero-button-top" className={labelClass}>Vertical: {form.buttonPosition?.top ?? 86}%</label>
+                <input
+                  id="hero-button-top"
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={form.buttonPosition?.top ?? 86}
+                  onChange={(e) => update({ buttonPosition: { left: form.buttonPosition?.left ?? 50, top: Number(e.target.value) } })}
+                  className="w-full"
+                />
+              </div>
+              {form.buttonPosition && (
+                <button type="button" onClick={() => update({ buttonPosition: undefined })} className="text-[11.5px] text-steel-500 hover:text-sale text-left">
+                  Reset to default position
+                </button>
+              )}
+            </div>
+          )}
           <div>
             <label htmlFor="hero-cta-link" className={labelClass}>CTA link</label>
             <input id="hero-cta-link" className={inputClass} value={form.ctaLink ?? ""} onChange={(e) => update({ ctaLink: e.target.value })} placeholder="/shop" />

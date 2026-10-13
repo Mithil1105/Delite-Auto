@@ -3,6 +3,9 @@ import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { track } from "../lib/analytics/client";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { mediaPublicUrl } from "../services/cms/publishedCmsService";
+import { imagePositionStyle, resolveImagePosition, type ImagePositionByDevice } from "../lib/media/imagePosition";
+import { MAX_HERO_ASPECT } from "../lib/layout/heroWidthCap";
 
 /**
  * Full-bleed composited banner hero (2026-10-11 pass — real solid-color button + desktop
@@ -45,12 +48,45 @@ import { useMediaQuery } from "../hooks/useMediaQuery";
  *
  * `id="home-hero"` is the anchor Header.tsx's IntersectionObserver watches to toggle its
  * transparent-over-hero / white-on-scroll background — see Header.tsx's own doc comment.
+ *
+ * **Admin-replaceable image** (2026-10-11): the CMS hero editor can swap in a different image via
+ * `imageStoragePath` (a `marketing-media` Storage path, same as Promotions/Categories) instead of
+ * the baked default. The default image's "Shop Now" button position (`BUTTON_PX`/`computeOverlayPx`)
+ * is pixel-measured to exactly cover THAT image's own baked button art, so it's meaningless for an
+ * admin-uploaded photo with no baked button — a custom image instead gets a draggable-by-slider
+ * `buttonPosition` (admin editor), expressed as % of the container (the image always fills it, see
+ * below, so there's no letterbox offset to account for).
+ *
+ * A first attempt at "don't crop an arbitrary upload unpredictably" used `object-fit: contain`
+ * (full photo always visible, letterboxed) — wrong in practice: it put ugly solid-color bars down
+ * the sides on any viewport whose ratio didn't match the photo's own, which is most of them, and
+ * broke the full-bleed look the rest of the site uses. Fixed by reusing the SAME focal-point +
+ * zoom model Promotions already uses for exactly this problem (an arbitrary admin-uploaded photo
+ * that still needs to fill a fixed-ratio box) — `imagePositionStyle`/`ImagePositionControl`
+ * (`src/lib/media/imagePosition.ts`): `object-fit: cover` (always full-bleed, no bars) with an
+ * admin-adjustable `imagePosition` (focal X/Y + zoom, independently settable per device via
+ * `ImagePositionByDevice`) controlling WHAT gets cropped, instead of the browser picking blindly.
+ * This also keeps the admin editor's live preview an honest WYSIWYG: the same component renders
+ * both places, so whatever the admin sees while sliding the focal point / `buttonPosition` around
+ * is exactly what ships.
  */
 export interface HeroContentOverride {
   ctaLink?: string;
+  /** `marketing-media` Storage path of an admin-uploaded replacement for the default hero image. */
+  imageStoragePath?: string;
+  /** Focal point + zoom for cropping `imageStoragePath` into the hero's fixed-ratio box — same
+   * model Promotions uses (`src/lib/media/imagePosition.ts`), settable per device. */
+  imagePosition?: ImagePositionByDevice;
+  /** Button center position (% of the container) when `imageStoragePath` is set — lets an admin
+   * re-aim the "Shop Now" button at wherever makes sense on their own uploaded photo, since the
+   * baked-image pixel math below doesn't apply to it. Defaults to `DEFAULT_CUSTOM_BUTTON_POSITION`. */
+  buttonPosition?: { left: number; top: number };
 }
 
-const IMAGE_SRC = "/images/hero/delitefied-suv-golden-hour-cropped.png";
+const DEFAULT_IMAGE_SRC = "/images/hero/delitefied-suv-golden-hour-cropped.png";
+// Same pixels as DEFAULT_IMAGE_SRC, re-encoded as WebP (1.97MB → 131KB) — served via <picture> for the
+// default image only (performance pass, see Documentations MD/storefront-performance-2026-10.md).
+const DEFAULT_IMAGE_SRC_WEBP = "/images/hero/delitefied-suv-golden-hour-cropped.webp";
 const IMAGE_ALT = "Whatever your ride needs, Delitefied it — accessories, upgrades, details that make every drive yours.";
 // 2026-10-11: trimmed 150px off each side (1672 → 1372 wide, height unchanged) — explicit
 // instruction ("crop the image width... so it touches the top of the screen"): a narrower image
@@ -69,9 +105,44 @@ const BUTTON_PX = { left: 484.2, top: 637.2, width: 403.6, height: 73.6 };
 // Explicit user color choice — rendered translucent (not opaque) for a "glass" look.
 const BUTTON_COLOR_RGB = "16, 20, 143"; // #10148F
 
+// Default button position for an admin-uploaded custom image, which has no baked button art for
+// BUTTON_PX's pixel-cover math to align with — centered near the bottom of the photo unless the
+// admin picks a different spot via `buttonPosition`. Expressed as % of the photo's OWN content
+// box, not the surrounding container (see computeContainBox below).
+const DEFAULT_CUSTOM_BUTTON_POSITION = { left: 50, top: 86 };
+
+// Desktop ultra-wide handling (2026-10-13): the hero fills exactly one viewport HEIGHT, so on a
+// monitor much wider than it is tall (ultra-wide/super-ultra-wide, e.g. 21:9 or 32:9), a plain
+// `object-fit: cover` has to scale the photo up far more than it does at a normal desktop's ~16:9
+// ratio just to cover the extra width — the car/wordmark end up zoomed in well past how they look
+// on a normal desktop, reading as "stretched"/wrong even though cover itself never distorts
+// proportions. A typical 16:9 screen (ratio ≈1.78) stays well under this; only genuinely
+// wider-than-normal monitors cross it. Fixed by capping how wide the crisp foreground image is
+// ever allowed to render (`width = min(containerWidth, containerHeight * MAX_HERO_ASPECT)`,
+// centered) and filling the remaining width on either side with a blurred, scaled-up copy of the
+// SAME image as a backdrop — an immersive edge-to-edge fill instead of either an over-zoomed photo
+// or flat color bars. `MAX_HERO_ASPECT` itself lives in `src/lib/layout/heroWidthCap.ts`, shared
+// with Header.tsx, so the nav row's own width cap (added 2026-10-13, see Header.tsx) always lines
+// up with the hero's capped photo instead of spanning into its blurred margins.
+
+// Desktop tall/narrow handling (2026-10-13): the opposite edge case from the ultra-wide one above
+// — a desktop-WIDTH (≥1024px) window that's unusually TALL relative to its width (e.g. a portrait
+// monitor, or a tall DevTools "Responsive" size like 1398×2034) forces `object-fit: cover` to crop
+// drastically off the SIDES to fill that much height, cutting off the wordmark/tagline on both
+// edges — reported live with a screenshot showing exactly that. Below `MIN_HERO_ASPECT`, the hero
+// stops trying to fill the viewport height at all and instead sizes itself the same way
+// `MobileHero` already does: full width, height set by the image's OWN aspect ratio (no crop, the
+// whole photo visible), with whatever follows (Shop by Cars/Bikes, etc.) reached by scrolling —
+// exactly the user's own framing ("the hero image covers... as it can be as a landscape image and
+// then the shop by car section[s follow]"). 1.2 sits comfortably below every previously-verified
+// normal desktop ratio (the narrowest was 1280×720's 1.78) so no normal screen is affected, while
+// safely catching genuinely portrait-ish windows.
+const MIN_HERO_ASPECT = 1.2;
+
 /** Replicates `object-fit: cover; object-position: bottom` 's own crop math for a container of
  * `containerW`×`containerH` showing a `NATURAL_W`×`NATURAL_H` image, so the button overlay can be
- * positioned in the same pixel space as what's actually on screen. */
+ * positioned in the same pixel space as what's actually on screen. Also returns `scale` itself —
+ * the "glass" treatment (blur/border/highlight) needs it too, see `glassStyleForScale` below. */
 function computeOverlayPx(containerW: number, containerH: number) {
   if (!containerW || !containerH) return null;
   const scale = Math.max(containerW / NATURAL_W, containerH / NATURAL_H);
@@ -84,6 +155,28 @@ function computeOverlayPx(containerW: number, containerH: number) {
     top: BUTTON_PX.top * scale - cropY,
     width: BUTTON_PX.width * scale,
     height: BUTTON_PX.height * scale,
+    scale,
+  };
+}
+
+// At `scale` 1 (BUTTON_BASE_CLASS's own `backdrop-blur-md`/`border`/inset-highlight values), the
+// glass look was tuned for a normal desktop's button size. The button's own box scales with
+// `scale` (via `computeOverlayPx`'s width/height), but those three CSS values are all FIXED
+// pixel amounts baked into Tailwind classes — on a big screen where `scale` runs well past normal
+// (a large/high-res monitor, not just an ultra-wide one — MAX_HERO_ASPECT above only caps WIDTH
+// relative to height, not overall size), the button renders much bigger while the blur/border/
+// highlight stay the same absolute size, so they become proportionally thin and the "glass" look
+// reads as a flat solid pill instead. Scaling all three with the same `scale` keeps the glass look
+// visually consistent at any size; clamped so it never gets so blurred it looks smudgy.
+function glassStyleForScale(scale: number): CSSProperties {
+  const blur = Math.min(12 * scale, 28);
+  const borderPx = Math.min(Math.max(1 * scale, 1), 2.5);
+  const highlightPx = Math.min(1 * scale, 2.5);
+  return {
+    backdropFilter: `blur(${blur}px)`,
+    WebkitBackdropFilter: `blur(${blur}px)`,
+    borderWidth: `${borderPx}px`,
+    boxShadow: `inset 0 ${highlightPx}px 0 rgba(255,255,255,0.25)`,
   };
 }
 
@@ -111,57 +204,142 @@ function ShopAccessoriesButton({
 const BUTTON_BASE_CLASS =
   "absolute rounded-full flex items-center justify-center gap-2 text-white font-semibold uppercase tracking-wide whitespace-nowrap border border-white/30 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:brightness-110 transition-[filter] focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700";
 
-function DesktopHero({ ctaLink }: HeroContentOverride) {
-  const containerRef = useRef<HTMLDivElement>(null);
+function DesktopHero({
+  ctaLink,
+  imageSrc,
+  isCustomImage,
+  imagePosition,
+  buttonPosition,
+}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean }) {
+  const outerRef = useRef<HTMLDivElement>(null);
+  const [fgBox, setFgBox] = useState<{ width: number; height: number } | null>(null);
   const [overlayPx, setOverlayPx] = useState<ReturnType<typeof computeOverlayPx>>(null);
+  const [naturalMode, setNaturalMode] = useState(false);
 
   useEffect(() => {
-    const el = containerRef.current;
+    const el = outerRef.current;
     if (!el) return;
     const update = () => {
       const r = el.getBoundingClientRect();
-      setOverlayPx(computeOverlayPx(r.width, r.height));
+      // Decided from the real window, not `r` — `r`'s own height depends on `naturalMode`'s
+      // result (the outer div has no fixed height in natural mode), so using it here would be
+      // circular. `r.width` is still reliable either way (outer is always `w-full`).
+      const isNatural = window.innerWidth / window.innerHeight < MIN_HERO_ASPECT;
+      setNaturalMode(isNatural);
+      if (isNatural) {
+        const width = r.width;
+        const height = width / (NATURAL_W / NATURAL_H);
+        setFgBox({ width, height });
+        if (!isCustomImage) setOverlayPx(computeOverlayPx(width, height));
+      } else {
+        const width = Math.min(r.width, r.height * MAX_HERO_ASPECT);
+        setFgBox({ width, height: r.height });
+        if (!isCustomImage) setOverlayPx(computeOverlayPx(width, r.height));
+      }
     };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [isCustomImage]);
+
+  const { left: buttonLeftPct, top: buttonTopPct } = buttonPosition ?? DEFAULT_CUSTOM_BUTTON_POSITION;
+  const foregroundStyle = isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "desktop")) : { objectFit: "cover" as const, objectPosition: "bottom" };
 
   return (
-    <div ref={containerRef} className="relative w-full" style={{ height: "100vh", minHeight: 460 }}>
-      <img src={IMAGE_SRC} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full object-cover object-bottom" />
-      {overlayPx && (
-        <ShopAccessoriesButton
-          ctaLink={ctaLink}
-          className={`${BUTTON_BASE_CLASS} text-[15px]`}
-          style={{ left: overlayPx.left, top: overlayPx.top, width: overlayPx.width, height: overlayPx.height }}
-        />
+    <div ref={outerRef} className="relative w-full" style={naturalMode ? undefined : { height: "100vh", minHeight: 460 }}>
+      {/* Ultra-wide backdrop: a blurred, zoomed-in copy of the same photo filling the full width —
+          only visible beyond the capped foreground's edges on a wider-than-normal monitor. Skipped
+          in natural mode — the foreground already matches the image's own ratio exactly there, so
+          there's no crop/gap for a backdrop to ever fill. */}
+      {!naturalMode && (
+        <>
+          <img src={imageSrc} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl" style={foregroundStyle} />
+          <div className="absolute inset-0 bg-brand-700/35" />
+        </>
+      )}
+      {fgBox && (
+        <div
+          className={naturalMode ? "relative w-full" : "absolute top-0 h-full"}
+          style={naturalMode ? { height: fgBox.height } : { left: "50%", transform: "translateX(-50%)", width: fgBox.width }}
+        >
+          <picture>
+            {!isCustomImage && <source srcSet={DEFAULT_IMAGE_SRC_WEBP} type="image/webp" />}
+            <img src={imageSrc} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full" style={foregroundStyle} />
+          </picture>
+          {isCustomImage ? (
+            <ShopAccessoriesButton
+              ctaLink={ctaLink}
+              className={`${BUTTON_BASE_CLASS} text-[15px] px-8 py-4`}
+              style={{ left: `${buttonLeftPct}%`, top: `${buttonTopPct}%`, transform: "translate(-50%, -50%)" }}
+            />
+          ) : (
+            overlayPx && (
+              <ShopAccessoriesButton
+                ctaLink={ctaLink}
+                className={`${BUTTON_BASE_CLASS} text-[15px]`}
+                style={{
+                  left: overlayPx.left,
+                  top: overlayPx.top,
+                  width: overlayPx.width,
+                  height: overlayPx.height,
+                  ...glassStyleForScale(overlayPx.scale),
+                }}
+              />
+            )
+          )}
+        </div>
       )}
     </div>
   );
 }
 
-function MobileHero({ ctaLink }: HeroContentOverride) {
+function MobileHero({
+  ctaLink,
+  imageSrc,
+  isCustomImage,
+  imagePosition,
+  buttonPosition,
+}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean }) {
+  const { left: buttonLeftPct, top: buttonTopPct } = buttonPosition ?? DEFAULT_CUSTOM_BUTTON_POSITION;
+
   return (
     <div className="relative w-full aspect-[1372/741]">
-      <img src={IMAGE_SRC} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full object-cover" />
+      <picture>
+        {!isCustomImage && <source srcSet={DEFAULT_IMAGE_SRC_WEBP} type="image/webp" />}
+        <img
+          src={imageSrc}
+          alt={IMAGE_ALT}
+          className="absolute inset-0 w-full h-full"
+          style={isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "mobile")) : { objectFit: "cover" }}
+        />
+      </picture>
       <ShopAccessoriesButton
         ctaLink={ctaLink}
-        className={`${BUTTON_BASE_CLASS} text-[11px] sm:text-[13px] !gap-1 px-1`}
-        style={{ left: "35.29%", top: "86.00%", width: "29.42%", height: "9.93%" }}
+        className={isCustomImage ? `${BUTTON_BASE_CLASS} text-[12px] px-5 py-3` : `${BUTTON_BASE_CLASS} text-[11px] sm:text-[13px] !gap-1 px-1`}
+        style={
+          isCustomImage
+            ? { left: `${buttonLeftPct}%`, top: `${buttonTopPct}%`, transform: "translate(-50%, -50%)" }
+            : { left: "35.29%", top: "86.00%", width: "29.42%", height: "9.93%" }
+        }
       />
     </div>
   );
 }
 
-export function Hero({ ctaLink }: HeroContentOverride = {}) {
+export function Hero({ ctaLink, imageStoragePath, imagePosition, buttonPosition }: HeroContentOverride = {}) {
   // Analytics: hero impression once per page view (the admin editor preview is never tracked).
   useEffect(() => {
     track("promotion_impression", { surface: "home_hero" });
   }, []);
 
   const isDesktop = useMediaQuery("(min-width: 1024px)");
+  const isCustomImage = Boolean(imageStoragePath);
+  const imageSrc = imageStoragePath ? mediaPublicUrl(imageStoragePath) : DEFAULT_IMAGE_SRC;
 
   return (
     <section
@@ -180,7 +358,11 @@ export function Hero({ ctaLink }: HeroContentOverride = {}) {
       // compensate, so the section still ends at exactly one viewport height either way.
       style={isDesktop ? { marginTop: "calc(-1 * var(--header-height, 97px))" } : undefined}
     >
-      {isDesktop ? <DesktopHero ctaLink={ctaLink} /> : <MobileHero ctaLink={ctaLink} />}
+      {isDesktop ? (
+        <DesktopHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} imagePosition={imagePosition} buttonPosition={buttonPosition} />
+      ) : (
+        <MobileHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} imagePosition={imagePosition} buttonPosition={buttonPosition} />
+      )}
     </section>
   );
 }
