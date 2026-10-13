@@ -84,6 +84,9 @@ export interface HeroContentOverride {
 }
 
 const DEFAULT_IMAGE_SRC = "/images/hero/delitefied-suv-golden-hour-cropped.png";
+// Same pixels as DEFAULT_IMAGE_SRC, re-encoded as WebP (1.97MB → 131KB) — served via <picture> for the
+// default image only (performance pass, see Documentations MD/storefront-performance-2026-10.md).
+const DEFAULT_IMAGE_SRC_WEBP = "/images/hero/delitefied-suv-golden-hour-cropped.webp";
 const IMAGE_ALT = "Whatever your ride needs, Delitefied it — accessories, upgrades, details that make every drive yours.";
 // 2026-10-11: trimmed 150px off each side (1672 → 1372 wide, height unchanged) — explicit
 // instruction ("crop the image width... so it touches the top of the screen"): a narrower image
@@ -264,7 +267,10 @@ function DesktopHero({
           className={naturalMode ? "relative w-full" : "absolute top-0 h-full"}
           style={naturalMode ? { height: fgBox.height } : { left: "50%", transform: "translateX(-50%)", width: fgBox.width }}
         >
-          <img src={imageSrc} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full" style={foregroundStyle} />
+          <picture>
+            {!isCustomImage && <source srcSet={DEFAULT_IMAGE_SRC_WEBP} type="image/webp" />}
+            <img src={imageSrc} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full" style={foregroundStyle} />
+          </picture>
           {isCustomImage ? (
             <ShopAccessoriesButton
               ctaLink={ctaLink}
@@ -303,12 +309,15 @@ function MobileHero({
 
   return (
     <div className="relative w-full aspect-[1372/741]">
-      <img
-        src={imageSrc}
-        alt={IMAGE_ALT}
-        className="absolute inset-0 w-full h-full"
-        style={isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "mobile")) : { objectFit: "cover" }}
-      />
+      <picture>
+        {!isCustomImage && <source srcSet={DEFAULT_IMAGE_SRC_WEBP} type="image/webp" />}
+        <img
+          src={imageSrc}
+          alt={IMAGE_ALT}
+          className="absolute inset-0 w-full h-full"
+          style={isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "mobile")) : { objectFit: "cover" }}
+        />
+      </picture>
       <ShopAccessoriesButton
         ctaLink={ctaLink}
         className={isCustomImage ? `${BUTTON_BASE_CLASS} text-[12px] px-5 py-3` : `${BUTTON_BASE_CLASS} text-[11px] sm:text-[13px] !gap-1 px-1`}

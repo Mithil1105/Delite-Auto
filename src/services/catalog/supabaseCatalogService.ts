@@ -175,6 +175,29 @@ function mapCategory(dto: CatalogCategoryDto): Category {
   return { slug: slugify(dto.name), name: dto.name, vehicle: "unknown", odooId: dto.id, role: dto.role, productCount: dto.productCount, imageUrl: dto.imageUrl };
 }
 
+// Session-lifetime cache + in-flight dedup: categories change rarely, and every caller
+// (Home/Shop/Brands/AdminCategoryPicker) was previously firing its own independent
+// catalog-categories request. Confirmed live this was also the single biggest contributor to
+// homepage first-paint latency — Home's category-strip resolution only fired this call once its
+// own, unrelated merchandising CMS fetch resolved, serializing an otherwise-independent request
+// behind it. Home.tsx now calls getCategories() eagerly at the top of the component (fire and
+// forget) specifically to kick this cache off as early as possible; every later caller within the
+// same page session — including that same category-strip resolution — reuses the same
+// promise/result instead of issuing a second request. Performance pass, 2026-10-13 — see
+// Documentations MD/storefront-performance-2026-10.md.
+let categoriesPromise: Promise<Category[]> | null = null;
+function loadCategories(): Promise<Category[]> {
+  if (!categoriesPromise) {
+    categoriesPromise = callFunction<{ categories: CatalogCategoryDto[] }>("catalog-categories")
+      .then((data) => data.categories.map(mapCategory))
+      .catch((err) => {
+        categoriesPromise = null; // a transient failure shouldn't poison every later caller for the rest of the session
+        throw err;
+      });
+  }
+  return categoriesPromise;
+}
+
 export const supabaseCatalogService: CatalogService = {
   async getProducts(query: ProductListQuery = {}) {
     const page = await supabaseCatalogService.getProductsPage({ page: 1, pageSize: query.limit ?? 100 });
@@ -206,8 +229,7 @@ export const supabaseCatalogService: CatalogService = {
   },
 
   async getCategories() {
-    const data = await callFunction<{ categories: CatalogCategoryDto[] }>("catalog-categories");
-    return data.categories.map(mapCategory);
+    return loadCategories();
   },
 
   async getRelatedProducts(product: Product, count = 4) {
