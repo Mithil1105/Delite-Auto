@@ -210,9 +210,40 @@ export type MediaField = "image_1920" | "image_1024" | "image_512" | "image_256"
  * perfectly good hero/gallery resolution regardless of this specific bug — this is not a
  * workaround-only change.
  */
-export function buildMediaUrl(supabaseUrl: string, model: MediaModel, id: number, field: MediaField = "image_1024"): string {
+/**
+ * `writeDate`, when known, is appended as `&v=<sanitized write_date>` — catalog-media uses it to
+ * serve a cached copy (or fill the cache) instead of always proxying Odoo live. Purely additive to
+ * the URL shape: a caller that doesn't have a write_date yet (or an old cached frontend response)
+ * gets exactly today's behavior (`v` absent → always-live proxy, see
+ * Documentations MD/storefront-performance-2026-10.md). The frontend treats this entire string as
+ * an opaque `<img src>` either way — no type/prop changes needed anywhere in src/.
+ */
+export function buildMediaUrl(supabaseUrl: string, model: MediaModel, id: number, field: MediaField = "image_1024", writeDate?: string): string {
   const params = new URLSearchParams({ model, id: String(id), field });
+  if (writeDate) params.set("v", sanitizeMediaVersion(writeDate));
   return `${supabaseUrl.replace(/\/$/, "")}/functions/v1/catalog-media?${params.toString()}`;
+}
+
+/** `write_date` as Odoo returns it (e.g. "2026-10-13 14:09:51") isn't safe as-is in a query string
+ * or a Storage object path (spaces/colons) — this is a pure, lossless-enough sanitization (not a
+ * hash), so the same write_date always maps to the same key and a changed write_date always maps
+ * to a different one. Exported so catalog-media's own path-building stays byte-identical to this. */
+export function sanitizeMediaVersion(writeDate: string): string {
+  return writeDate.replace(/[^0-9a-zA-Z]/g, "-");
+}
+
+/** The deterministic Supabase Storage object path a given (model, id, field, version) maps to —
+ * shared by catalog-media (which writes here) and anything that needs to predict/check the public
+ * URL. No extension: Content-Type is stored as real object metadata at upload time (sniffed from
+ * the actual bytes — see _shared/odoo/media.ts's sniffImageContentType), not inferred from a
+ * filename, since Odoo doesn't promise a stable format per field. */
+export function buildStorageMediaPath(model: MediaModel, id: number, field: MediaField, writeDate: string): string {
+  return `${model}/${id}/${field}/${sanitizeMediaVersion(writeDate)}`;
+}
+
+export function buildStorageMediaPublicUrl(supabaseUrl: string, model: MediaModel, id: number, field: MediaField, writeDate: string): string {
+  const path = buildStorageMediaPath(model, id, field, writeDate);
+  return `${supabaseUrl.replace(/\/$/, "")}/storage/v1/object/public/product-media/${path}`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -386,11 +417,12 @@ export function normalizeProduct(args: NormalizeProductArgs): CatalogProduct {
   const { template, variants, categoryNameById, fitment, attributes, supabaseUrl, galleryImages } = args;
   const categoryIds = template.public_categ_ids ?? [];
 
+  const templateWriteDate = typeof template.write_date === "string" ? template.write_date : undefined;
   const media: CatalogMediaItem[] = [
-    { id: `${template.id}-primary`, url: buildMediaUrl(supabaseUrl, "product.template", template.id), alt: template.name },
+    { id: `${template.id}-primary`, url: buildMediaUrl(supabaseUrl, "product.template", template.id, "image_1024", templateWriteDate), alt: template.name },
     ...galleryImages.map((img) => ({
       id: `image-${img.id}`,
-      url: buildMediaUrl(supabaseUrl, "product.image", img.id),
+      url: buildMediaUrl(supabaseUrl, "product.image", img.id, "image_1024", img.write_date),
       alt: img.name || template.name,
     })),
   ];
@@ -421,7 +453,7 @@ export function normalizeProduct(args: NormalizeProductArgs): CatalogProduct {
     fitment,
     attributes,
     variants,
-    primaryImage: buildMediaUrl(supabaseUrl, "product.template", template.id),
+    primaryImage: buildMediaUrl(supabaseUrl, "product.template", template.id, "image_1024", templateWriteDate),
     media,
     catalogActive,
     purchasable,

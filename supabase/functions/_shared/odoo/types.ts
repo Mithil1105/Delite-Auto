@@ -66,6 +66,9 @@ export interface OdooPublicCategoryRecord {
   name: string;
   /** Confirmed always `false` on this instance — the model is genuinely flat, no hierarchy. */
   parent_id: OdooMany2One | false;
+  /** Odoo's standard record-level last-modified timestamp — used as the cache-versioning signal
+   * for this category's cover_image (see buildStorageMediaPath in catalog.ts). */
+  write_date?: string;
 }
 
 export interface OdooTemplateAttributeValueRecord {
@@ -86,4 +89,6 @@ export interface OdooProductImageRecord {
   product_tmpl_id?: OdooMany2One | false;
   /** Confirmed `false` on every sampled record — gallery images are template-level on this store. */
   product_variant_id?: OdooMany2One | false;
+  /** Cache-versioning signal for this specific gallery image (see buildStorageMediaPath). */
+  write_date?: string;
 }

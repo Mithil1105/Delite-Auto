@@ -80,7 +80,7 @@ export async function fetchGalleryImagesByTemplateId(
     config,
     "product.image",
     [["product_tmpl_id", "in", templateIds]],
-    ["id", "name", "sequence", "product_tmpl_id", "product_variant_id"],
+    ["id", "name", "sequence", "product_tmpl_id", "product_variant_id", "write_date"],
     { order: "sequence asc" }
   );
   for (const record of records) {
