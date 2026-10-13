@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Search, ShoppingCart, Menu, X, Heart, User } from "lucide-react";
 import { track } from "../lib/analytics/client";
@@ -48,6 +48,7 @@ export function Header({
   const open = previewMobileMenuOpen ?? openState;
   const setOpen = setOpenState;
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const { cartCount, wishlist, openCartDrawer, recentCartActivity } = useCart();
@@ -59,6 +60,53 @@ export function Header({
   // Tablet/desktop: cart button opens the drawer, stays on the page. Mobile: plain /cart link —
   // see Documentations MD/responsive-cart-drawer.md for why 700px, not Tailwind's `md` (768px).
   const isDrawerBreakpoint = useMediaQuery(CART_DRAWER_BREAKPOINT);
+
+  // Publishes the header's real rendered height as a CSS custom property so Hero.tsx's desktop
+  // layout can size itself to exactly `100vh - this`, filling the rest of the screen with no gap
+  // and nothing from the next section visible without scrolling (explicit instruction). A
+  // ResizeObserver, not a one-time measurement, since the AnnouncementBar's content is CMS-driven
+  // and can genuinely change the header's height after this first renders.
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => document.documentElement.style.setProperty("--header-height", `${el.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Transparent-over-hero / white-on-scroll (explicit instruction, refined 2026-10-11): on the
+  // homepage, the nav row (not the AnnouncementBar strip above it, which stays solid) is
+  // transparent ONLY at the very top of the page — the instant any scrolling happens at all, even
+  // 1px still well within the hero image, it switches to white. This is deliberately NOT "stays
+  // transparent for as long as the hero is still visible" (an earlier version of this did that,
+  // and was explicitly corrected: "even if the scrolling is through the hero image the background
+  // will turn white"). So the check is just `window.scrollY === 0`, not hero geometry.
+  //
+  // Driven by a plain `scroll` event, not `IntersectionObserver` — a completely bare, vanilla
+  // `IntersectionObserver` on this page was found (via direct JS injection in a real browser tab,
+  // not assumed) to deliver ZERO callbacks, not even the spec-guaranteed initial one, which could
+  // permanently stick `overHero` on `false`. A `scroll` listener has no such failure mode. Starts
+  // `true` on the homepage so the first paint doesn't flash white before the first scroll check
+  // runs.
+  const [overHero, setOverHero] = useState(() => location.pathname === "/");
+  useEffect(() => {
+    if (location.pathname !== "/") {
+      setOverHero(false);
+      return;
+    }
+    const update = () => {
+      setOverHero(window.scrollY === 0);
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [location.pathname]);
 
   // One query covers both the announcement bar and nav link overrides (site-chrome page) — see
   // Documentations MD/delite-admin.md, "Storefront CMS wiring". `contentOverride`, when supplied,
@@ -97,61 +145,47 @@ export function Header({
   };
 
   return (
-    <header className="sticky top-0 z-50">
+    <header ref={headerRef} className="sticky top-0 z-50">
       <AnnouncementBar {...announcementContent} />
 
-      <div className="bg-white border-b border-line">
-        {/* Logo is absolutely centered (true center regardless of how wide the left/right clusters
-            are — flex `mx-auto` only centers when both siblings are equal width, which nav vs.
-            icons never are) — see Documentations MD/frontend-foundation-uiux-refactor.md,
-            "Header restructure". */}
-        <div className="container-page relative flex items-center h-16">
-          <div className="flex items-center gap-1 lg:gap-5">
-            <button
-              ref={menuTriggerRef}
-              type="button"
-              onClick={() => setOpen((v) => !v)}
-              aria-label="Toggle menu"
-              aria-expanded={open}
-              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
-            >
-              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileSearchOpen((v) => !v)}
-              aria-label={t("header.searchPlaceholder")}
-              aria-pressed={mobileSearchOpen}
-              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
-            >
-              <Search className="w-5 h-5" />
-            </button>
-
-            <nav className="hidden lg:flex items-center gap-5">
-              {navItems.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => track("navigation_click", { surface: navSurface(item.to), metadata: { target: item.to } })}
-                  className={clsx(
-                    "inline-flex items-center gap-1 font-sans text-[12.5px] font-semibold uppercase tracking-wide transition-colors whitespace-nowrap",
-                    currentPath === item.to ? "text-brand-700" : "text-ink/80 hover:text-brand-700"
-                  )}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
-
-          <Link to="/" className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 shrink-0">
-            <span className="inline-flex items-center px-4 py-1.5 rounded-full bg-brand-500 text-white font-display font-semibold uppercase tracking-tightish">
-              Delite
-            </span>
+      <div
+        className={clsx(
+          "transition-colors duration-300",
+          overHero ? "bg-transparent border-b border-transparent" : "bg-white border-b border-line"
+        )}
+      >
+        {/* Logo sits on the left (UI/UX pass, branch `uiux`): [logo] [nav ……] [search · lang · account ·
+            wishlist · cart]. Below lg the nav collapses into the hamburger drawer, which now lives with
+            the right-hand icon cluster. 2026-10-11: real PNG logo supplied — swapped in for the
+            placeholder pill, background-removed and cropped tight (see
+            public/images/brand/delite-logo.png) so it reads cleanly on both the white nav and the
+            transparent-over-hero state.
+            `w-full px-5 sm:px-6 lg:px-8` (no `container-page` max-width) per explicit instruction —
+            the nav fills the full browser width edge-to-edge instead of being capped/centered with
+            empty margin on wide screens; every OTHER page keeps `.container-page`, unchanged. */}
+        <div className="w-full px-5 sm:px-6 lg:px-8 flex items-center h-16 gap-3 lg:gap-8">
+          <Link to="/" aria-label="Delite — home" className="shrink-0">
+            <img src="/images/brand/delite-logo.png" alt="Delite" className="h-8 sm:h-9 w-auto" />
           </Link>
 
+          <nav className="hidden lg:flex items-center gap-5 xl:gap-7">
+            {navItems.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                onClick={() => track("navigation_click", { surface: navSurface(item.to), metadata: { target: item.to } })}
+                className={clsx(
+                  "inline-flex items-center gap-1 font-sans text-[12.5px] font-semibold uppercase tracking-wide transition-colors whitespace-nowrap",
+                  currentPath === item.to ? "text-brand-700" : "text-ink/80 hover:text-brand-700"
+                )}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+
           <div className="flex items-center gap-1 ml-auto">
-            <form onSubmit={submitSearch} className="hidden lg:flex items-center w-64 xl:w-80 relative mr-1">
+            <form onSubmit={submitSearch} className="hidden lg:flex items-center w-56 xl:w-72 relative mr-1">
               <Search className="w-4 h-4 absolute left-3 text-steel-500" />
               <input
                 value={query}
@@ -161,9 +195,17 @@ export function Header({
                 className="w-full h-10 pl-9 pr-3 rounded-full border border-line bg-steel-50 text-[13px] focus:outline-none focus:border-brand-600"
               />
             </form>
+            <button
+              type="button"
+              onClick={() => setMobileSearchOpen((v) => !v)}
+              aria-label={t("header.searchPlaceholder")}
+              aria-pressed={mobileSearchOpen}
+              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+            >
+              <Search className="w-5 h-5" />
+            </button>
             {/* Account + language: desktop (lg+) only — below lg both live at the bottom of the
-                hamburger drawer instead, per explicit instruction (top bar stays to wishlist/cart
-                + the hamburger/search pair on mobile). */}
+                hamburger drawer instead (top bar stays to search/wishlist/cart + the hamburger). */}
             <div className="hidden lg:flex items-center">
               <LanguageSwitcher />
               {authConfigured && (
@@ -207,6 +249,16 @@ export function Header({
               )}
               <MobileCartAddedIndicator />
             </Link>
+            <button
+              ref={menuTriggerRef}
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              aria-label="Toggle menu"
+              aria-expanded={open}
+              className="lg:hidden grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
+            >
+              {open ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
       </div>

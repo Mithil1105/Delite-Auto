@@ -61,7 +61,14 @@ export default function ProductDetail() {
   const { slug = "" } = useParams();
   const { product, state, retry } = useProductDetail(slug);
   const [qty, setQty] = useState(1);
-  const [tab, setTab] = useState<Tab>("description");
+  const [openTabs, setOpenTabs] = useState<Set<Tab>>(() => new Set<Tab>(["description"]));
+  const toggleTab = (id: Tab) =>
+    setOpenTabs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const { addToCart, toggleWishlist, isWishlisted } = useCart();
   const { t, dict } = useLang();
   const navigate = useNavigate();
@@ -268,7 +275,7 @@ export default function ProductDetail() {
               <button
                 type="button"
                 onClick={() => {
-                  setTab("reviews");
+                  setOpenTabs((prev) => new Set(prev).add("reviews"));
                   document.getElementById("product-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
                 className="text-[12.5px] font-semibold text-brand-700 hover:underline ml-1"
@@ -373,76 +380,77 @@ export default function ProductDetail() {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div id="product-tabs" className="border-b border-line mb-8 overflow-x-auto">
-          <div className="flex gap-6 min-w-max">
-            {tabs.map((tb) => (
-              <button
-                key={tb.id}
-                type="button"
-                onClick={() => setTab(tb.id)}
-                className={clsx(
-                  "pb-3 text-[13.5px] font-semibold whitespace-nowrap border-b-2 transition-colors",
-                  tab === tb.id ? "border-brand-500 text-brand-700" : "border-transparent text-steel-500 hover:text-ink"
-                )}
-              >
-                {tb.label}
-              </button>
+        {/* Product details: quick-facts chips + accordion (Feature details / Reviews / Return &
+            Exchange / Delivery & Payment). Multiple sections can be open at once. */}
+        <div id="product-tabs" className="mb-16 max-w-3xl">
+          <ul className="flex flex-wrap gap-2 mb-5">
+            {[t("product.moneyBack"), t("product.shipping"), t("product.paymentsChip")].map((chip) => (
+              <li key={chip} className="inline-flex items-center h-8 px-3 rounded-full bg-brand-50 text-brand-700 text-[12px] font-semibold">
+                {chip}
+              </li>
             ))}
+          </ul>
+
+          <div className="border-t border-line">
+            {tabs.map((tb) => {
+              const isOpen = openTabs.has(tb.id);
+              return (
+                <section key={tb.id} className="border-b border-line">
+                  <h3>
+                    <button
+                      type="button"
+                      id={`pd-${tb.id}-btn`}
+                      aria-expanded={isOpen}
+                      aria-controls={`pd-${tb.id}-panel`}
+                      onClick={() => toggleTab(tb.id)}
+                      className="w-full flex items-center justify-between gap-4 py-4 text-left"
+                    >
+                      <span className={clsx("text-[14.5px] font-semibold transition-colors", isOpen ? "text-brand-700" : "text-ink")}>{tb.label}</span>
+                      {isOpen ? <Minus className="w-4 h-4 shrink-0 text-steel-500" /> : <Plus className="w-4 h-4 shrink-0 text-steel-500" />}
+                    </button>
+                  </h3>
+                  {isOpen && (
+                    <div id={`pd-${tb.id}-panel`} role="region" aria-labelledby={`pd-${tb.id}-btn`} className="pb-6">
+                      {tb.id === "description" && (
+                        <div>
+                          <p className="text-[14.5px] text-ink/75 leading-relaxed max-w-[75ch] mb-6">{product.description}</p>
+                          {product.specs.length > 0 && (
+                            <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-2 mb-6">
+                              {product.specs.map((s) => (
+                                <div key={s.label} className="flex justify-between gap-4 text-[13.5px] py-1.5 border-b border-line/70">
+                                  <dt className="text-steel-500">{s.label}</dt>
+                                  <dd className="font-medium text-right">{s.value}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          )}
+                          {heroImage && (
+                            <div className="grid sm:grid-cols-2 gap-4">
+                              <div className="relative rounded-2xl overflow-hidden border border-line aspect-video">
+                                <img src={heroImage} alt="" className="w-full h-full object-cover" />
+                                <span className="absolute inset-0 grid place-items-center bg-ink/10">
+                                  <span className="grid place-items-center w-12 h-12 rounded-full bg-white/90">
+                                    <Play className="w-5 h-5 text-ink ml-0.5" fill="currentColor" />
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="rounded-2xl overflow-hidden border border-line aspect-video">
+                                <img src={heroImage} alt="" className="w-full h-full object-cover" />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {tb.id === "reviews" && <ReviewsSection odooTemplateId={product.odooId} />}
+                      {tb.id === "returns" && <p className="text-[14.5px] text-ink/75 leading-relaxed max-w-2xl">{t("product.returnExchangeBody")}</p>}
+                      {tb.id === "delivery" && <p className="text-[14.5px] text-ink/75 leading-relaxed max-w-2xl">{t("product.deliveryPaymentBody")}</p>}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
           </div>
         </div>
-
-        {tab === "description" && (
-          <div className="mb-16">
-            <p className="text-[14.5px] text-ink/75 leading-relaxed max-w-[75ch] mb-6">{product.description}</p>
-            {product.specs.length > 0 && (
-              <div className="mb-8">
-                <h3 className="font-display uppercase text-[13px] tracking-widish text-steel-500 mb-3">{t("product.featureDetails")}</h3>
-                <dl className="grid sm:grid-cols-2 gap-x-8 gap-y-2 max-w-3xl">
-                  {product.specs.map((s) => (
-                    <div key={s.label} className="flex justify-between gap-4 text-[13.5px] py-1.5 border-b border-line/70">
-                      <dt className="text-steel-500">{s.label}</dt>
-                      <dd className="font-medium text-right">{s.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
-            )}
-            {heroImage && (
-              <div className="grid sm:grid-cols-2 gap-4 max-w-3xl">
-                <div className="relative rounded-2xl overflow-hidden border border-line aspect-video">
-                  <img src={heroImage} alt="" className="w-full h-full object-cover" />
-                  <span className="absolute inset-0 grid place-items-center bg-ink/10">
-                    <span className="grid place-items-center w-12 h-12 rounded-full bg-white/90">
-                      <Play className="w-5 h-5 text-ink ml-0.5" fill="currentColor" />
-                    </span>
-                  </span>
-                </div>
-                <div className="rounded-2xl overflow-hidden border border-line aspect-video">
-                  <img src={heroImage} alt="" className="w-full h-full object-cover" />
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {tab === "reviews" && (
-          <div className="mb-16">
-            <ReviewsSection odooTemplateId={product.odooId} />
-          </div>
-        )}
-
-        {tab === "returns" && (
-          <div className="mb-16 max-w-2xl">
-            <p className="text-[14.5px] text-ink/75 leading-relaxed">{t("product.returnExchangeBody")}</p>
-          </div>
-        )}
-
-        {tab === "delivery" && (
-          <div className="mb-16 max-w-2xl">
-            <p className="text-[14.5px] text-ink/75 leading-relaxed">{t("product.deliveryPaymentBody")}</p>
-          </div>
-        )}
 
         {related.length > 0 && (
           <section className="mb-16">
