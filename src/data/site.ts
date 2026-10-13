@@ -12,7 +12,6 @@ export const site = {
   mapQuery: "Delite Auto Accessories, Navrangpura, Ahmedabad",
   locations: [
     { name: "Delite Auto Accessories", address: "Near Jain Temple, 5/h Navrangpura Post Office, Delite Accessories Cross Rd, Mithakhali, Navrangpura, Ahmedabad 380009" },
-    { name: "Delite Motors", address: "4, Mrudul Avenue, Panjarapol Cross Rd, behind Saluraiber Complex, Maninagar, Ahmedabad 380008" },
   ],
   social: {
     instagram: "https://instagram.com",
