@@ -195,16 +195,13 @@ of writing this doc.
 
 ## Remaining bottlenecks (explicitly not fixed this pass)
 
-- **Product image delivery is the largest remaining, unresolved contributor to slow perceived
-  load.** Every `catalog-media` request (product/category image) is a live, synchronous Odoo field
-  read, taking 1–6+ seconds under the concurrency a homepage naturally generates (10–14+ images at
-  once), and this was observed to be just as slow on *repeat* requests for the *same* image as on
-  first request — meaning the existing `Cache-Control` header is not actually being honored by any
-  shared/CDN cache today. Proven, not guessed, this pass; fixing it properly means an actual
-  infrastructure decision (e.g. mirroring images into Supabase Storage with real CDN-backed
-  delivery, or confirming/enabling a CDN layer in front of Edge Functions) — explicitly flagged
-  for the project owner to decide on rather than attempted blind, per this task's own instruction
-  ("Do NOT duplicate/migrate all images without evidence. First prove image source latency.").
+- ~~Product image delivery is the largest remaining, unresolved contributor to slow perceived
+  load.~~ — **addressed 2026-10-13** on branch `perf/catalog-media-cache` (not yet merged — see
+  [product-media-cache.md](product-media-cache.md)): `catalog-media` now caches into a new
+  Supabase Storage bucket, redirecting repeat requests there (real CDN cache, confirmed
+  `CF-Cache-Status: HIT`) instead of hitting Odoo every time. 14-image concurrent burst: 4899ms →
+  1270ms once warm (73% faster), zero Odoo calls on a cache hit. Also fixed in the same pass: the
+  1.97MB hero PNG → a same-dimension 131KB WebP (93% smaller).
 - **`getPublishedPageSections()`'s two-round-trip-per-page shape** (page-id lookup, then a
   separate sections query) was not changed. It's a real, smaller latency contributor across all
   four CMS hooks (homepage/merchandising/site-chrome/seo), fixable with a single embedded-join

@@ -40,7 +40,7 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const records = await odooSearchRead<OdooPublicCategoryRecord>(config, "product.public.category", [], ["id", "name", "parent_id"], {
+    const records = await odooSearchRead<OdooPublicCategoryRecord>(config, "product.public.category", [], ["id", "name", "parent_id", "write_date"], {
       order: "name asc",
       limit: 1000,
     });
@@ -52,9 +52,10 @@ Deno.serve(async (req: Request) => {
     // callers (CategoryIconStrip) fall back to a generic icon on that, exactly like a missing
     // product image would.
     const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const writeDateById = new Map(records.map((r) => [r.id, r.write_date] as const));
     const withRole = records.map(normalizeCategoryRecord).map((cat) => ({
       ...cat,
-      imageUrl: buildMediaUrl(supabaseUrl, "product.public.category", cat.id, "cover_image"),
+      imageUrl: buildMediaUrl(supabaseUrl, "product.public.category", cat.id, "cover_image", writeDateById.get(cat.id)),
     }));
 
     // Real, storefront-honest counts — same eligibility domain the actual product listing uses, so

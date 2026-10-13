@@ -51,6 +51,12 @@ export interface HeroContentOverride {
 }
 
 const IMAGE_SRC = "/images/hero/delitefied-suv-golden-hour-cropped.png";
+// Same exact 1372×741 pixels as IMAGE_SRC, re-encoded only (quality 90, no resize/recrop) — the
+// button overlay math above depends on pixel-identical content, so this must never diverge from
+// the PNG visually. 1.97MB → 131KB (93% smaller) — this is the single largest asset on the
+// homepage's critical path (the hero is the LCP candidate on most homepage loads). Performance
+// pass, 2026-10-13 — see Documentations MD/storefront-performance-2026-10.md.
+const IMAGE_SRC_WEBP = "/images/hero/delitefied-suv-golden-hour-cropped.webp";
 const IMAGE_ALT = "Whatever your ride needs, Delitefied it — accessories, upgrades, details that make every drive yours.";
 // 2026-10-11: trimmed 150px off each side (1672 → 1372 wide, height unchanged) — explicit
 // instruction ("crop the image width... so it touches the top of the screen"): a narrower image
@@ -130,7 +136,10 @@ function DesktopHero({ ctaLink }: HeroContentOverride) {
 
   return (
     <div ref={containerRef} className="relative w-full" style={{ height: "100vh", minHeight: 460 }}>
-      <img src={IMAGE_SRC} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full object-cover object-bottom" />
+      <picture>
+        <source srcSet={IMAGE_SRC_WEBP} type="image/webp" />
+        <img src={IMAGE_SRC} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full object-cover object-bottom" />
+      </picture>
       {overlayPx && (
         <ShopAccessoriesButton
           ctaLink={ctaLink}
@@ -145,7 +154,10 @@ function DesktopHero({ ctaLink }: HeroContentOverride) {
 function MobileHero({ ctaLink }: HeroContentOverride) {
   return (
     <div className="relative w-full aspect-[1372/741]">
-      <img src={IMAGE_SRC} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full object-cover" />
+      <picture>
+        <source srcSet={IMAGE_SRC_WEBP} type="image/webp" />
+        <img src={IMAGE_SRC} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full object-cover" />
+      </picture>
       <ShopAccessoriesButton
         ctaLink={ctaLink}
         className={`${BUTTON_BASE_CLASS} text-[11px] sm:text-[13px] !gap-1 px-1`}
