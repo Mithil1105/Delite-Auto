@@ -140,6 +140,10 @@ Deno.serve(async (req: Request) => {
     const pricingMethodProbe = await probePricingMethod(config);
     await sleep(350);
     const embedCodeCapabilityProbe = await probeEmbedCodeCapability(config);
+    await sleep(350);
+    const websitePagesProbe = await probeWebsitePages(config);
+    await sleep(350);
+    const categoryReadGroupProbe = await probeCategoryReadGroup(config);
 
     return json({
       configured: true,
@@ -151,6 +155,8 @@ Deno.serve(async (req: Request) => {
       addressResolutionProbe,
       pricingMethodProbe,
       embedCodeCapabilityProbe,
+      websitePagesProbe,
+      categoryReadGroupProbe,
     });
   } catch (err) {
     return json({ configured: true, error: err instanceof Error ? err.message : "Schema introspection failed" }, 500);
@@ -267,6 +273,76 @@ async function probeEmbedCodeCapability(config: OdooConfig): Promise<Record<stri
     return { scriptEmbeddingViewCount: count, sample };
   } catch (err) {
     return { error: err instanceof Error ? err.message.slice(0, 200) : "embed code capability probe failed" };
+  }
+}
+
+/**
+ * Read-only `website.page` discovery — exact field names (via fields_get) plus a full record
+ * dump of whichever candidate visibility/indexing fields actually exist on this instance. Never
+ * requests `arch`/`arch_db`/any content field — page HTML is explicitly out of scope. search_read
+ * only, no create/write/unlink.
+ */
+async function probeWebsitePages(config: OdooConfig): Promise<Record<string, unknown>> {
+  try {
+    const allFields = await odooFieldsGet(config, "website.page");
+    const allFieldNames = Object.keys(allFields).sort();
+
+    const CANDIDATE_FIELDS = [
+      "id",
+      "name",
+      "url",
+      "website_published",
+      "is_published",
+      "is_in_menu",
+      "is_homepage",
+      "is_seo_optimized",
+      "website_indexed",
+      "visibility",
+      "website_id",
+      "active",
+    ];
+    const realFields = CANDIDATE_FIELDS.filter((f) => f === "id" || allFieldNames.includes(f));
+
+    await sleep(300);
+    const pages = await odooSearchRead<Record<string, unknown>>(config, "website.page", [], realFields, { limit: 200 });
+
+    return { allFieldNames, fieldsUsedForDump: realFields, pageCount: pages.length, pages };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message.slice(0, 300) : "website.page probe failed" };
+  }
+}
+
+/**
+ * Performance investigation (2026-10-13): catalog-categories does one sequential search_count
+ * Odoo call PER brand category (27 of them) with a 250ms sleep before each — proven to dominate
+ * its ~3s latency. Tests whether a single read_group call on product.template, grouped by
+ * public_categ_ids, returns the same per-category counts in one round trip. Read-only
+ * (read_group never mutates). Only exercised against a few known brand category ids so the result
+ * is independently checkable against odoo-catalog-classify's already-verified counts.
+ */
+async function probeCategoryReadGroup(config: OdooConfig): Promise<Record<string, unknown>> {
+  const TEST_BRAND_IDS = [25, 34, 42]; // 4N, ALP, DOLPHIN
+  try {
+    const result = await odooExecuteKw<Record<string, unknown>[]>(
+      config,
+      "product.template",
+      "read_group",
+      [
+        [
+          ["sale_ok", "=", true],
+          ["active", "=", true],
+          ["website_published", "=", true],
+          ["is_published", "=", true],
+          ["public_categ_ids", "in", TEST_BRAND_IDS],
+        ],
+        ["public_categ_ids"],
+        ["public_categ_ids"],
+      ],
+      {}
+    );
+    return { attempted: true, callable: true, testBrandIds: TEST_BRAND_IDS, rawResult: result };
+  } catch (err) {
+    return { attempted: true, callable: false, error: err instanceof Error ? err.message.slice(0, 300) : "read_group probe failed" };
   }
 }
 

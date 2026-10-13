@@ -39,35 +39,41 @@ import NotFound from "./pages/NotFound";
 
 import { AdminToastProvider } from "./admin/components/AdminToastProvider";
 import { RequireAdminRole, RoleRoute } from "./admin/components/RequireAdminRole";
-import { AdminLayout } from "./admin/layouts/AdminLayout";
 import { AdminPlaceholder } from "./admin/components/AdminPlaceholder";
-import Overview from "./admin/pages/Overview";
-import Homepage from "./admin/pages/website/Homepage";
-import HomeSectionEditor from "./admin/pages/website/HomeSectionEditor";
-import HeroEditor from "./admin/pages/website/Hero";
-import AnnouncementEditor from "./admin/pages/website/Announcement";
-import PromotionsEditor from "./admin/pages/website/Promotions";
-import NavigationEditor from "./admin/pages/website/Navigation";
-import FooterEditor from "./admin/pages/website/Footer";
-import SeoEditor from "./admin/pages/website/Seo";
-import MediaLibrary from "./admin/pages/media/MediaLibrary";
-import ProductBrowser from "./admin/pages/products/ProductBrowser";
-import AdminOrders from "./admin/pages/orders/Orders";
-import OrderDetail from "./admin/pages/orders/OrderDetail";
-import Payments from "./admin/pages/payments/Payments";
-import Integrations from "./admin/pages/system/Integrations";
-import EmailDelivery from "./admin/pages/system/EmailDelivery";
-import AdminReviews from "./admin/pages/reviews/Reviews";
-import OdooStatus from "./admin/pages/odoo/OdooStatus";
-import ActivityLog from "./admin/pages/settings/ActivityLog";
-import AppearanceSettings from "./admin/pages/settings/Appearance";
-import AdminUsers from "./admin/pages/settings/AdminUsers";
-import Security from "./admin/pages/settings/Security";
-import AdminContact from "./admin/pages/contact/Contact";
-import FeaturedProducts from "./admin/pages/merchandising/Featured";
-import TrendingProducts from "./admin/pages/merchandising/Trending";
-import NewArrivalsProducts from "./admin/pages/merchandising/NewArrivals";
-import HomepageCategories from "./admin/pages/merchandising/Categories";
+// Every admin page (and AdminLayout itself) is lazy-loaded — performance pass, 2026-10-13 (see
+// Documentations MD/storefront-performance-2026-10.md). Previously all ~27 of these were imported
+// eagerly at the top of this file, so every storefront visitor's initial bundle included the
+// entire admin panel (editors, product browser, payments ledger, analytics shell wiring, etc.)
+// even though well over 99% of visits never touch /admin. Matches the pattern already established
+// for the Analytics* pages below, just applied consistently to the rest of /admin.
+const AdminLayout = lazy(() => import("./admin/layouts/AdminLayout").then((m) => ({ default: m.AdminLayout })));
+const Overview = lazy(() => import("./admin/pages/Overview"));
+const Homepage = lazy(() => import("./admin/pages/website/Homepage"));
+const HomeSectionEditor = lazy(() => import("./admin/pages/website/HomeSectionEditor"));
+const HeroEditor = lazy(() => import("./admin/pages/website/Hero"));
+const AnnouncementEditor = lazy(() => import("./admin/pages/website/Announcement"));
+const PromotionsEditor = lazy(() => import("./admin/pages/website/Promotions"));
+const NavigationEditor = lazy(() => import("./admin/pages/website/Navigation"));
+const FooterEditor = lazy(() => import("./admin/pages/website/Footer"));
+const SeoEditor = lazy(() => import("./admin/pages/website/Seo"));
+const MediaLibrary = lazy(() => import("./admin/pages/media/MediaLibrary"));
+const ProductBrowser = lazy(() => import("./admin/pages/products/ProductBrowser"));
+const AdminOrders = lazy(() => import("./admin/pages/orders/Orders"));
+const OrderDetail = lazy(() => import("./admin/pages/orders/OrderDetail"));
+const Payments = lazy(() => import("./admin/pages/payments/Payments"));
+const Integrations = lazy(() => import("./admin/pages/system/Integrations"));
+const EmailDelivery = lazy(() => import("./admin/pages/system/EmailDelivery"));
+const AdminReviews = lazy(() => import("./admin/pages/reviews/Reviews"));
+const OdooStatus = lazy(() => import("./admin/pages/odoo/OdooStatus"));
+const ActivityLog = lazy(() => import("./admin/pages/settings/ActivityLog"));
+const AppearanceSettings = lazy(() => import("./admin/pages/settings/Appearance"));
+const AdminUsers = lazy(() => import("./admin/pages/settings/AdminUsers"));
+const Security = lazy(() => import("./admin/pages/settings/Security"));
+const AdminContact = lazy(() => import("./admin/pages/contact/Contact"));
+const FeaturedProducts = lazy(() => import("./admin/pages/merchandising/Featured"));
+const TrendingProducts = lazy(() => import("./admin/pages/merchandising/Trending"));
+const NewArrivalsProducts = lazy(() => import("./admin/pages/merchandising/NewArrivals"));
+const HomepageCategories = lazy(() => import("./admin/pages/merchandising/Categories"));
 // Analytics pages (and their charting library) load only when an admin opens them, so none of it
 // ships in the storefront bundle.
 const AnalyticsShell = lazy(() => import("./admin/analytics/AnalyticsShell").then((m) => ({ default: m.AnalyticsShell })));

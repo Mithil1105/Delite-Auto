@@ -8,10 +8,27 @@
     <meta name="theme-color" content="#181d21" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!--
+      Non-render-blocking font load (performance pass, 2026-10-13 — see
+      Documentations MD/storefront-performance-2026-10.md). A plain `<link rel="stylesheet">` here
+      blocks first paint until this CSS resolves; `&display=swap` in the URL only controls how each
+      @font-face behaves once that CSS IS loaded, it doesn't make the link itself non-blocking.
+      `media="print"` makes the browser fetch it at normal priority without blocking render; the
+      `onload` swap flips it to `all` once ready. `<noscript>` keeps the original blocking link as a
+      fallback for the (rare) no-JS case.
+    -->
     <link
       href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Hind:wght@400;500;600;700&family=Hind+Vadodara:wght@400;500;600;700&display=swap"
       rel="stylesheet"
+      media="print"
+      onload="this.media='all'"
     />
+    <noscript>
+      <link
+        href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Hind:wght@400;500;600;700&family=Hind+Vadodara:wght@400;500;600;700&display=swap"
+        rel="stylesheet"
+      />
+    </noscript>
     <title>Delite Auto Accessories — Delite-fy Your Ride</title>
   </head>
   <body>
