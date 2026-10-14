@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { track } from "../lib/analytics/client";
@@ -100,7 +100,20 @@ const NATURAL_H = 741;
 // trim above (x-origin only — top/width/height are unaffected by a symmetric left+right crop).
 // These pixel coordinates never change; only the on-screen crop/scale around them does (see
 // computeOverlayPx below).
-const BUTTON_PX = { left: 484.2, top: 637.2, width: 403.6, height: 73.6 };
+// Top edge raised-clearance pass (2026-10-13): the baked tagline's last row ends at y≈630 and the
+// baked button starts at y≈645 (measured), so the pill's top sits at 640 — 10 image-px under the
+// text, 5 image-px above the baked button — and its bottom at 709 (baked button ends ≈703). It can
+// therefore never reach the text above at any zoom/device, because it scales with the image.
+const BUTTON_PX = { left: 484.2, top: 640, width: 403.6, height: 69 };
+
+// Smallest comfortable touch/click target (px). On a phone the image — and the pill drawn over its
+// baked button — is only ~20px tall, so the real <a> gets an invisible hit area padded out to this.
+const MIN_TAP_PX = 44;
+
+// Label size as a fraction of pill height: the default (baked-art) pill is wide and short so its
+// label can be bigger; a custom-image pill is a chunkier 3:1 shape with a smaller label.
+const DEFAULT_FONT_RATIO = 0.4;
+const CUSTOM_FONT_RATIO = 0.28;
 
 // Explicit user color choice — rendered translucent (not opaque) for a "glass" look.
 const BUTTON_COLOR_RGB = "16, 20, 143"; // #10148F
@@ -159,6 +172,25 @@ function computeOverlayPx(containerW: number, containerH: number) {
   };
 }
 
+/**
+ * Overlay box for an admin-uploaded hero image (no baked button art to align with, so the pill's
+ * CENTER comes from the admin's `buttonPosition` %, but its SIZE must still follow the rendered
+ * hero, not stay a fixed pixel size — a fixed 57px pill on a 200px-tall phone hero is what used to
+ * land on top of the tagline). Height is 6.5% of the hero's height (clamped 20–72px, so it's never
+ * unreadably small nor huge on 4K); width keeps the pill proportions but never drops below what
+ * the label needs; and the whole pill is kept inside the box with a small edge margin.
+ */
+function computeCustomOverlayPx(boxW: number, boxH: number, leftPct: number, topPct: number) {
+  if (!boxW || !boxH) return null;
+  const height = Math.min(Math.max(boxH * 0.065, 20), 72);
+  const fontPx = Math.max(height * CUSTOM_FONT_RATIO, 9);
+  const width = Math.min(Math.max(height * 3, fontPx * 9.5), boxW - 8);
+  const margin = Math.max(4, boxH * 0.01);
+  const left = Math.min(Math.max((boxW * leftPct) / 100 - width / 2, 4), boxW - width - 4);
+  const top = Math.min(Math.max((boxH * topPct) / 100 - height / 2, margin), boxH - height - margin);
+  return { left, top, width, height, scale: height / 57 };
+}
+
 // At `scale` 1 (BUTTON_BASE_CLASS's own `backdrop-blur-md`/`border`/inset-highlight values), the
 // glass look was tuned for a normal desktop's button size. The button's own box scales with
 // `scale` (via `computeOverlayPx`'s width/height), but those three CSS values are all FIXED
@@ -169,7 +201,7 @@ function computeOverlayPx(containerW: number, containerH: number) {
 // reads as a flat solid pill instead. Scaling all three with the same `scale` keeps the glass look
 // visually consistent at any size; clamped so it never gets so blurred it looks smudgy.
 function glassStyleForScale(scale: number): CSSProperties {
-  const blur = Math.min(12 * scale, 28);
+  const blur = Math.min(Math.max(12 * scale, 6), 28);
   const borderPx = Math.min(Math.max(1 * scale, 1), 2.5);
   const highlightPx = Math.min(1 * scale, 2.5);
   return {
@@ -180,29 +212,54 @@ function glassStyleForScale(scale: number): CSSProperties {
   };
 }
 
-function ShopAccessoriesButton({
+/**
+ * The default-image "Shop Now" pill. Everything about it derives from the SAME image-space overlay
+ * box (`computeOverlayPx`), so at any viewport width, browser zoom or device pixel ratio the pill,
+ * its label, arrow, gap, blur and border all scale together with the artwork underneath and it
+ * keeps covering exactly the baked button — never the tagline above it. Label size is
+ * `0.4 × pill height` (floored at 9px so it stays legible on a phone); the arrow is dropped when
+ * the pill is too narrow to hold it; and an invisible hit area pads the real link out to
+ * `MIN_TAP_PX` so it's still easy to tap when the visible pill is tiny.
+ */
+function DefaultShopNowButton({
   ctaLink,
-  style,
-  className,
+  overlay,
+  fontRatio = DEFAULT_FONT_RATIO,
 }: {
   ctaLink?: string;
-  style: CSSProperties;
-  className: string;
+  overlay: NonNullable<ReturnType<typeof computeOverlayPx>>;
+  fontRatio?: number;
 }) {
+  const { left, top, width, height, scale } = overlay;
+  const fontPx = Math.max(height * fontRatio, 9);
+  const showArrow = width >= fontPx * 11.5;
+  const extra = Math.max(0, MIN_TAP_PX - height);
   return (
     <Link
       to={ctaLink ?? "/shop"}
       onClick={() => track("promotion_click", { surface: "home_hero", metadata: { label: "Shop Now" } })}
-      className={className}
-      style={{ ...style, backgroundColor: `rgba(${BUTTON_COLOR_RGB}, 0.55)` }}
+      className="absolute rounded-full flex items-center justify-center text-white font-semibold uppercase whitespace-nowrap hover:brightness-110 transition-[filter] focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700"
+      style={{
+        left,
+        top,
+        width,
+        height,
+        fontSize: fontPx,
+        lineHeight: 1,
+        letterSpacing: "0.04em",
+        gap: fontPx * 0.5,
+        backgroundColor: `rgba(${BUTTON_COLOR_RGB}, 0.6)`,
+        borderStyle: "solid",
+        borderColor: "rgba(255,255,255,0.3)",
+        ...glassStyleForScale(scale),
+      }}
     >
-      Shop Now <ArrowRight className="w-[0.9em] h-[0.9em] max-sm:hidden" />
+      {extra > 0 && <span aria-hidden="true" className="absolute inset-x-0" style={{ top: -extra * 0.6, bottom: -extra * 0.4 }} />}
+      Shop Now
+      {showArrow && <ArrowRight style={{ width: "0.9em", height: "0.9em" }} />}
     </Link>
   );
 }
-
-const BUTTON_BASE_CLASS =
-  "absolute rounded-full flex items-center justify-center gap-2 text-white font-semibold uppercase tracking-wide whitespace-nowrap border border-white/30 backdrop-blur-md shadow-[inset_0_1px_0_rgba(255,255,255,0.25)] hover:brightness-110 transition-[filter] focus:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-brand-700";
 
 function DesktopHero({
   ctaLink,
@@ -272,25 +329,12 @@ function DesktopHero({
             <img src={imageSrc} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full" style={foregroundStyle} />
           </picture>
           {isCustomImage ? (
-            <ShopAccessoriesButton
-              ctaLink={ctaLink}
-              className={`${BUTTON_BASE_CLASS} text-[15px] px-8 py-4`}
-              style={{ left: `${buttonLeftPct}%`, top: `${buttonTopPct}%`, transform: "translate(-50%, -50%)" }}
-            />
+            (() => {
+              const o = computeCustomOverlayPx(fgBox.width, fgBox.height, buttonLeftPct, buttonTopPct);
+              return o && <DefaultShopNowButton ctaLink={ctaLink} overlay={o} fontRatio={CUSTOM_FONT_RATIO} />;
+            })()
           ) : (
-            overlayPx && (
-              <ShopAccessoriesButton
-                ctaLink={ctaLink}
-                className={`${BUTTON_BASE_CLASS} text-[15px]`}
-                style={{
-                  left: overlayPx.left,
-                  top: overlayPx.top,
-                  width: overlayPx.width,
-                  height: overlayPx.height,
-                  ...glassStyleForScale(overlayPx.scale),
-                }}
-              />
-            )
+            overlayPx && <DefaultShopNowButton ctaLink={ctaLink} overlay={overlayPx} />
           )}
         </div>
       )}
@@ -306,9 +350,31 @@ function MobileHero({
   buttonPosition,
 }: HeroContentOverride & { imageSrc: string; isCustomImage: boolean }) {
   const { left: buttonLeftPct, top: buttonTopPct } = buttonPosition ?? DEFAULT_CUSTOM_BUTTON_POSITION;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [overlayPx, setOverlayPx] = useState<ReturnType<typeof computeOverlayPx>>(null);
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
+
+  // Same image-space math as desktop (the box's ratio equals the image's, so there's no crop and
+  // `scale` is simply width / NATURAL_W) — instead of the old fixed percentages with a fixed 11/13px
+  // label, so the pill's label/arrow/blur/hit-area scale with the real rendered size at every width.
+  useLayoutEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setBox({ w: r.width, h: r.height });
+      setOverlayPx(computeOverlayPx(r.width, r.height));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const customOverlay = isCustomImage && box ? computeCustomOverlayPx(box.w, box.h, buttonLeftPct, buttonTopPct) : null;
 
   return (
-    <div className="relative w-full aspect-[1372/741]">
+    <div ref={boxRef} className="relative w-full aspect-[1372/741]">
       <picture>
         {!isCustomImage && <source srcSet={DEFAULT_IMAGE_SRC_WEBP} type="image/webp" />}
         <img
@@ -318,15 +384,11 @@ function MobileHero({
           style={isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "mobile")) : { objectFit: "cover" }}
         />
       </picture>
-      <ShopAccessoriesButton
-        ctaLink={ctaLink}
-        className={isCustomImage ? `${BUTTON_BASE_CLASS} text-[12px] px-5 py-3` : `${BUTTON_BASE_CLASS} text-[11px] sm:text-[13px] !gap-1 px-1`}
-        style={
-          isCustomImage
-            ? { left: `${buttonLeftPct}%`, top: `${buttonTopPct}%`, transform: "translate(-50%, -50%)" }
-            : { left: "35.29%", top: "86.00%", width: "29.42%", height: "9.93%" }
-        }
-      />
+      {isCustomImage ? (
+        customOverlay && <DefaultShopNowButton ctaLink={ctaLink} overlay={customOverlay} fontRatio={CUSTOM_FONT_RATIO} />
+      ) : (
+        overlayPx && <DefaultShopNowButton ctaLink={ctaLink} overlay={overlayPx} />
+      )}
     </div>
   );
 }
@@ -338,8 +400,28 @@ export function Hero({ ctaLink, imageStoragePath, imagePosition, buttonPosition 
   }, []);
 
   const isDesktop = useMediaQuery("(min-width: 1024px)");
-  const isCustomImage = Boolean(imageStoragePath);
-  const imageSrc = imageStoragePath ? mediaPublicUrl(imageStoragePath) : DEFAULT_IMAGE_SRC;
+  // An admin-uploaded image is only SWITCHED TO once it has actually finished loading. Until then
+  // (or if it fails to load) the default artwork + its aligned pill stay on screen. Without this,
+  // the CMS content arriving a beat after first paint flipped the pill to its custom-image
+  // size/position while the browser was still showing the default image with its baked button —
+  // a misaligned pill sitting next to a second, un-covered button for as long as the (large) upload
+  // took to download.
+  const customSrc = imageStoragePath ? mediaPublicUrl(imageStoragePath) : null;
+  const [readySrc, setReadySrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!customSrc) return;
+    let cancelled = false;
+    const probe = new Image();
+    probe.onload = () => {
+      if (!cancelled) setReadySrc(customSrc);
+    };
+    probe.src = customSrc;
+    return () => {
+      cancelled = true;
+    };
+  }, [customSrc]);
+  const isCustomImage = customSrc !== null && readySrc === customSrc;
+  const imageSrc = isCustomImage ? customSrc : DEFAULT_IMAGE_SRC;
 
   return (
     <section

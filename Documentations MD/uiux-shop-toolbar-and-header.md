@@ -48,6 +48,15 @@ Included:
   `hero.cta` i18n). On phones the arrow is hidden and padding tightened so the label fits inside the
   pill and fully covers the baked-in button pixels (it previously overflowed at 375px).
 
+- Hero "Shop Now" pill made fully responsive (2026-10-14): it is now sized from the rendered
+  image scale at every width/zoom (label, arrow, gap, blur, border all scale; label floored at 9px;
+  arrow dropped when too narrow; invisible hit area padded to 44px). Pill top sits 10 image-px under
+  the baked tagline so it can never cover it. For an admin-uploaded hero image (live CMS case) the
+  pill's height follows 6.5% of the hero height (20–72px), centered on the admin's `buttonPosition`
+  and clamped inside the hero; the custom image is only switched to after it has fully loaded
+  (previously a mis-sized pill sat beside the default art's baked button while it downloaded).
+  Header tightened at 1024px (nav/search gaps) — it overflowed the viewport by ~100px there.
+
 Not included (deferred): the review-card visual redesign (awaiting user's photos + link); the real
 PNG logo; a mega-menu.
 
@@ -99,5 +108,6 @@ None new.
 | Date       | Author | Change                                                    |
 |------------|--------|------------------------------------------------------------|
 | 2026-10-10 | Claude | Initial version: Shop toolbar/filters/grid-list view, header logo-left, drawer from right |
+| 2026-10-14 | Claude | Hero Shop Now pill fully responsive (default + CMS image), preload-before-switch, header 1024px overflow fix |
 | 2026-10-11 | Claude | Hero CTA renamed "Shop Now" everywhere; mobile pill no longer overflows |
 | 2026-10-10 | Claude | PDP details tabs → accordion + quick-facts chips; header specs re-run (12/12) |

@@ -174,12 +174,12 @@ export function Header({
             per-page knowledge of whether a hero is present, and a consistent nav width across the
             site (only ever capped on screens wide enough to need it at all) is simpler and more
             predictable than conditioning this on the current route. */}
-        <div className="w-full px-5 sm:px-6 lg:px-8 mx-auto flex items-center h-16 gap-3 lg:gap-8" style={{ maxWidth: HERO_WIDTH_CAP_CSS }}>
+        <div className="w-full px-5 sm:px-6 lg:px-8 mx-auto flex items-center h-16 gap-3 lg:gap-4 xl:gap-8" style={{ maxWidth: HERO_WIDTH_CAP_CSS }}>
           <Link to="/" aria-label="Delite — home" className="shrink-0">
             <img src="/images/brand/delite-logo.png" alt="Delite" className="h-8 sm:h-9 w-auto" />
           </Link>
 
-          <nav className="hidden lg:flex items-center gap-5 xl:gap-7">
+          <nav className="hidden lg:flex items-center gap-3 xl:gap-7">
             {navItems.map((item) => (
               <Link
                 key={item.to}
@@ -196,7 +196,7 @@ export function Header({
           </nav>
 
           <div className="flex items-center gap-1 ml-auto">
-            <form onSubmit={submitSearch} className="hidden lg:flex items-center w-56 xl:w-72 relative mr-1">
+            <form onSubmit={submitSearch} className="hidden lg:flex items-center w-36 xl:w-72 relative mr-1">
               <Search className="w-4 h-4 absolute left-3 text-steel-500" />
               <input
                 value={query}
