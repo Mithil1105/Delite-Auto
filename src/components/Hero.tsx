@@ -173,21 +173,67 @@ function computeOverlayPx(containerW: number, containerH: number) {
 }
 
 /**
- * Overlay box for an admin-uploaded hero image (no baked button art to align with, so the pill's
- * CENTER comes from the admin's `buttonPosition` %, but its SIZE must still follow the rendered
- * hero, not stay a fixed pixel size — a fixed 57px pill on a 200px-tall phone hero is what used to
- * land on top of the tagline). Height is 6.5% of the hero's height (clamped 20–72px, so it's never
- * unreadably small nor huge on 4K); width keeps the pill proportions but never drops below what
- * the label needs; and the whole pill is kept inside the box with a small edge margin.
+ * On a wide/short hero `object-fit: cover` crops the photo top and bottom. If the focal point crops
+ * away the bottom strip of the photo (where the tagline AND the button live), the button would have
+ * nowhere to go but on top of the tagline. So the effective vertical focal point is pushed down just
+ * enough to keep the bottom ~2.5% of the photo in view (crop then comes off the top, like the
+ * default artwork's `object-bottom`). Only applied at zoom 1 — a deliberate admin zoom is respected.
  */
-function computeCustomOverlayPx(boxW: number, boxH: number, leftPct: number, topPct: number) {
-  if (!boxW || !boxH) return null;
-  const height = Math.min(Math.max(boxH * 0.065, 20), 72);
+function anchoredPosition(
+  boxW: number,
+  boxH: number,
+  natural: { w: number; h: number },
+  pos: { x: number; y: number; zoom: number }
+) {
+  if (pos.zoom !== 1 || !boxW || !boxH) return pos;
+  const renderedH = natural.h * Math.max(boxW / natural.w, boxH / natural.h);
+  const overflow = renderedH - boxH;
+  if (overflow <= 0) return pos;
+  const minY = 100 * (1 - (renderedH * 0.025) / overflow);
+  return pos.y >= minY ? pos : { ...pos, y: Math.min(100, Math.max(minY, 0)) };
+}
+
+/**
+ * Overlay box for an admin-uploaded hero image (no baked button art to align with). The admin's
+ * `buttonPosition` is a point in the IMAGE (x/y as % of the photo itself, not of the hero box), and
+ * this maps it through exactly what the browser does to draw the photo — `object-fit: cover` +
+ * `object-position` at the focal point, then the zoom `scale()` about the focal point — so the pill
+ * stays glued to the same spot of the artwork (just under the tagline) at every viewport width,
+ * height and browser zoom. Anchoring to the hero BOX instead (the previous version) drifted onto
+ * the tagline whenever `cover` cropped the photo differently from the box ratio the position was
+ * picked at.
+ *
+ * Size follows the rendered photo too: height is 6.5% of the rendered photo height (clamped 20–72px
+ * so it is neither unreadably small nor huge on 4K); width keeps the pill proportions but never
+ * drops below what the label needs. The pill is kept inside the box with a small edge margin.
+ */
+function computeCustomOverlayPx(
+  boxW: number,
+  boxH: number,
+  natural: { w: number; h: number },
+  pos: { x: number; y: number; zoom: number },
+  leftPct: number,
+  topPct: number
+) {
+  if (!boxW || !boxH || !natural.w || !natural.h) return null;
+  const s = Math.max(boxW / natural.w, boxH / natural.h);
+  const renderedW = natural.w * s;
+  const renderedH = natural.h * s;
+  const offX = (boxW - renderedW) * (pos.x / 100);
+  const offY = (boxH - renderedH) * (pos.y / 100);
+  const originX = (boxW * pos.x) / 100;
+  const originY = (boxH * pos.y) / 100;
+  const px = offX + (renderedW * leftPct) / 100;
+  const py = offY + (renderedH * topPct) / 100;
+  const cx = originX + (px - originX) * pos.zoom;
+  const cy = originY + (py - originY) * pos.zoom;
+  const height = Math.min(Math.max(renderedH * pos.zoom * 0.065, 18), 72);
   const fontPx = Math.max(height * CUSTOM_FONT_RATIO, 9);
   const width = Math.min(Math.max(height * 3, fontPx * 9.5), boxW - 8);
-  const margin = Math.max(4, boxH * 0.01);
-  const left = Math.min(Math.max((boxW * leftPct) / 100 - width / 2, 4), boxW - width - 4);
-  const top = Math.min(Math.max((boxH * topPct) / 100 - height / 2, margin), boxH - height - margin);
+  const margin = Math.max(2, boxH * 0.01);
+  const left = Math.min(Math.max(cx - width / 2, 4), boxW - width - 4);
+  // Nudged a touch below the admin's point so it always sits under the tagline, never on it.
+  const top = Math.min(Math.max(cy - height / 2 + height * 0.12, margin), boxH - height - margin);
   return { left, top, width, height, scale: height / 57 };
 }
 
@@ -265,9 +311,10 @@ function DesktopHero({
   ctaLink,
   imageSrc,
   isCustomImage,
+  natural,
   imagePosition,
   buttonPosition,
-}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean }) {
+}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean; natural: { w: number; h: number } | null }) {
   const outerRef = useRef<HTMLDivElement>(null);
   const [fgBox, setFgBox] = useState<{ width: number; height: number } | null>(null);
   const [overlayPx, setOverlayPx] = useState<ReturnType<typeof computeOverlayPx>>(null);
@@ -305,7 +352,13 @@ function DesktopHero({
   }, [isCustomImage]);
 
   const { left: buttonLeftPct, top: buttonTopPct } = buttonPosition ?? DEFAULT_CUSTOM_BUTTON_POSITION;
-  const foregroundStyle = isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "desktop")) : { objectFit: "cover" as const, objectPosition: "bottom" };
+  const customPos = (w: number, h: number) => {
+    const base = resolveImagePosition(imagePosition, "desktop");
+    return natural ? anchoredPosition(w, h, natural, base) : base;
+  };
+  const foregroundStyle = isCustomImage
+    ? imagePositionStyle(fgBox ? customPos(fgBox.width, fgBox.height) : resolveImagePosition(imagePosition, "desktop"))
+    : { objectFit: "cover" as const, objectPosition: "bottom" };
 
   return (
     <div ref={outerRef} className="relative w-full" style={naturalMode ? undefined : { height: "100vh", minHeight: 460 }}>
@@ -330,7 +383,9 @@ function DesktopHero({
           </picture>
           {isCustomImage ? (
             (() => {
-              const o = computeCustomOverlayPx(fgBox.width, fgBox.height, buttonLeftPct, buttonTopPct);
+              const o = natural
+                ? computeCustomOverlayPx(fgBox.width, fgBox.height, natural, customPos(fgBox.width, fgBox.height), buttonLeftPct, buttonTopPct)
+                : null;
               return o && <DefaultShopNowButton ctaLink={ctaLink} overlay={o} fontRatio={CUSTOM_FONT_RATIO} />;
             })()
           ) : (
@@ -346,9 +401,10 @@ function MobileHero({
   ctaLink,
   imageSrc,
   isCustomImage,
+  natural,
   imagePosition,
   buttonPosition,
-}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean }) {
+}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean; natural: { w: number; h: number } | null }) {
   const { left: buttonLeftPct, top: buttonTopPct } = buttonPosition ?? DEFAULT_CUSTOM_BUTTON_POSITION;
   const boxRef = useRef<HTMLDivElement>(null);
   const [overlayPx, setOverlayPx] = useState<ReturnType<typeof computeOverlayPx>>(null);
@@ -371,7 +427,10 @@ function MobileHero({
     return () => observer.disconnect();
   }, []);
 
-  const customOverlay = isCustomImage && box ? computeCustomOverlayPx(box.w, box.h, buttonLeftPct, buttonTopPct) : null;
+  const customOverlay =
+    isCustomImage && box && natural
+      ? computeCustomOverlayPx(box.w, box.h, natural, resolveImagePosition(imagePosition, "mobile"), buttonLeftPct, buttonTopPct)
+      : null;
 
   return (
     <div ref={boxRef} className="relative w-full aspect-[1372/741]">
@@ -407,20 +466,21 @@ export function Hero({ ctaLink, imageStoragePath, imagePosition, buttonPosition 
   // a misaligned pill sitting next to a second, un-covered button for as long as the (large) upload
   // took to download.
   const customSrc = imageStoragePath ? mediaPublicUrl(imageStoragePath) : null;
-  const [readySrc, setReadySrc] = useState<string | null>(null);
+  const [ready, setReady] = useState<{ src: string; w: number; h: number } | null>(null);
   useEffect(() => {
     if (!customSrc) return;
     let cancelled = false;
     const probe = new Image();
     probe.onload = () => {
-      if (!cancelled) setReadySrc(customSrc);
+      if (!cancelled) setReady({ src: customSrc, w: probe.naturalWidth, h: probe.naturalHeight });
     };
     probe.src = customSrc;
     return () => {
       cancelled = true;
     };
   }, [customSrc]);
-  const isCustomImage = customSrc !== null && readySrc === customSrc;
+  const isCustomImage = customSrc !== null && ready?.src === customSrc;
+  const natural = isCustomImage && ready ? { w: ready.w, h: ready.h } : null;
   const imageSrc = isCustomImage ? customSrc : DEFAULT_IMAGE_SRC;
 
   return (
@@ -441,9 +501,9 @@ export function Hero({ ctaLink, imageStoragePath, imagePosition, buttonPosition 
       style={isDesktop ? { marginTop: "calc(-1 * var(--header-height, 97px))" } : undefined}
     >
       {isDesktop ? (
-        <DesktopHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} imagePosition={imagePosition} buttonPosition={buttonPosition} />
+        <DesktopHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} natural={natural} imagePosition={imagePosition} buttonPosition={buttonPosition} />
       ) : (
-        <MobileHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} imagePosition={imagePosition} buttonPosition={buttonPosition} />
+        <MobileHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} natural={natural} imagePosition={imagePosition} buttonPosition={buttonPosition} />
       )}
     </section>
   );
