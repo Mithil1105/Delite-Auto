@@ -173,27 +173,6 @@ function computeOverlayPx(containerW: number, containerH: number) {
 }
 
 /**
- * On a wide/short hero `object-fit: cover` crops the photo top and bottom. If the focal point crops
- * away the bottom strip of the photo (where the tagline AND the button live), the button would have
- * nowhere to go but on top of the tagline. So the effective vertical focal point is pushed down just
- * enough to keep the bottom ~2.5% of the photo in view (crop then comes off the top, like the
- * default artwork's `object-bottom`). Only applied at zoom 1 — a deliberate admin zoom is respected.
- */
-function anchoredPosition(
-  boxW: number,
-  boxH: number,
-  natural: { w: number; h: number },
-  pos: { x: number; y: number; zoom: number }
-) {
-  if (pos.zoom !== 1 || !boxW || !boxH) return pos;
-  const renderedH = natural.h * Math.max(boxW / natural.w, boxH / natural.h);
-  const overflow = renderedH - boxH;
-  if (overflow <= 0) return pos;
-  const minY = 100 * (1 - (renderedH * 0.025) / overflow);
-  return pos.y >= minY ? pos : { ...pos, y: Math.min(100, Math.max(minY, 0)) };
-}
-
-/**
  * Overlay box for an admin-uploaded hero image (no baked button art to align with). The admin's
  * `buttonPosition` is a point in the IMAGE (x/y as % of the photo itself, not of the hero box), and
  * this maps it through exactly what the browser does to draw the photo — `object-fit: cover` +
@@ -227,13 +206,17 @@ function computeCustomOverlayPx(
   const py = offY + (renderedH * topPct) / 100;
   const cx = originX + (px - originX) * pos.zoom;
   const cy = originY + (py - originY) * pos.zoom;
-  const height = Math.min(Math.max(renderedH * pos.zoom * 0.065, 18), 72);
-  const fontPx = Math.max(height * CUSTOM_FONT_RATIO, 9);
-  const width = Math.min(Math.max(height * 3, fontPx * 9.5), boxW - 8);
   const margin = Math.max(2, boxH * 0.01);
+  let height = Math.min(Math.max(renderedH * pos.zoom * 0.065, 18), 72);
+  // Nudged a touch below the admin's point so it sits under the tagline, never on it.
+  const desiredTop = Math.max(cy - height / 2 + height * 0.12, margin);
+  // The photo itself is never moved or enlarged to make room: if `cover` has cropped the bottom so
+  // the pill would run past the hero's edge, the pill SHRINKS to fit the room that's left instead.
+  height = Math.max(Math.min(height, boxH - margin - desiredTop), 14);
+  const top = Math.min(desiredTop, boxH - height - margin);
+  const fontPx = Math.max(height * CUSTOM_FONT_RATIO, 8);
+  const width = Math.min(Math.max(height * 3, fontPx * 9.5), boxW - 8);
   const left = Math.min(Math.max(cx - width / 2, 4), boxW - width - 4);
-  // Nudged a touch below the admin's point so it always sits under the tagline, never on it.
-  const top = Math.min(Math.max(cy - height / 2 + height * 0.12, margin), boxH - height - margin);
   return { left, top, width, height, scale: height / 57 };
 }
 
@@ -352,13 +335,7 @@ function DesktopHero({
   }, [isCustomImage]);
 
   const { left: buttonLeftPct, top: buttonTopPct } = buttonPosition ?? DEFAULT_CUSTOM_BUTTON_POSITION;
-  const customPos = (w: number, h: number) => {
-    const base = resolveImagePosition(imagePosition, "desktop");
-    return natural ? anchoredPosition(w, h, natural, base) : base;
-  };
-  const foregroundStyle = isCustomImage
-    ? imagePositionStyle(fgBox ? customPos(fgBox.width, fgBox.height) : resolveImagePosition(imagePosition, "desktop"))
-    : { objectFit: "cover" as const, objectPosition: "bottom" };
+  const foregroundStyle = isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "desktop")) : { objectFit: "cover" as const, objectPosition: "bottom" };
 
   return (
     <div ref={outerRef} className="relative w-full" style={naturalMode ? undefined : { height: "100vh", minHeight: 460 }}>
@@ -384,7 +361,7 @@ function DesktopHero({
           {isCustomImage ? (
             (() => {
               const o = natural
-                ? computeCustomOverlayPx(fgBox.width, fgBox.height, natural, customPos(fgBox.width, fgBox.height), buttonLeftPct, buttonTopPct)
+                ? computeCustomOverlayPx(fgBox.width, fgBox.height, natural, resolveImagePosition(imagePosition, "desktop"), buttonLeftPct, buttonTopPct)
                 : null;
               return o && <DefaultShopNowButton ctaLink={ctaLink} overlay={o} fontRatio={CUSTOM_FONT_RATIO} />;
             })()
