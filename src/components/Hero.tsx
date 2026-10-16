@@ -4,8 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { track } from "../lib/analytics/client";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { mediaPublicUrl } from "../services/cms/publishedCmsService";
-import { imagePositionStyle, resolveImagePosition, type ImagePositionByDevice } from "../lib/media/imagePosition";
-import { MAX_HERO_ASPECT } from "../lib/layout/heroWidthCap";
+import type { ImagePositionByDevice } from "../lib/media/imagePosition";
 
 /**
  * Full-bleed composited banner hero (2026-10-11 pass — real solid-color button + desktop
@@ -152,77 +151,58 @@ const DEFAULT_CUSTOM_BUTTON_POSITION = { left: 50, top: 86 };
 // safely catching genuinely portrait-ish windows.
 const MIN_HERO_ASPECT = 1.2;
 
-/** Replicates `object-fit: cover; object-position: bottom` 's own crop math for a container of
- * `containerW`×`containerH` showing a `NATURAL_W`×`NATURAL_H` image, so the button overlay can be
- * positioned in the same pixel space as what's actually on screen. Also returns `scale` itself —
- * the "glass" treatment (blur/border/highlight) needs it too, see `glassStyleForScale` below. */
-function computeOverlayPx(containerW: number, containerH: number) {
-  if (!containerW || !containerH) return null;
-  const scale = Math.max(containerW / NATURAL_W, containerH / NATURAL_H);
-  const renderedW = NATURAL_W * scale;
-  const renderedH = NATURAL_H * scale;
-  const cropX = (renderedW - containerW) / 2; // symmetric left/right crop (0 when height-bound)
-  const cropY = renderedH - containerH; // all vertical crop comes off the top (object-bottom)
+type Overlay = { left: number; top: number; width: number; height: number; scale: number };
+type Natural = { w: number; h: number };
+type Fit = { x: number; y: number; w: number; h: number; scale: number };
+
+/**
+ * "Extended background" model (2026-10-16): the WHOLE photo is always shown — scaled to fit inside
+ * the hero box (`contain`), never cropped, never zoomed — and any leftover space on the sides / top
+ * is filled by an extended, blurred copy of the same photo (see `HeroBackdrop`). So wordmark, car,
+ * tagline and button are all always visible at every window size and browser zoom, and the nav bar
+ * can never end up on top of the wordmark. Horizontally centred; when the box is taller than the
+ * photo the photo sits at the BOTTOM of the box (extension goes behind the nav at the top).
+ */
+function computeFit(boxW: number, boxH: number, nat: Natural): Fit | null {
+  if (!boxW || !boxH || !nat.w || !nat.h) return null;
+  const scale = Math.min(boxW / nat.w, boxH / nat.h);
+  const w = nat.w * scale;
+  const h = nat.h * scale;
+  return { x: (boxW - w) / 2, y: boxH - h, w, h, scale };
+}
+
+/** Default artwork: the pill covers the baked-in button, whose position is known in image pixels. */
+function computeDefaultOverlay(fit: Fit): Overlay {
   return {
-    left: BUTTON_PX.left * scale - cropX,
-    top: BUTTON_PX.top * scale - cropY,
-    width: BUTTON_PX.width * scale,
-    height: BUTTON_PX.height * scale,
-    scale,
+    left: fit.x + BUTTON_PX.left * fit.scale,
+    top: fit.y + BUTTON_PX.top * fit.scale,
+    width: BUTTON_PX.width * fit.scale,
+    height: BUTTON_PX.height * fit.scale,
+    scale: fit.scale,
   };
 }
 
 /**
- * Overlay box for an admin-uploaded hero image (no baked button art to align with). The admin's
- * `buttonPosition` is a point in the IMAGE (x/y as % of the photo itself, not of the hero box), and
- * this maps it through exactly what the browser does to draw the photo — `object-fit: cover` +
- * `object-position` at the focal point, then the zoom `scale()` about the focal point — so the pill
- * stays glued to the same spot of the artwork (just under the tagline) at every viewport width,
- * height and browser zoom. Anchoring to the hero BOX instead (the previous version) drifted onto
- * the tagline whenever `cover` cropped the photo differently from the box ratio the position was
- * picked at.
- *
- * Size follows the rendered photo too: height is 6.5% of the rendered photo height (clamped 20–72px
- * so it is neither unreadably small nor huge on 4K); width keeps the pill proportions but never
- * drops below what the label needs. The pill is kept inside the box with a small edge margin.
+ * Admin-uploaded photo (no baked button): the admin's `buttonPosition` is a point ON THE PHOTO (x/y
+ * as % of the photo), so the pill stays glued under the tagline at every size. Height is 6.5% of the
+ * rendered photo height (clamped 18–72px); width keeps the pill proportions but never drops below
+ * what the label needs; nudged a touch below the admin's point so it never touches the text above.
  */
-function computeCustomOverlayPx(
-  boxW: number,
-  boxH: number,
-  natural: { w: number; h: number },
-  pos: { x: number; y: number; zoom: number },
-  leftPct: number,
-  topPct: number
-) {
-  if (!boxW || !boxH || !natural.w || !natural.h) return null;
-  const s = Math.max(boxW / natural.w, boxH / natural.h);
-  const renderedW = natural.w * s;
-  const renderedH = natural.h * s;
-  const offX = (boxW - renderedW) * (pos.x / 100);
-  const offY = (boxH - renderedH) * (pos.y / 100);
-  const originX = (boxW * pos.x) / 100;
-  const originY = (boxH * pos.y) / 100;
-  const px = offX + (renderedW * leftPct) / 100;
-  const py = offY + (renderedH * topPct) / 100;
-  const cx = originX + (px - originX) * pos.zoom;
-  const cy = originY + (py - originY) * pos.zoom;
-  const margin = Math.max(2, boxH * 0.01);
-  let height = Math.min(Math.max(renderedH * pos.zoom * 0.065, 18), 72);
-  // Nudged a touch below the admin's point so it sits under the tagline, never on it.
-  const desiredTop = Math.max(cy - height / 2 + height * 0.12, margin);
-  // The photo itself is never moved or enlarged to make room: if `cover` has cropped the bottom so
-  // the pill would run past the hero's edge, the pill SHRINKS to fit the room that's left instead.
-  height = Math.max(Math.min(height, boxH - margin - desiredTop), 14);
-  const top = Math.min(desiredTop, boxH - height - margin);
-  const fontPx = Math.max(height * CUSTOM_FONT_RATIO, 8);
+function computeCustomOverlay(boxW: number, boxH: number, fit: Fit, leftPct: number, topPct: number): Overlay {
+  const height = Math.min(Math.max(fit.h * 0.065, 18), 72);
+  const fontPx = Math.max(height * CUSTOM_FONT_RATIO, 9);
   const width = Math.min(Math.max(height * 3, fontPx * 9.5), boxW - 8);
+  const cx = fit.x + (fit.w * leftPct) / 100;
+  const cy = fit.y + (fit.h * topPct) / 100;
+  const margin = Math.max(2, boxH * 0.01);
   const left = Math.min(Math.max(cx - width / 2, 4), boxW - width - 4);
+  const top = Math.min(Math.max(cy - height / 2 + height * 0.12, margin), boxH - height - margin);
   return { left, top, width, height, scale: height / 57 };
 }
 
 // At `scale` 1 (BUTTON_BASE_CLASS's own `backdrop-blur-md`/`border`/inset-highlight values), the
 // glass look was tuned for a normal desktop's button size. The button's own box scales with
-// `scale` (via `computeOverlayPx`'s width/height), but those three CSS values are all FIXED
+// `scale` (via the overlay's width/height), but those three CSS values are all FIXED
 // pixel amounts baked into Tailwind classes — on a big screen where `scale` runs well past normal
 // (a large/high-res monitor, not just an ultra-wide one — MAX_HERO_ASPECT above only caps WIDTH
 // relative to height, not overall size), the button renders much bigger while the blur/border/
@@ -243,7 +223,7 @@ function glassStyleForScale(scale: number): CSSProperties {
 
 /**
  * The default-image "Shop Now" pill. Everything about it derives from the SAME image-space overlay
- * box (`computeOverlayPx`), so at any viewport width, browser zoom or device pixel ratio the pill,
+ * box (`computeDefaultOverlay`), so at any viewport width, browser zoom or device pixel ratio the pill,
  * its label, arrow, gap, blur and border all scale together with the artwork underneath and it
  * keeps covering exactly the baked button — never the tagline above it. Label size is
  * `0.4 × pill height` (floored at 9px so it stays legible on a phone); the arrow is dropped when
@@ -256,7 +236,7 @@ function DefaultShopNowButton({
   fontRatio = DEFAULT_FONT_RATIO,
 }: {
   ctaLink?: string;
-  overlay: NonNullable<ReturnType<typeof computeOverlayPx>>;
+  overlay: Overlay;
   fontRatio?: number;
 }) {
   const { left, top, width, height, scale } = overlay;
@@ -290,39 +270,65 @@ function DefaultShopNowButton({
   );
 }
 
+/** Extended background: a blurred, scaled-up copy of the same photo fills the whole hero box, so any
+ * space the fitted photo doesn't cover (sides, or the top behind the nav) continues the artwork
+ * instead of showing flat colour bars. */
+function HeroBackdrop({ src }: { src: string }) {
+  return <img src={src} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover scale-125 blur-2xl" />;
+}
+
+/** Soft-fades the fitted photo's edges that touch the extended background, so the join is seamless. */
+function edgeFadeStyle(fit: Fit, boxW: number): CSSProperties {
+  const fadeX = Math.min(80, fit.w * 0.06);
+  const fadeY = Math.min(80, fit.h * 0.08);
+  const layers: string[] = [];
+  if (fit.x > 1) layers.push(`linear-gradient(to right, transparent 0, #000 ${fadeX}px, #000 calc(100% - ${fadeX}px), transparent 100%)`);
+  if (fit.y > 1) layers.push(`linear-gradient(to bottom, transparent 0, #000 ${fadeY}px)`);
+  if (layers.length === 0 || boxW <= 0) return {};
+  return {
+    WebkitMaskImage: layers.join(", "),
+    maskImage: layers.join(", "),
+    WebkitMaskComposite: "source-in",
+    maskComposite: "intersect",
+  };
+}
+
+function FittedPhoto({ src, fit, webp }: { src: string; fit: Fit; webp?: string }) {
+  return (
+    <picture>
+      {webp && <source srcSet={webp} type="image/webp" />}
+      <img
+        src={src}
+        alt={IMAGE_ALT}
+        className="absolute max-w-none"
+        style={{ left: fit.x, top: fit.y, width: fit.w, height: fit.h, ...edgeFadeStyle(fit, fit.w) }}
+      />
+    </picture>
+  );
+}
+
 function DesktopHero({
   ctaLink,
   imageSrc,
   isCustomImage,
   natural,
-  imagePosition,
   buttonPosition,
-}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean; natural: { w: number; h: number } | null }) {
+}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean; natural: Natural }) {
   const outerRef = useRef<HTMLDivElement>(null);
-  const [fgBox, setFgBox] = useState<{ width: number; height: number } | null>(null);
-  const [overlayPx, setOverlayPx] = useState<ReturnType<typeof computeOverlayPx>>(null);
+  const [box, setBox] = useState<{ w: number; h: number } | null>(null);
   const [naturalMode, setNaturalMode] = useState(false);
+  const aspect = natural.w / natural.h;
 
   useEffect(() => {
     const el = outerRef.current;
     if (!el) return;
     const update = () => {
       const r = el.getBoundingClientRect();
-      // Decided from the real window, not `r` — `r`'s own height depends on `naturalMode`'s
-      // result (the outer div has no fixed height in natural mode), so using it here would be
-      // circular. `r.width` is still reliable either way (outer is always `w-full`).
+      // Decided from the real window, not `r` — `r`'s own height depends on `naturalMode`'s result
+      // (the outer div has no fixed height in natural mode), so using it here would be circular.
       const isNatural = window.innerWidth / window.innerHeight < MIN_HERO_ASPECT;
       setNaturalMode(isNatural);
-      if (isNatural) {
-        const width = r.width;
-        const height = width / (NATURAL_W / NATURAL_H);
-        setFgBox({ width, height });
-        if (!isCustomImage) setOverlayPx(computeOverlayPx(width, height));
-      } else {
-        const width = Math.min(r.width, r.height * MAX_HERO_ASPECT);
-        setFgBox({ width, height: r.height });
-        if (!isCustomImage) setOverlayPx(computeOverlayPx(width, r.height));
-      }
+      setBox({ w: r.width, h: isNatural ? r.width / aspect : r.height });
     };
     update();
     const observer = new ResizeObserver(update);
@@ -332,44 +338,18 @@ function DesktopHero({
       observer.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [isCustomImage]);
+  }, [aspect]);
 
   const { left: buttonLeftPct, top: buttonTopPct } = buttonPosition ?? DEFAULT_CUSTOM_BUTTON_POSITION;
-  const foregroundStyle = isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "desktop")) : { objectFit: "cover" as const, objectPosition: "bottom" };
+  const fit = box ? computeFit(box.w, box.h, natural) : null;
+  const overlay =
+    fit && box ? (isCustomImage ? computeCustomOverlay(box.w, box.h, fit, buttonLeftPct, buttonTopPct) : computeDefaultOverlay(fit)) : null;
 
   return (
-    <div ref={outerRef} className="relative w-full" style={naturalMode ? undefined : { height: "100vh", minHeight: 460 }}>
-      {/* Ultra-wide backdrop: a blurred, zoomed-in copy of the same photo filling the full width —
-          only visible beyond the capped foreground's edges on a wider-than-normal monitor. Skipped
-          in natural mode — the foreground already matches the image's own ratio exactly there, so
-          there's no crop/gap for a backdrop to ever fill. */}
-      {!naturalMode && (
-        <>
-          <img src={imageSrc} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover scale-110 blur-3xl" style={foregroundStyle} />
-          <div className="absolute inset-0 bg-brand-700/35" />
-        </>
-      )}
-      {fgBox && (
-        <div
-          className={naturalMode ? "relative w-full" : "absolute top-0 h-full"}
-          style={naturalMode ? { height: fgBox.height } : { left: "50%", transform: "translateX(-50%)", width: fgBox.width }}
-        >
-          <picture>
-            {!isCustomImage && <source srcSet={DEFAULT_IMAGE_SRC_WEBP} type="image/webp" />}
-            <img src={imageSrc} alt={IMAGE_ALT} className="absolute inset-0 w-full h-full" style={foregroundStyle} />
-          </picture>
-          {isCustomImage ? (
-            (() => {
-              const o = natural
-                ? computeCustomOverlayPx(fgBox.width, fgBox.height, natural, resolveImagePosition(imagePosition, "desktop"), buttonLeftPct, buttonTopPct)
-                : null;
-              return o && <DefaultShopNowButton ctaLink={ctaLink} overlay={o} fontRatio={CUSTOM_FONT_RATIO} />;
-            })()
-          ) : (
-            overlayPx && <DefaultShopNowButton ctaLink={ctaLink} overlay={overlayPx} />
-          )}
-        </div>
-      )}
+    <div ref={outerRef} className="relative w-full overflow-hidden" style={naturalMode ? { height: box?.h } : { height: "100vh", minHeight: 460 }}>
+      {!naturalMode && <HeroBackdrop src={imageSrc} />}
+      {fit && <FittedPhoto src={imageSrc} fit={fit} webp={isCustomImage ? undefined : DEFAULT_IMAGE_SRC_WEBP} />}
+      {overlay && <DefaultShopNowButton ctaLink={ctaLink} overlay={overlay} fontRatio={isCustomImage ? CUSTOM_FONT_RATIO : DEFAULT_FONT_RATIO} />}
     </div>
   );
 }
@@ -379,24 +359,20 @@ function MobileHero({
   imageSrc,
   isCustomImage,
   natural,
-  imagePosition,
   buttonPosition,
-}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean; natural: { w: number; h: number } | null }) {
+}: HeroContentOverride & { imageSrc: string; isCustomImage: boolean; natural: Natural }) {
   const { left: buttonLeftPct, top: buttonTopPct } = buttonPosition ?? DEFAULT_CUSTOM_BUTTON_POSITION;
   const boxRef = useRef<HTMLDivElement>(null);
-  const [overlayPx, setOverlayPx] = useState<ReturnType<typeof computeOverlayPx>>(null);
   const [box, setBox] = useState<{ w: number; h: number } | null>(null);
 
-  // Same image-space math as desktop (the box's ratio equals the image's, so there's no crop and
-  // `scale` is simply width / NATURAL_W) — instead of the old fixed percentages with a fixed 11/13px
-  // label, so the pill's label/arrow/blur/hit-area scale with the real rendered size at every width.
+  // The box takes the photo's OWN aspect ratio, so the whole photo shows with no crop and no bars;
+  // the pill is placed in the same image-space maths as desktop and scales with the real width.
   useLayoutEffect(() => {
     const el = boxRef.current;
     if (!el) return;
     const update = () => {
       const r = el.getBoundingClientRect();
       setBox({ w: r.width, h: r.height });
-      setOverlayPx(computeOverlayPx(r.width, r.height));
     };
     update();
     const observer = new ResizeObserver(update);
@@ -404,32 +380,19 @@ function MobileHero({
     return () => observer.disconnect();
   }, []);
 
-  const customOverlay =
-    isCustomImage && box && natural
-      ? computeCustomOverlayPx(box.w, box.h, natural, resolveImagePosition(imagePosition, "mobile"), buttonLeftPct, buttonTopPct)
-      : null;
+  const fit = box ? computeFit(box.w, box.h, natural) : null;
+  const overlay =
+    fit && box ? (isCustomImage ? computeCustomOverlay(box.w, box.h, fit, buttonLeftPct, buttonTopPct) : computeDefaultOverlay(fit)) : null;
 
   return (
-    <div ref={boxRef} className="relative w-full aspect-[1372/741]">
-      <picture>
-        {!isCustomImage && <source srcSet={DEFAULT_IMAGE_SRC_WEBP} type="image/webp" />}
-        <img
-          src={imageSrc}
-          alt={IMAGE_ALT}
-          className="absolute inset-0 w-full h-full"
-          style={isCustomImage ? imagePositionStyle(resolveImagePosition(imagePosition, "mobile")) : { objectFit: "cover" }}
-        />
-      </picture>
-      {isCustomImage ? (
-        customOverlay && <DefaultShopNowButton ctaLink={ctaLink} overlay={customOverlay} fontRatio={CUSTOM_FONT_RATIO} />
-      ) : (
-        overlayPx && <DefaultShopNowButton ctaLink={ctaLink} overlay={overlayPx} />
-      )}
+    <div ref={boxRef} className="relative w-full" style={{ aspectRatio: `${natural.w} / ${natural.h}` }}>
+      {fit && <FittedPhoto src={imageSrc} fit={fit} webp={isCustomImage ? undefined : DEFAULT_IMAGE_SRC_WEBP} />}
+      {overlay && <DefaultShopNowButton ctaLink={ctaLink} overlay={overlay} fontRatio={isCustomImage ? CUSTOM_FONT_RATIO : DEFAULT_FONT_RATIO} />}
     </div>
   );
 }
 
-export function Hero({ ctaLink, imageStoragePath, imagePosition, buttonPosition }: HeroContentOverride = {}) {
+export function Hero({ ctaLink, imageStoragePath, buttonPosition }: HeroContentOverride = {}) {
   // Analytics: hero impression once per page view (the admin editor preview is never tracked).
   useEffect(() => {
     track("promotion_impression", { surface: "home_hero" });
@@ -457,7 +420,7 @@ export function Hero({ ctaLink, imageStoragePath, imagePosition, buttonPosition 
     };
   }, [customSrc]);
   const isCustomImage = customSrc !== null && ready?.src === customSrc;
-  const natural = isCustomImage && ready ? { w: ready.w, h: ready.h } : null;
+  const natural: Natural = isCustomImage && ready ? { w: ready.w, h: ready.h } : { w: NATURAL_W, h: NATURAL_H };
   const imageSrc = isCustomImage ? customSrc : DEFAULT_IMAGE_SRC;
 
   return (
@@ -478,9 +441,9 @@ export function Hero({ ctaLink, imageStoragePath, imagePosition, buttonPosition 
       style={isDesktop ? { marginTop: "calc(-1 * var(--header-height, 97px))" } : undefined}
     >
       {isDesktop ? (
-        <DesktopHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} natural={natural} imagePosition={imagePosition} buttonPosition={buttonPosition} />
+        <DesktopHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} natural={natural} buttonPosition={buttonPosition} />
       ) : (
-        <MobileHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} natural={natural} imagePosition={imagePosition} buttonPosition={buttonPosition} />
+        <MobileHero ctaLink={ctaLink} imageSrc={imageSrc} isCustomImage={isCustomImage} natural={natural} buttonPosition={buttonPosition} />
       )}
     </section>
   );
