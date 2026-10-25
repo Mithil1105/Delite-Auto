@@ -53,7 +53,9 @@ export function useProductReviews(odooTemplateId: number | undefined) {
 
   const breakdown: Record<1 | 2 | 3 | 4 | 5, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   for (const r of reviews) {
-    if (r.rating >= 1 && r.rating <= 5) breakdown[r.rating as 1 | 2 | 3 | 4 | 5]++;
+    // Half-star ratings (3.5) count in the bar for their whole-star floor.
+    const bucket = Math.floor(r.rating);
+    if (bucket >= 1 && bucket <= 5) breakdown[bucket as 1 | 2 | 3 | 4 | 5]++;
   }
   const aggregate: ReviewAggregate = {
     count: reviews.length,

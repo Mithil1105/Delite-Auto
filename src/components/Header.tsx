@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useDealsCms } from "../hooks/useDealsCms";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Search, ShoppingCart, Menu, X, Heart, User } from "lucide-react";
 import { track } from "../lib/analytics/client";
@@ -21,7 +22,7 @@ function navSurface(to: string): string {
   if (to.startsWith("/shop?vehicle=car")) return "nav_cars";
   if (to.startsWith("/shop?vehicle=bike")) return "nav_bikes";
   if (to === "/brands") return "nav_brands";
-  if (to.includes("tag=bestseller")) return "nav_deals";
+  if (to === "/deals" || to.includes("tag=bestseller")) return "nav_deals";
   if (to === "/about") return "nav_our_store";
   if (to === "/contact") return "nav_contact";
   return "nav_other";
@@ -127,14 +128,17 @@ export function Header({
     { to: "/shop?vehicle=car", label: t("nav.cars") },
     { to: "/shop?vehicle=bike", label: t("nav.bikes") },
     { to: "/brands", label: t("nav.shopByBrands") },
-    { to: "/shop?tag=bestseller", label: t("nav.dealsOffers") },
+    { to: "/deals", label: t("nav.dealsOffers") },
     { to: "/about", label: t("nav.ourStore") },
     { to: "/contact", label: t("nav.contact") },
   ];
-  const navItems =
+  // The Deals & Offers link disappears when the client switches that page off in Admin → Website → Deals & Offers.
+  const { pageEnabled: dealsEnabled } = useDealsCms();
+  const navItems = (
     publishedNavItems.length > 0
       ? publishedNavItems.filter((i) => i.visible).map((i) => ({ to: i.url, label: i.label }))
-      : defaultNavItems;
+      : defaultNavItems
+  ).filter((i) => dealsEnabled || i.to !== "/deals");
 
   const submitSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -247,6 +251,7 @@ export function Header({
                 }
               }}
               aria-label={t("header.cart")}
+              data-cart-target
               className="relative grid place-items-center w-10 h-10 rounded-full hover:bg-steel-50"
             >
               <ShoppingCart

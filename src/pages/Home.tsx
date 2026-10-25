@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import type { Product } from "../data/types";
 import { Hero, type HeroContentOverride } from "../components/Hero";
 import { PageContainer } from "../components/layout/PageContainer";
 import { FullBleedSection } from "../components/layout/FullBleedSection";
@@ -9,6 +10,10 @@ import { HomeCategoryProductSection } from "../components/home/HomeCategoryProdu
 import { CategoryIconStrip } from "../components/home/CategoryIconStrip";
 import { VehicleShopSplit } from "../components/home/VehicleShopSplit";
 import { VehicleBrandGrid } from "../components/home/VehicleBrandGrid";
+import { CarModelGrid } from "../components/home/CarModelGrid";
+import { HomeImageBanner } from "../components/home/HomeImageBanner";
+import { HomeBlogLatest } from "../components/home/HomeBlogLatest";
+import { HomeFeatureBlock } from "../components/home/HomeFeatureBlock";
 import { PromoBannerPair } from "../components/home/PromoBannerPair";
 import { TestimonialCarousel } from "../components/home/TestimonialCarousel";
 import { GetInTouchBox } from "../components/home/GetInTouchBox";
@@ -17,11 +22,13 @@ import { SeoHead } from "../components/SeoHead";
 import { products as fallbackProducts } from "../data/products";
 import { productImages } from "../lib/productImages";
 import { useCatalogProducts } from "../hooks/useCatalogProducts";
+import { useCategoryTabProducts, type CategoryTabSpec } from "../hooks/useCategoryTabProducts";
 import { catalogService } from "../services/catalog/catalogService";
 import { useLang } from "../i18n/LanguageContext";
 import { useHomepageCms } from "../hooks/useHomepageCms";
 import { useMerchandisingCms, useMerchandisedProducts, useResolvedCategorySelections, type CategorySelection } from "../hooks/useMerchandisingCms";
 import { usePromotions } from "../hooks/usePromotions";
+import { Reveal } from "../components/motion/Reveal";
 
 /** Matches the `homepage` cms_page's section_key rows, in the same order Home.tsx has always
  * rendered them — a published reorder/hide changes this at render time; absent CMS data (loading,
@@ -30,15 +37,45 @@ const DEFAULT_ORDER = [
   "hero",
   "vehicle-shop-split",
   "category-strip",
+  "image-banner-1",
   "trending",
+  "trending-accessories",
+  "feature-block-1",
   "perfect-vehicle",
   "brands",
+  "feature-block-2",
+  "car-models",
   "top-categories-car",
+  "image-banner-2",
   "promo-banners",
+  "feature-block-3",
   "top-categories-bike",
+  "image-banner-3",
+  "feature-block-4",
+  "blog-latest",
   "testimonials",
   "get-in-touch",
 ];
+
+const IS_REAL_CATALOG = import.meta.env.VITE_CATALOG_SOURCE === "supabase";
+
+/** Live-catalog lookup for each "Shop by Top Categories" tab when the admin hasn't hand-picked products for it. Real Odoo
+ * products carry no category slug, so tabs use the Odoo category id (Car Mats, Car Care) or a name search. */
+/** Trending Accessories falls back to Odoo's trending category (id 18) when the admin hasn't picked products. */
+const TRENDING_ACCESSORIES_SPEC: CategoryTabSpec = { categoryId: 18 };
+
+const CAR_TAB_SPECS: Record<string, CategoryTabSpec> = {
+  "seat-covers": { vehicle: "car", queries: ["seat cover"] },
+  "dash-cams": { vehicle: "car", queries: ["dash cam", "dvr"] },
+  mats: { vehicle: "car", categoryId: 59 },
+  care: { vehicle: "car", categoryId: 17 },
+};
+const BIKE_TAB_SPECS: Record<string, CategoryTabSpec> = {
+  helmets: { vehicle: "bike", queries: ["helmet"] },
+  covers: { vehicle: "bike", queries: ["bike cover", "scooter cover"] },
+  saddlebags: { vehicle: "bike", queries: ["saddle", "tank bag"] },
+  guards: { vehicle: "bike", queries: ["crash guard", "leg guard", "bike guard"] },
+};
 
 function SectionHead({ title, cta, onCta }: { title: string; cta?: string; onCta?: () => void }) {
   return (
@@ -55,6 +92,7 @@ function SectionHead({ title, cta, onCta }: { title: string; cta?: string; onCta
 
 export default function Home() {
   const { t } = useLang();
+  const navigate = useNavigate();
 
   // Real catalog data via catalogService (mock by default; real Odoo data via Supabase Edge
   // Functions once VITE_CATALOG_SOURCE=supabase — see Documentations MD/odoo-real-catalog.md).
@@ -153,7 +191,19 @@ export default function Home() {
     return (tagged.length > 0 ? tagged : products).slice(0, 8);
   }, [products, vehicleTab, featuredCmsProducts, newArrivalCmsProducts, featuredIds.length, newArrivalIds.length]);
 
+  const trendingAccIds = sectionIds("trending-accessories", "productIds");
+  const { products: trendingAccCurated } = useMerchandisedProducts(trendingAccIds);
+  const trendingAccLive = useCategoryTabProducts(IS_REAL_CATALOG && trendingAccIds.length === 0 ? TRENDING_ACCESSORIES_SPEC : null);
+  const trendingAccessories: Product[] =
+    trendingAccIds.length > 0 ? trendingAccCurated ?? [] : IS_REAL_CATALOG ? (trendingAccLive ?? []).slice(0, 8) : products.filter((p) => p.tag === "trending" || p.tag === "bestseller").slice(0, 8);
+
+  const carHasCurated = (carCategoryTab === "seat-covers" ? carSeatIds : carCategoryTab === "dash-cams" ? carDashIds : carCategoryTab === "mats" ? carMatsIds : carCareIds).length > 0;
+  const bikeHasCurated = (bikeCategoryTab === "helmets" ? bikeHelmetsIds : bikeCategoryTab === "covers" ? bikeCoversIds : bikeCategoryTab === "saddlebags" ? bikeSaddlebagsIds : bikeGuardsIds).length > 0;
+  const carLive = useCategoryTabProducts(IS_REAL_CATALOG && !carHasCurated ? CAR_TAB_SPECS[carCategoryTab] : null);
+  const bikeLive = useCategoryTabProducts(IS_REAL_CATALOG && !bikeHasCurated ? BIKE_TAB_SPECS[bikeCategoryTab] : null);
+
   const carCategoryProducts = (() => {
+    if (IS_REAL_CATALOG && !carHasCurated) return carLive ?? [];
     const curated = carCategoryTab === "seat-covers" ? [carSeatIds, carSeatProducts] as const : carCategoryTab === "dash-cams" ? [carDashIds, carDashProducts] as const : carCategoryTab === "mats" ? [carMatsIds, carMatsProducts] as const : [carCareIds, carCareProducts] as const;
     if (curated[0].length) return curated[1] ?? [];
     let list: typeof products = [];
@@ -166,6 +216,7 @@ export default function Home() {
   })();
 
   const bikeCategoryProducts = (() => {
+    if (IS_REAL_CATALOG && !bikeHasCurated) return bikeLive ?? [];
     const curated = bikeCategoryTab === "helmets" ? [bikeHelmetsIds, bikeHelmetsProducts] as const : bikeCategoryTab === "covers" ? [bikeCoversIds, bikeCoversProducts] as const : bikeCategoryTab === "saddlebags" ? [bikeSaddlebagsIds, bikeSaddlebagsProducts] as const : [bikeGuardsIds, bikeGuardsProducts] as const;
     if (curated[0].length) return curated[1] ?? [];
     let list: typeof products = [];
@@ -230,6 +281,28 @@ export default function Home() {
       </section>
     ),
 
+    "trending-accessories": trendingAccessories.length > 0 ? (
+      <FullBleedSection spacing="normal" containerSize="wide">
+        <SectionHead
+          title={sectionText("trending-accessories", "title", t("home.trendingAccessoriesTitle"))}
+          cta={sectionText("trending-accessories", "ctaLabel", t("home.viewAll"))}
+          onCta={() => navigate(sectionLink("trending-accessories", "ctaLink", "/shop"))}
+        />
+        <ProductCarousel products={trendingAccessories} />
+      </FullBleedSection>
+    ) : null,
+
+    "feature-block-1": <HomeFeatureBlock content={homeSections.get("feature-block-1")?.content} />,
+    "feature-block-2": <HomeFeatureBlock content={homeSections.get("feature-block-2")?.content} />,
+    "feature-block-3": <HomeFeatureBlock content={homeSections.get("feature-block-3")?.content} />,
+    "feature-block-4": <HomeFeatureBlock content={homeSections.get("feature-block-4")?.content} />,
+
+    "blog-latest": <HomeBlogLatest title={sectionText("blog-latest", "title", "")} ctaLabel={sectionText("blog-latest", "ctaLabel", "")} />,
+
+    "image-banner-1": <HomeImageBanner content={homeSections.get("image-banner-1")?.content} />,
+    "image-banner-2": <HomeImageBanner content={homeSections.get("image-banner-2")?.content} />,
+    "image-banner-3": <HomeImageBanner content={homeSections.get("image-banner-3")?.content} />,
+
     "perfect-vehicle": (
       <FullBleedSection spacing="normal" containerSize="wide" className="bg-steel-50">
         <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
@@ -283,6 +356,20 @@ export default function Home() {
       </FullBleedSection>
     ),
 
+    // Static car-model tiles (src/data/carModels.ts) — not a CMS-seeded section, so it has no row in
+    // the admin Homepage editor; its default position (right after "brands") is derived below.
+    "car-models": (
+      <FullBleedSection spacing="normal" containerSize="wide" className="bg-steel-50">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+          <h2 className="text-2xl sm:text-3xl heading">{sectionText("car-models", "title", t("home.carModelsTitle"))}</h2>
+          <Link to="/cars" className="text-[13px] font-semibold text-brand-700 hover:underline whitespace-nowrap">
+            {t("home.viewAll")}
+          </Link>
+        </div>
+        <CarModelGrid />
+      </FullBleedSection>
+    ),
+
     "top-categories-car": (
       <HomeCategoryProductSection
         title={sectionText("top-categories-car", "title", t("home.topCategoriesCarTitle"))}
@@ -297,6 +384,8 @@ export default function Home() {
           { value: "care", label: sectionText("top-categories-car", "careLabel", t("home.tabCare")), icon: "SprayCan" },
         ]}
         products={carCategoryProducts}
+        loading={IS_REAL_CATALOG && !carHasCurated && carLive === null}
+        emptyLabel={t("home.categoryEmpty")}
       />
     ),
 
@@ -325,6 +414,8 @@ export default function Home() {
           { value: "guards", label: sectionText("top-categories-bike", "guardsLabel", t("home.tabGuards")), icon: "ShieldCheck" },
         ]}
         products={bikeCategoryProducts}
+        loading={IS_REAL_CATALOG && !bikeHasCurated && bikeLive === null}
+        emptyLabel={t("home.categoryEmpty")}
       />
     ),
 
@@ -345,15 +436,26 @@ export default function Home() {
     ),
   };
 
+  // "car-models" has no CMS row, so when the CMS supplies explicit display orders for the other
+  // sections it sits just after "brands" (half a step later) instead of at an index that would
+  // collide with a CMS-assigned number.
+  const sectionPosition = (key: string) => {
+    const cms = homeSections.get(key)?.displayOrder;
+    if (cms !== undefined) return cms;
+    if (key === "car-models") return (homeSections.get("brands")?.displayOrder ?? DEFAULT_ORDER.indexOf("brands")) + 0.5;
+    return DEFAULT_ORDER.indexOf(key);
+  };
+
   const order = [...DEFAULT_ORDER]
     .filter((key) => homeSections.get(key)?.visible ?? true)
-    .sort((a, b) => (homeSections.get(a)?.displayOrder ?? DEFAULT_ORDER.indexOf(a)) - (homeSections.get(b)?.displayOrder ?? DEFAULT_ORDER.indexOf(b)));
+    .sort((a, b) => sectionPosition(a) - sectionPosition(b));
 
   return (
     <>
       <SeoHead routeKey="home" />
       {order.map((key) => (
-        <Fragment key={key}>{blocks[key]}</Fragment>
+        // The hero is the first paint and must never wait on an animation; every later section fades in as it scrolls into view.
+        <Fragment key={key}>{key === "hero" ? blocks[key] : <Reveal>{blocks[key]}</Reveal>}</Fragment>
       ))}
     </>
   );

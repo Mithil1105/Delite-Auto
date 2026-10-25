@@ -8,6 +8,8 @@ import { catalogService } from "../services/catalog/catalogService";
 import { useCatalogProducts } from "../hooks/useCatalogProducts";
 import { useLang } from "../i18n/LanguageContext";
 import { SeoHead } from "../components/SeoHead";
+import { Reveal, staggerDelay } from "../components/motion/Reveal";
+import { BrandLogo } from "../components/brands/BrandLogo";
 
 // Real Odoo data via Supabase — the "Brand" product.attribute (id 9) exists but is unused; real
 // brands are verified brand-named product.public.category entries instead. See
@@ -50,25 +52,27 @@ export default function Brands() {
         realBrands === null ? (
           <p className="text-steel-500 text-[14px]">{t("shop.loadingCatalog")}</p>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {realBrands.map((b) => {
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4 lg:gap-5">
+            {realBrands.map((b, i) => {
               const count = b.productCount ?? 0;
               return (
-                <Link
-                  key={b.odooId}
-                  to={`/shop?brand=${b.odooId}`}
-                  className="group card-surface p-6 flex flex-col justify-between hover:shadow-lift transition-shadow"
-                >
-                  <div>
-                    <h2 className="font-display uppercase text-xl mb-1.5 group-hover:text-accent transition-colors">{b.name}</h2>
-                  </div>
-                  <div className="flex items-center justify-between mt-6 pt-4 border-t border-line">
-                    <span className="font-mono text-[12px] text-steel-500">
-                      {count === 1 ? t("brands.productCount", { count }) : t("brands.productsCount", { count })}
-                    </span>
-                    <ArrowRight className="w-4 h-4 text-ink/40 group-hover:text-accent group-hover:translate-x-0.5 transition-all" />
-                  </div>
-                </Link>
+                <Reveal key={b.odooId} delay={staggerDelay(i, 45, 4)} className="h-full">
+                  <Link
+                    to={`/shop?brand=${b.odooId}`}
+                    className="group flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-white p-2.5 transition-[border-color,box-shadow,transform] duration-300 hover:-translate-y-1 hover:border-brand-600 hover:shadow-card motion-reduce:hover:translate-y-0"
+                  >
+                    <BrandLogo name={b.name} src={b.imageUrl} />
+                    <div className="flex flex-1 flex-col justify-between gap-2 px-2 pb-1.5 pt-3">
+                      <h2 className="font-display text-[15px] uppercase leading-tight transition-colors group-hover:text-accent">{b.name}</h2>
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-[11.5px] text-steel-500">
+                          {count === 1 ? t("brands.productCount", { count }) : t("brands.productsCount", { count })}
+                        </span>
+                        <ArrowRight className="h-4 w-4 text-ink/40 transition-all group-hover:translate-x-0.5 group-hover:text-accent" />
+                      </div>
+                    </div>
+                  </Link>
+                </Reveal>
               );
             })}
           </div>

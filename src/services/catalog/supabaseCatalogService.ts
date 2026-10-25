@@ -1,5 +1,6 @@
 import type { CatalogService, PagedProductQuery, PagedProductResult, ProductListQuery } from "./types";
-import type { Category, Product, ProductDetail, ProductMedia, ProductVariant, Vehicle } from "../../data/types";
+import type { Category, Product, ProductDetail, ProductMedia, ProductVariant, ProductVideo, Vehicle } from "../../data/types";
+import { videosFirst } from "../../lib/media/videosFirst";
 
 /**
  * Real Odoo catalog data via Supabase Edge Functions (`supabase/functions/catalog-*`) — the
@@ -47,6 +48,8 @@ interface CatalogMediaItemDto {
   id: string;
   url: string;
   alt: string;
+  /** Odoo "Video URL" gallery entry, normalised by the catalog function (YouTube/Vimeo/other). */
+  video?: ProductVideo;
 }
 
 interface CatalogProductDto {
@@ -66,6 +69,7 @@ interface CatalogProductDto {
   attributes: CatalogAttribute[];
   variants: CatalogVariantDto[];
   primaryImage: string;
+  hasVideo?: boolean;
   media: CatalogMediaItemDto[];
   catalogActive: boolean;
   purchasable: boolean;
@@ -157,14 +161,19 @@ function mapProduct(dto: CatalogProductDto): Product {
     brand: dto.brand,
     categories: dto.categories,
     primaryImage: dto.primaryImage,
+    hasVideo: dto.hasVideo === true,
   };
 }
 
 function mapProductDetail(dto: CatalogProductDto): ProductDetail {
-  const media: ProductMedia[] = dto.media.map((m) => ({ id: m.id, type: "image", src: m.url, alt: m.alt }));
+  const media: ProductMedia[] = dto.media.map((m): ProductMedia =>
+    m.video ? { id: m.id, type: "video", src: m.url, alt: m.alt, thumbnail: m.url, video: m.video } : { id: m.id, type: "image", src: m.url, alt: m.alt }
+  );
+  // Product pages show a product's video first (see lib/media/videosFirst.ts).
+  const orderedMedia = videosFirst(media);
   return {
     ...mapProduct(dto),
-    media,
+    media: orderedMedia,
     variants: dto.variants.length > 0 ? dto.variants.map(mapVariant) : undefined,
     fitment: dto.fitment,
     productAttributes: dto.attributes,

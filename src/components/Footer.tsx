@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useDealsCms } from "../hooks/useDealsCms";
 import { Phone, Mail, MapPin } from "lucide-react";
 import { SocialIcon } from "./SocialIcon";
 import { useLang } from "../i18n/LanguageContext";
@@ -41,9 +42,12 @@ export function Footer({ contentOverride }: { contentOverride?: FooterCmsContent
         { label: t("footer.quickLinks.home"), url: "/" },
         { label: t("footer.quickLinks.about"), url: "/about" },
         { label: t("footer.quickLinks.ourTeam"), url: "/about" },
-        { label: t("footer.quickLinks.deals"), url: "/shop?tag=bestseller" },
-        { label: t("footer.quickLinks.faqs"), url: "/contact" },
+        { label: t("footer.quickLinks.deals"), url: "/deals" },
+        { label: t("footer.quickLinks.faqs"), url: "/faq" },
+        { label: t("blog.title"), url: "/blog" },
       ];
+  const { pageEnabled: dealsEnabled } = useDealsCms();
+  const visibleQuickLinks = quickLinks.filter((l) => dealsEnabled || l.url !== "/deals");
   const links = footerContent.links && footerContent.links.length > 0
     ? footerContent.links
     : [
@@ -100,7 +104,7 @@ export function Footer({ contentOverride }: { contentOverride?: FooterCmsContent
         <div>
           <h3 className="text-white text-[13px] font-display font-semibold uppercase tracking-widish mb-4">{t("footer.quickLinksHeading")}</h3>
           <ul className="space-y-2.5 text-[13.5px] mb-6">
-            {quickLinks.map((l) => (
+            {visibleQuickLinks.map((l) => (
               <li key={l.label}><Link to={l.url} className="hover:text-white transition-colors">{l.label}</Link></li>
             ))}
           </ul>

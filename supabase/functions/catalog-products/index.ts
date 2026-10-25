@@ -6,8 +6,8 @@
 // — never fetch-then-filter-in-JS (see buildCatalogDomain in _shared/odoo/catalog.ts). Response
 // shape: { items, page, pageSize, total, totalPages }.
 
-import { getOdooConfig, odooExecuteKw, odooSearchRead } from "../_shared/odoo/client.ts";
-import { normalizeTemplates } from "../_shared/odoo/fetch.ts";
+import { getOdooConfig, odooExecuteKw } from "../_shared/odoo/client.ts";
+import { normalizeTemplates, searchTemplates } from "../_shared/odoo/fetch.ts";
 import { BRAND_CATEGORY_IDS, buildCatalogDomain, TEMPLATE_LIST_FIELDS } from "../_shared/odoo/catalog.ts";
 import type { OdooProductTemplateRecord } from "../_shared/odoo/types.ts";
 
@@ -75,7 +75,7 @@ Deno.serve(async (req: Request) => {
     // RPC load (see Documentations MD/odoo-supabase-edge-functions.md); two small sequential
     // calls cost a negligible amount of latency compared to that risk.
     const total = await odooExecuteKw<number>(config, "product.template", "search_count", [domain]);
-    const templates = await odooSearchRead<OdooProductTemplateRecord & Record<string, unknown>>(config, "product.template", domain, TEMPLATE_LIST_FIELDS, {
+    const templates = await searchTemplates<OdooProductTemplateRecord & Record<string, unknown>>(config, domain, TEMPLATE_LIST_FIELDS, {
       offset: (page - 1) * pageSize,
       limit: pageSize,
       order,

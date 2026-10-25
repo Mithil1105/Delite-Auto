@@ -3,53 +3,45 @@ import type { LucideIcon } from "lucide-react";
 import {
   LayoutDashboard,
   Home,
-  Megaphone,
-  BadgePercent,
-  Navigation,
+  Tag,
   PanelBottom,
   Search,
+  Newspaper,
   Image,
   Star,
-  TrendingUp,
-  Sparkles,
-  LayoutGrid,
-  Wand2,
   Package,
-  Users,
   ShoppingCart,
-  Footprints,
-  FileText,
-  Filter,
-  MapPin,
-  Share2,
   BarChart3,
-  LineChart,
   MessageSquareText,
-  Mail,
-  Database,
-  Settings,
-  UserCog,
-  ScrollText,
   ShieldCheck,
   Activity,
-  MailWarning,
-  CircleDollarSign,
 } from "lucide-react";
 
 /**
  * Single source of truth for the admin navigation: which route exists, which role(s) may reach
- * it, whether it's a real implemented page or a "coming soon" placeholder, and the icon/label the
- * sidebar renders. AdminSidebar.tsx and RequireAdminRole.tsx both read this — never duplicate a
- * role list in a second place. See Documentations MD/delite-admin.md, "Roles & permissions".
+ * it, and the icon/label the sidebar renders. AdminSidebar.tsx, AdminTabs.tsx, AdminTopBar.tsx and
+ * RequireAdminRole.tsx all read this — never duplicate a role list in a second place. See
+ * Documentations MD/delite-admin.md ("Roles & permissions") and
+ * Documentations MD/admin-navigation-simplification.md.
+ *
+ * One sidebar item per job. An item that groups several related pages carries `tabs`: the sidebar
+ * shows a single entry and AdminLayout renders the tab bar above the page. Every tab keeps its own
+ * URL and its own role list, so deep links, bookmarks and role checks are unchanged.
  */
-export interface AdminNavItem {
+export interface AdminNavTab {
   label: string;
   path: string;
-  icon: LucideIcon;
   roles: AdminRole[];
-  /** "active" pages are fully wired this pass; "placeholder" pages render a clear
-   * "Coming soon" state — never a fake-functional stub (spec section 61/Scope). */
-  status: "active" | "placeholder";
+}
+
+export interface AdminNavItem {
+  label: string;
+  /** Landing page. For a tabbed item this is the first tab. */
+  path: string;
+  icon: LucideIcon;
+  /** Roles that can reach the item (for a tabbed item: the union of its tabs' roles). */
+  roles: AdminRole[];
+  tabs?: AdminNavTab[];
 }
 
 export interface AdminNavGroup {
@@ -58,108 +50,173 @@ export interface AdminNavGroup {
 }
 
 const ALL_ROLES: AdminRole[] = ["owner", "admin", "content", "merchandising", "support", "analytics"];
+const OWNER: AdminRole[] = ["owner"];
 const OWNER_ADMIN: AdminRole[] = ["owner", "admin"];
 const OWNER_ADMIN_CONTENT: AdminRole[] = ["owner", "admin", "content"];
 const OWNER_ADMIN_MERCH: AdminRole[] = ["owner", "admin", "merchandising"];
 const OWNER_ADMIN_SUPPORT: AdminRole[] = ["owner", "admin", "support"];
 const OWNER_ADMIN_ANALYTICS: AdminRole[] = ["owner", "admin", "analytics"];
 
+const union = (tabs: AdminNavTab[]): AdminRole[] => ALL_ROLES.filter((r) => tabs.some((t) => t.roles.includes(r)));
+
+function tabbed(label: string, icon: LucideIcon, tabs: AdminNavTab[]): AdminNavItem {
+  return { label, icon, path: tabs[0].path, roles: union(tabs), tabs };
+}
+
 export const ADMIN_NAV: AdminNavGroup[] = [
   {
     label: "Overview",
-    items: [{ label: "Overview", path: "/admin", icon: LayoutDashboard, roles: ALL_ROLES, status: "active" }],
+    items: [{ label: "Overview", path: "/admin", icon: LayoutDashboard, roles: ALL_ROLES }],
   },
   {
     label: "Website",
     items: [
-      { label: "Homepage", path: "/admin/website/homepage", icon: Home, roles: OWNER_ADMIN_CONTENT, status: "active" },
-      { label: "Hero", path: "/admin/website/hero", icon: Megaphone, roles: OWNER_ADMIN_CONTENT, status: "active" },
-      { label: "Announcement Bar", path: "/admin/website/announcement", icon: Megaphone, roles: OWNER_ADMIN_CONTENT, status: "active" },
-      { label: "Promotions", path: "/admin/website/promotions", icon: BadgePercent, roles: OWNER_ADMIN_CONTENT, status: "active" },
-      { label: "Navigation", path: "/admin/website/navigation", icon: Navigation, roles: OWNER_ADMIN_CONTENT, status: "active" },
-      { label: "Footer", path: "/admin/website/footer", icon: PanelBottom, roles: OWNER_ADMIN_CONTENT, status: "active" },
-      { label: "SEO", path: "/admin/website/seo", icon: Search, roles: OWNER_ADMIN_CONTENT, status: "active" },
+      tabbed("Homepage", Home, [
+        { label: "Sections", path: "/admin/website/homepage", roles: OWNER_ADMIN_CONTENT },
+        { label: "Hero banner", path: "/admin/website/hero", roles: OWNER_ADMIN_CONTENT },
+        { label: "Promo banners", path: "/admin/website/promotions", roles: OWNER_ADMIN_CONTENT },
+      ]),
+      { label: "Deals & Offers", path: "/admin/website/deals", icon: Tag, roles: OWNER_ADMIN_CONTENT },
+      tabbed("Header & footer", PanelBottom, [
+        { label: "Announcement bar", path: "/admin/website/announcement", roles: OWNER_ADMIN_CONTENT },
+        { label: "Product strip", path: "/admin/website/trust-strip", roles: OWNER_ADMIN_CONTENT },
+        { label: "Menu", path: "/admin/website/navigation", roles: OWNER_ADMIN_CONTENT },
+        { label: "Footer", path: "/admin/website/footer", roles: OWNER_ADMIN_CONTENT },
+      ]),
+      { label: "Blog", path: "/admin/website/blog", icon: Newspaper, roles: OWNER_ADMIN_CONTENT },
+      { label: "SEO", path: "/admin/website/seo", icon: Search, roles: OWNER_ADMIN_CONTENT },
+      { label: "Media library", path: "/admin/media", icon: Image, roles: OWNER_ADMIN_CONTENT },
     ],
   },
   {
-    label: "Media",
-    items: [{ label: "Marketing Media", path: "/admin/media", icon: Image, roles: OWNER_ADMIN_CONTENT, status: "active" }],
-  },
-  {
-    label: "Merchandising",
+    label: "Catalog",
     items: [
-      { label: "Featured Products", path: "/admin/merchandising/featured", icon: Star, roles: OWNER_ADMIN_MERCH, status: "active" },
-      { label: "Trending", path: "/admin/merchandising/trending", icon: TrendingUp, roles: OWNER_ADMIN_MERCH, status: "active" },
-      { label: "New Arrivals", path: "/admin/merchandising/new-arrivals", icon: Sparkles, roles: OWNER_ADMIN_MERCH, status: "active" },
-      { label: "Homepage Categories", path: "/admin/merchandising/categories", icon: LayoutGrid, roles: OWNER_ADMIN_MERCH, status: "active" },
-      { label: "Recommendations", path: "/admin/merchandising/recommendations", icon: Wand2, roles: OWNER_ADMIN_MERCH, status: "placeholder" },
+      tabbed("Product lists", Star, [
+        { label: "Featured", path: "/admin/merchandising/featured", roles: OWNER_ADMIN_MERCH },
+        { label: "Trending", path: "/admin/merchandising/trending", roles: OWNER_ADMIN_MERCH },
+        { label: "New arrivals", path: "/admin/merchandising/new-arrivals", roles: OWNER_ADMIN_MERCH },
+        { label: "Homepage categories", path: "/admin/merchandising/categories", roles: OWNER_ADMIN_MERCH },
+      ]),
+      // Read-only view of the Odoo catalog (edit products in Odoo itself).
+      { label: "Products", path: "/admin/products", icon: Package, roles: [...OWNER_ADMIN, "merchandising"] },
     ],
   },
   {
-    label: "Commerce / Insights",
+    label: "Sales",
     items: [
-      { label: "Products", path: "/admin/products", icon: Package, roles: [...OWNER_ADMIN, "merchandising"], status: "active" },
-      // Not in the original spec's sidebar list — an existing, working real feature; kept and
-      // placed here deliberately rather than removed. See Documentations MD/delite-admin.md.
-      { label: "Orders", path: "/admin/orders", icon: ShoppingCart, roles: [...OWNER_ADMIN, "support"], status: "active" },
-      { label: "Payments", path: "/admin/payments", icon: CircleDollarSign, roles: OWNER_ADMIN_SUPPORT, status: "active" },
-      { label: "Customers", path: "/admin/customers", icon: Users, roles: OWNER_ADMIN_SUPPORT, status: "placeholder" },
+      tabbed("Orders & payments", ShoppingCart, [
+        { label: "Orders", path: "/admin/orders", roles: OWNER_ADMIN_SUPPORT },
+        { label: "Payments", path: "/admin/payments", roles: OWNER_ADMIN_SUPPORT },
+      ]),
+    ],
+  },
+  {
+    label: "Customers",
+    items: [
+      tabbed("Reviews & messages", MessageSquareText, [
+        { label: "Reviews", path: "/admin/reviews", roles: OWNER_ADMIN_SUPPORT },
+        { label: "Contact enquiries", path: "/admin/contact", roles: OWNER_ADMIN_SUPPORT },
+      ]),
     ],
   },
   {
     label: "Analytics",
     items: [
-      { label: "Overview", path: "/admin/analytics", icon: BarChart3, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
-      { label: "Traffic", path: "/admin/analytics/traffic", icon: Footprints, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
-      { label: "Pages", path: "/admin/analytics/pages", icon: FileText, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
-      { label: "Products", path: "/admin/analytics/products", icon: LineChart, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
-      // Carts and session journeys are also useful to support (follow-up on abandoned carts).
-      { label: "Carts", path: "/admin/analytics/carts", icon: ShoppingCart, roles: [...OWNER_ADMIN_ANALYTICS, "support"], status: "active" },
-      { label: "Conversion", path: "/admin/analytics/conversion", icon: Filter, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
-      { label: "Search", path: "/admin/analytics/search", icon: Search, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
-      { label: "Recommendations", path: "/admin/analytics/recommendations", icon: Wand2, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
-      { label: "Geography", path: "/admin/analytics/geography", icon: MapPin, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
-      { label: "Acquisition", path: "/admin/analytics/acquisition", icon: Share2, roles: OWNER_ADMIN_ANALYTICS, status: "active" },
+      tabbed("Analytics", BarChart3, [
+        { label: "Overview", path: "/admin/analytics", roles: OWNER_ADMIN_ANALYTICS },
+        { label: "Traffic", path: "/admin/analytics/traffic", roles: OWNER_ADMIN_ANALYTICS },
+        { label: "Pages", path: "/admin/analytics/pages", roles: OWNER_ADMIN_ANALYTICS },
+        { label: "Products", path: "/admin/analytics/products", roles: OWNER_ADMIN_ANALYTICS },
+        // Carts and session journeys are also useful to support (follow-up on abandoned carts).
+        { label: "Carts", path: "/admin/analytics/carts", roles: [...OWNER_ADMIN_ANALYTICS, "support"] },
+        { label: "Conversion", path: "/admin/analytics/conversion", roles: OWNER_ADMIN_ANALYTICS },
+        { label: "Search", path: "/admin/analytics/search", roles: OWNER_ADMIN_ANALYTICS },
+        { label: "Recommendations", path: "/admin/analytics/recommendations", roles: OWNER_ADMIN_ANALYTICS },
+        { label: "Geography", path: "/admin/analytics/geography", roles: OWNER_ADMIN_ANALYTICS },
+        { label: "Acquisition", path: "/admin/analytics/acquisition", roles: OWNER_ADMIN_ANALYTICS },
+      ]),
     ],
   },
   {
-    label: "Customer Experience",
+    label: "Settings",
     items: [
-      { label: "Reviews", path: "/admin/reviews", icon: MessageSquareText, roles: OWNER_ADMIN_SUPPORT, status: "active" },
-      { label: "Contact Enquiries", path: "/admin/contact", icon: Mail, roles: OWNER_ADMIN_SUPPORT, status: "active" },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { label: "Integrations Health", path: "/admin/system/integrations", icon: Activity, roles: OWNER_ADMIN, status: "active" },
-      { label: "Email Delivery", path: "/admin/system/email", icon: MailWarning, roles: OWNER_ADMIN_SUPPORT, status: "active" },
-      { label: "Odoo", path: "/admin/odoo/status", icon: Database, roles: OWNER_ADMIN, status: "active" },
-      { label: "Admin Appearance", path: "/admin/settings", icon: Settings, roles: ALL_ROLES, status: "active" },
-      { label: "Admin Users", path: "/admin/settings/users", icon: UserCog, roles: ["owner"], status: "active" },
-      // ALL_ROLES, not OWNER_ADMIN — every admin role must be able to reach their own MFA
-      // enrollment, or REQUIRE_ADMIN_MFA's route-guard AAL exception (RoleRoute already exempts
-      // this one path from the AAL2 check) is unreachable for content/merchandising/support/
-      // analytics accounts: the ROLE check ran first and denied them before the AAL check ever
-      // applied, permanently locking them out the moment the policy is turned on. Found during the
-      // 2026-09-30 security-hardening verification pass — see delite-auth-security.md.
-      { label: "Security", path: "/admin/settings/security", icon: ShieldCheck, roles: ALL_ROLES, status: "active" },
-      { label: "Activity Log", path: "/admin/settings/activity", icon: ScrollText, roles: OWNER_ADMIN, status: "active" },
+      // The Odoo connection status lives in "Integrations" (and the top bar's Odoo chip) — the old
+      // standalone Odoo page only repeated it.
+      tabbed("System health", Activity, [
+        { label: "Integrations", path: "/admin/system/integrations", roles: OWNER_ADMIN },
+        { label: "Email delivery", path: "/admin/system/email", roles: OWNER_ADMIN_SUPPORT },
+      ]),
+      tabbed("Team & security", ShieldCheck, [
+        // Security is open to ALL_ROLES, not OWNER_ADMIN — every admin role must be able to reach
+        // their own MFA enrollment, or REQUIRE_ADMIN_MFA's route-guard AAL exception (RoleRoute
+        // already exempts this one path from the AAL2 check) is unreachable for content/
+        // merchandising/support/analytics accounts: the ROLE check ran first and denied them
+        // before the AAL check ever applied, permanently locking them out the moment the policy
+        // is turned on. Found during the 2026-09-30 security-hardening verification pass — see
+        // delite-auth-security.md. It is the first tab so it is every role's landing page here.
+        { label: "Security", path: "/admin/settings/security", roles: ALL_ROLES },
+        { label: "Admin users", path: "/admin/settings/users", roles: OWNER },
+        { label: "Activity log", path: "/admin/settings/activity", roles: OWNER_ADMIN },
+        { label: "Appearance", path: "/admin/settings", roles: ALL_ROLES },
+      ]),
     ],
   },
 ];
 
-export function findNavItem(path: string): AdminNavItem | undefined {
+export interface NavMatch {
+  item: AdminNavItem;
+  tab?: AdminNavTab;
+}
+
+/** Every (item, tab?) pair with the path it answers to. */
+function allEntries(): { path: string; match: NavMatch }[] {
+  const out: { path: string; match: NavMatch }[] = [];
   for (const group of ADMIN_NAV) {
-    const item = group.items.find((i) => i.path === path);
-    if (item) return item;
+    for (const item of group.items) {
+      if (item.tabs) for (const tab of item.tabs) out.push({ path: tab.path, match: { item, tab } });
+      else out.push({ path: item.path, match: { item } });
+    }
   }
-  return undefined;
+  return out;
+}
+
+/** Exact lookup — a route a page registers with RoleRoute. */
+export function matchNavPath(path: string): NavMatch | undefined {
+  return allEntries().find((e) => e.path === path)?.match;
+}
+
+/**
+ * Which nav entry the current URL belongs to: an exact match, otherwise the longest registered path
+ * that is a parent of it (so /admin/orders/123 → Orders, /admin/website/homepage/hero → Sections).
+ * "/admin" itself only ever matches exactly.
+ */
+export function matchNavLocation(pathname: string): NavMatch | undefined {
+  const clean = pathname.replace(/\/+$/, "") || "/";
+  let best: { path: string; match: NavMatch } | undefined;
+  for (const e of allEntries()) {
+    const hit = clean === e.path || (e.path !== "/admin" && clean.startsWith(e.path + "/"));
+    if (hit && (!best || e.path.length > best.path.length)) best = e;
+  }
+  return best?.match;
+}
+
+export function findNavItem(path: string): AdminNavItem | undefined {
+  return matchNavPath(path)?.item;
+}
+
+/** Tabs of `item` this role may open. */
+export function tabsForRole(item: AdminNavItem, role: AdminRole | null): AdminNavTab[] {
+  return role && item.tabs ? item.tabs.filter((t) => t.roles.includes(role)) : [];
+}
+
+/** Where the sidebar link for `item` should go for this role (its first tab the role may open). */
+export function landingPath(item: AdminNavItem, role: AdminRole | null): string {
+  return tabsForRole(item, role)[0]?.path ?? item.path;
 }
 
 export function roleCanAccess(role: AdminRole | null, path: string): boolean {
   if (!role) return false;
-  const item = findNavItem(path);
-  if (!item) return false;
-  return item.roles.includes(role);
+  const match = matchNavPath(path);
+  if (!match) return false;
+  return (match.tab ?? match.item).roles.includes(role);
 }

@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { AdminSidebar } from "../components/AdminSidebar";
 import { AdminTopBar } from "../components/AdminTopBar";
+import { AdminTabs } from "../components/AdminTabs";
 import { AdminAppearanceProvider, useAdminAppearance } from "../appearance/AdminAppearance";
 
 /**
@@ -23,6 +24,7 @@ function AdminLayoutContent() {
       <AdminSidebar role={adminRole} collapsed={collapsed} mobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} onToggleCollapsed={() => setCollapsed((v) => !v)} />
       <div className="flex-1 min-w-0 flex flex-col">
         <AdminTopBar onOpenMobileMenu={() => setMobileOpen(true)} />
+        <AdminTabs />
         <main className="flex-1 min-w-0">
           <Outlet />
         </main>

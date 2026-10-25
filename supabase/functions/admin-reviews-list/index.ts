@@ -12,6 +12,7 @@
 // private.analytics_require — this function's own role gate is defence in depth, not the only one.
 
 import { getOdooConfig, odooRead } from "../_shared/odoo/client.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireAdmin } from "../_shared/auth/requireAdmin.ts";
 
 const CORS_HEADERS: Record<string, string> = {
@@ -35,6 +36,8 @@ interface ReviewRow {
   product_name?: string;
   verified_purchase: boolean;
   photo_paths: string[];
+  is_seed: boolean;
+  reviewer_name: string | null;
 }
 
 interface Body {
@@ -45,6 +48,8 @@ interface Body {
   dateTo?: string;
   search?: string;
   sort?: string;
+  /** "real" (default) | "demo" | "all" — demo = seeded placeholder reviews (product_reviews.is_seed). */
+  source?: string;
   page?: number;
   pageSize?: number;
 }
@@ -55,7 +60,16 @@ Deno.serve(async (req: Request) => {
 
   const auth = await requireAdmin(req, ["owner", "admin", "support"]);
   if (auth instanceof Response) return auth;
-  const { db } = auth;
+
+  // admin_reviews_query re-checks the caller's role with auth.uid(), which is NULL for the service-role
+  // client requireAdmin hands back — so the RPC must run as the signed-in admin (their own JWT).
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!supabaseUrl || !anonKey) return json({ error: "Admin service not configured" }, 500);
+  const db = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } },
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 
   let body: Body;
   try {
@@ -74,7 +88,8 @@ Deno.serve(async (req: Request) => {
     p_start: body.dateFrom ?? null,
     p_end: body.dateTo ?? null,
     p_search: body.search ?? null,
-    p_sort: body.sort ?? "newest",
+    p_sort: ["newest", "oldest", "highest", "lowest"].includes(body.sort ?? "") ? body.sort : "newest",
+    p_source: ["real", "demo", "all"].includes(body.source ?? "") ? body.source : "real",
     p_limit: pageSize,
     p_offset: page * pageSize,
   });
@@ -85,6 +100,7 @@ Deno.serve(async (req: Request) => {
 
   const rows = (data?.rows ?? []) as ReviewRow[];
   const total = (data?.total ?? 0) as number;
+  const counts = (data?.counts ?? {}) as Record<string, number>;
 
   const odooConfig = getOdooConfig();
   if (odooConfig && rows.length > 0) {
@@ -101,7 +117,7 @@ Deno.serve(async (req: Request) => {
     for (const row of rows) row.product_name = `Product #${row.odoo_template_id}`;
   }
 
-  return json({ rows, total }, 200);
+  return json({ rows, total, counts }, 200);
 });
 
 function json(body: unknown, status = 200): Response {

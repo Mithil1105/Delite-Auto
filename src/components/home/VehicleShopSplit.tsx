@@ -53,14 +53,14 @@ export function VehicleShopSplit({ content }: { content?: Record<string, unknown
             </div>
           </Link>
           <div
-            className="absolute z-20 -bottom-[18px] sm:-bottom-[28px] lg:-bottom-[46px] left-1/2 -translate-x-1/2 w-[85%] max-w-[150px] sm:max-w-[200px] lg:max-w-[320px] pointer-events-none"
+            className="absolute z-20 -bottom-[26px] sm:-bottom-[40px] lg:-bottom-[78px] left-[46%] -translate-x-1/2 w-[92%] max-w-[170px] sm:max-w-[240px] lg:max-w-[420px] pointer-events-none"
             aria-hidden
           >
             <div className="absolute inset-x-6 bottom-[33%] h-4 rounded-[50%] bg-black/35 blur-md" aria-hidden />
             <img
               src={image("carImage", "/images/hero/car.png")}
               alt=""
-              className="relative w-full h-auto max-h-[80px] sm:max-h-[120px] lg:max-h-[215px] object-contain object-bottom"
+              className="relative w-full h-auto max-h-[98px] sm:max-h-[148px] lg:max-h-[255px] object-contain object-bottom"
             />
           </div>
         </div>

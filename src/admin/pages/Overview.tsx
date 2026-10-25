@@ -90,7 +90,7 @@ export default function Overview() {
         {attention && (attention.odooSyncPending > 0 || attention.failedEmails > 0 || attention.openEnquiries > 0 || attention.paymentFailuresToday > 0) && (
           <Card title="⚠ Attention Required">
             {attention.odooSyncPending > 0 && (
-              <Row label="Orders awaiting Odoo sync" value={<Link to="/admin/system/odoo-sync" className="text-brand-700 hover:underline">{attention.odooSyncPending} →</Link>} />
+              <Row label="Orders awaiting Odoo sync" value={<Link to="/admin/payments" className="text-brand-700 hover:underline">{attention.odooSyncPending} →</Link>} />
             )}
             {attention.failedEmails > 0 && (
               <Row label="Failed emails" value={<Link to="/admin/system/email" className="text-brand-700 hover:underline">{attention.failedEmails} →</Link>} />
@@ -99,7 +99,7 @@ export default function Overview() {
               <Row label="Open contact enquiries" value={<Link to="/admin/contact" className="text-brand-700 hover:underline">{attention.openEnquiries} →</Link>} />
             )}
             {attention.paymentFailuresToday > 0 && (
-              <Row label="Payment failures today" value={<Link to="/admin/system/odoo-sync" className="text-brand-700 hover:underline">{attention.paymentFailuresToday} →</Link>} />
+              <Row label="Payment failures today" value={<Link to="/admin/payments" className="text-brand-700 hover:underline">{attention.paymentFailuresToday} →</Link>} />
             )}
           </Card>
         )}
@@ -128,7 +128,7 @@ export default function Overview() {
               <Row label="Last checked" value={checkedAt ? checkedAt.toLocaleTimeString() : "—"} />
             </>
           )}
-          <Link to="/admin/odoo/status" className="text-[12.5px] font-semibold text-brand-700 hover:underline mt-3 inline-block">
+          <Link to="/admin/system/integrations" className="text-[12.5px] font-semibold text-brand-700 hover:underline mt-3 inline-block">
             Open Odoo status →
           </Link>
         </Card>

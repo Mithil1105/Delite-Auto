@@ -8,7 +8,10 @@ const ROUTE_DEFAULTS: Record<string, { title: string; description: string }> = {
   home: { title: "Delite Auto Accessories — Delite-fy Your Ride", description: DEFAULT_DESCRIPTION },
   shop: { title: "Shop — Delite Auto Accessories", description: DEFAULT_DESCRIPTION },
   brands: { title: "Brands — Delite Auto Accessories", description: DEFAULT_DESCRIPTION },
+  cars: { title: "Shop by Car — Delite Auto Accessories", description: DEFAULT_DESCRIPTION },
+  deals: { title: "Deals & Offers — Delite Auto Accessories", description: "Current deals, offers and hot picks on car and bike accessories from Delite Auto Accessories, Ahmedabad." },
   about: { title: "About Us — Delite Auto Accessories", description: DEFAULT_DESCRIPTION },
+  faq: { title: "FAQs — Delite Auto Accessories", description: "Answers about orders, delivery, returns, payments and fitting car and bike accessories from Delite Auto Accessories, Ahmedabad." },
   contact: { title: "Contact Us — Delite Auto Accessories", description: DEFAULT_DESCRIPTION },
 };
 

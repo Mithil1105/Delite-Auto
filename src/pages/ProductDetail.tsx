@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ChevronRight, Heart, Minus, Plus, Play, Share2, Star, TriangleAlert } from "lucide-react";
+import { ChevronRight, Heart, Minus, Plus, Share2, Star, TriangleAlert } from "lucide-react";
+import { PaymentMethods } from "../components/product/PaymentMethods";
+import { ProductTrustStrip } from "../components/product/TrustStrip";
 import { categoryBySlug } from "../data/categories";
 import { catalogService } from "../services/catalog/catalogService";
 import type { ProductDetail as ProductDetailDto } from "../data/types";
 import { ProductMedia } from "../components/product/ProductMedia";
+import { ProductMediaGallery } from "../components/product/ProductMediaGallery";
 import { ProductCarousel } from "../components/product/ProductCarousel";
 import { TrustBadgesRow } from "../components/home/TrustBadgesRow";
 import { formatINR } from "../lib/format";
@@ -13,10 +16,12 @@ import { useRecommendations } from "../hooks/useRecommendations";
 import { useCatalogProducts } from "../hooks/useCatalogProducts";
 import { useProductReviews } from "../hooks/useProductReviews";
 import { ReviewsSection } from "../components/product/ReviewsSection";
+import { AccordionPanel } from "../components/ui/AccordionPanel";
+import { ProductFaq } from "../components/faq/Faq";
 import { recordProductView } from "../lib/recommendations/history";
 import { useLang } from "../i18n/LanguageContext";
 import clsx from "clsx";
-
+import { Reveal } from "../components/motion/Reveal";
 type Tab = "description" | "reviews" | "returns" | "delivery";
 type LoadState = "loading" | "not-found" | "error" | "ready";
 
@@ -85,12 +90,25 @@ export default function ProductDetail() {
   // pick one, so Add to Cart stays disabled until the customer chooses. See
   // Documentations MD/odoo-real-catalog.md, "Variant selection".
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
+  const [shareCopied, setShareCopied] = useState(false);
+  const shareProduct = async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: product?.name, url });
+        return;
+      }
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      window.setTimeout(() => setShareCopied(false), 1800);
+    } catch {
+      // Share sheet dismissed or clipboard blocked — nothing to recover.
+    }
+  };
   useEffect(() => {
     const variants = product?.variants ?? [];
     setSelectedVariantId(variants.length === 1 ? variants[0].id : undefined);
   }, [product]);
-  const [activeImage, setActiveImage] = useState(0);
-  useEffect(() => setActiveImage(0), [product]);
 
   const catalogProducts = useCatalogProducts();
   const related = useRecommendations({ strategy: "pdp", currentProduct: product ?? undefined, limit: 4, candidates: catalogProducts });
@@ -157,10 +175,22 @@ export default function ProductDetail() {
   // `product.media` — a real gallery (primary + product.image records) once Odoo-backed; the mock
   // service backfills a single-entry array from productImages.ts/categoryImages.ts. Only repeat
   // the hero image as filler when there's genuinely nothing else to show.
-  const heroImage = product.media[activeImage]?.src ?? product.media[0]?.src;
-  const galleryImages = product.media.length > 1 ? product.media.map((m) => m.src) : product.media[0] ? [product.media[0].src] : [];
+  const heroImage = product.media[0]?.src;
 
   const variants = product.variants ?? [];
+  // The selector's label/UI follow how Odoo names the variant attribute: a colour attribute shows
+  // colour chips ("Select Colour"), another single attribute shows "Select <attribute>", and the
+  // generic/mixed case (Delite free-text "Model" attribute) keeps "Select Car Variant".
+  const variantAttrNames = Array.from(new Set(variants.flatMap((v) => (v.attributes ?? []).map((a) => a.attribute))));
+  const singleVariantAttr = variantAttrNames.length === 1 ? variantAttrNames[0] : null;
+  const isColourVariant = singleVariantAttr !== null && /colou?r/i.test(singleVariantAttr);
+  const variantSelectLabel = isColourVariant
+    ? t("product.selectColour")
+    : singleVariantAttr && !/^(model|variant|car ?variant)$/i.test(singleVariantAttr)
+      ? t("product.selectAttribute", { name: singleVariantAttr })
+      : t("product.selectCarVariant");
+  const variantOptionText = (v: (typeof variants)[number]) =>
+    isColourVariant ? (v.attributes?.find((a) => /colou?r/i.test(a.attribute))?.value ?? v.label) : v.label;
   const needsVariantSelection = variants.length > 1;
   const selectedVariant = variants.find((v) => v.id === selectedVariantId);
   // A variant (including the sole one on a single-variant product) can be genuinely unpurchasable
@@ -179,8 +209,8 @@ export default function ProductDetail() {
 
   return (
     <div className="bg-white">
-      <div className="container-page py-8">
-        <nav className="flex items-center gap-1.5 text-[12.5px] text-steel-500 mb-6 flex-wrap">
+      <div className="container-page py-6">
+        <nav className="flex items-center gap-1.5 text-[12.5px] text-steel-500 mb-4 flex-wrap">
           <Link to="/shop" className="hover:text-ink">{t("product.allProductsCrumb")}</Link>
           <ChevronRight className="w-3 h-3" />
           {mockCategory && mockCategoryLabel ? (
@@ -199,31 +229,25 @@ export default function ProductDetail() {
           <span className="text-ink">{product.name}</span>
         </nav>
 
-        <div className="grid lg:grid-cols-2 gap-10 mb-14">
-          {/* Gallery */}
-          <div>
-            <ProductMedia
-              src={heroImage}
-              alt={product.name}
-              icon={product.icon}
-              eager
-              className="w-full aspect-square rounded-2xl border border-line"
-              iconClassName="w-24 h-24"
+        <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 mb-12">
+          {/* Gallery — thumbnail rail + scrolling image viewer + click-to-zoom (ported from the Hasto
+              storefront); sticky on desktop so it stays beside the info column while you read. */}
+          <div data-pdp-gallery className="min-w-0 lg:sticky lg:top-[calc(var(--header-height,110px)+16px)] lg:self-start">
+            <ProductMediaGallery
+              key={product.id}
+              media={product.media}
+              productName={product.name}
+              fallback={
+                <ProductMedia
+                  src={heroImage}
+                  alt={product.name}
+                  icon={product.icon}
+                  eager
+                  className="w-full aspect-square rounded-2xl border border-line"
+                  iconClassName="w-24 h-24"
+                />
+              }
             />
-            {galleryImages.length > 1 && (
-              <div className="flex items-center gap-2 mt-3 overflow-x-auto">
-                {galleryImages.map((src, i) => (
-                  <button
-                    key={src + i}
-                    type="button"
-                    onClick={() => setActiveImage(i)}
-                    className={clsx("shrink-0 w-16 h-16 rounded-lg border overflow-hidden", i === activeImage ? "border-brand-500" : "border-line")}
-                  >
-                    <img src={src} alt="" className="w-full h-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* Info */}
@@ -235,22 +259,45 @@ export default function ProductDetail() {
                     {mockCategoryLabel?.name ?? realCategoryRef?.name}
                   </div>
                 )}
-                <h1 className="text-2xl sm:text-3xl heading leading-tight">{product.name}</h1>
+                <h1 className="text-2xl sm:text-[28px] heading leading-tight">{product.name}</h1>
               </div>
-              <button
-                type="button"
-                onClick={() => toggleWishlist(product.id)}
-                aria-pressed={wishlisted}
-                aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
-                className="grid place-items-center w-9 h-9 rounded-full border border-line hover:border-ink transition-colors shrink-0"
-              >
-                <Heart className={clsx("w-4 h-4", wishlisted ? "fill-sale text-sale" : "text-ink")} />
-              </button>
+              <div className="flex flex-col items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => toggleWishlist(product.id)}
+                  aria-pressed={wishlisted}
+                  aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
+                  className="grid place-items-center w-9 h-9 rounded-full border border-line hover:border-ink transition-colors"
+                >
+                  <Heart className={clsx("w-4 h-4", wishlisted ? "fill-sale text-sale" : "text-ink")} />
+                </button>
+                <button
+                  type="button"
+                  onClick={shareProduct}
+                  aria-label={t("product.shareLabel")}
+                  title={shareCopied ? t("product.linkCopied") : t("product.shareLabel")}
+                  className="relative grid place-items-center w-9 h-9 rounded-full border border-line hover:border-ink transition-colors"
+                >
+                  <Share2 className="w-4 h-4 text-ink" />
+                  <span aria-live="polite" className="sr-only">{shareCopied ? t("product.linkCopied") : ""}</span>
+                  {shareCopied && (
+                    <span aria-hidden="true" className="absolute top-full mt-1.5 right-0 whitespace-nowrap rounded-md bg-ink text-white text-[11px] font-medium px-2 py-1">
+                      {t("product.linkCopied")}
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center flex-wrap gap-3 mt-4">
-              <span className="price text-2xl font-bold text-sale">{formatINR(activePrice)}</span>
-              {product.mrp && <span className="price text-[15px] text-steel-500 line-through">{formatINR(product.mrp)}</span>}
+            <div className="flex items-center flex-wrap gap-3 mt-3">
+              {product.mrp && product.mrp > activePrice ? (
+                <>
+                  <span className="price text-xl font-bold text-sale">{formatINR(activePrice)}</span>
+                  <span className="price text-[15px] text-ink line-through">{formatINR(product.mrp)}</span>
+                </>
+              ) : (
+                <span className="price text-xl font-bold text-ink">{formatINR(activePrice)}</span>
+              )}
               {savePercent !== null && savePercent > 0 && (
                 <span className="px-2 py-1 rounded-full bg-badge-new text-white text-[11px] font-semibold">
                   {t("product.saveBadge", { percent: savePercent })}
@@ -258,7 +305,7 @@ export default function ProductDetail() {
               )}
             </div>
 
-            <div className="flex items-center gap-2 mt-3">
+            <div className="flex items-center gap-2 mt-2">
               {hasRating ? (
                 <>
                   <div className="flex items-center gap-0.5">
@@ -278,14 +325,14 @@ export default function ProductDetail() {
                   setOpenTabs((prev) => new Set(prev).add("reviews"));
                   document.getElementById("product-tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
-                className="text-[12.5px] font-semibold text-brand-700 hover:underline ml-1"
+                className="text-[12.5px] font-semibold text-steel-700 hover:text-ink hover:underline ml-1"
               >
                 + {t("product.writeReview")}
               </button>
             </div>
 
             {product.colors && product.colors.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-line">
+              <div className="mt-4 pt-4 border-t border-line">
                 <div className="text-[13px] font-semibold mb-2">{t("product.coloursLabel")}</div>
                 <div className="flex items-center gap-2">
                   {product.colors.map((c) => (
@@ -296,8 +343,35 @@ export default function ProductDetail() {
             )}
 
             {variants.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-line">
-                <label className="text-[13px] font-semibold mb-2 block">{t("product.selectCarVariant")}</label>
+              <div className="mt-4 pt-4 border-t border-line">
+                <label className="text-[13px] font-semibold mb-2 block">{variantSelectLabel}</label>
+                {isColourVariant ? (
+                  <div role="radiogroup" aria-label={variantSelectLabel} className="flex flex-wrap gap-2">
+                    {variants.map((v) => {
+                      const text = variantOptionText(v);
+                      const selected = v.id === selectedVariantId;
+                      const unavailable = v.purchasable === false;
+                      const swatch = typeof CSS !== "undefined" && CSS.supports("color", text) ? text : null;
+                      return (
+                        <button
+                          key={v.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          disabled={unavailable}
+                          onClick={() => setSelectedVariantId(v.id)}
+                          className={clsx(
+                            "inline-flex items-center gap-2 h-10 px-3.5 rounded-full border text-[13px] font-medium transition-colors disabled:opacity-40 disabled:line-through",
+                            selected ? "border-brand-500 bg-brand-50 text-brand-700" : "border-line hover:border-ink"
+                          )}
+                        >
+                          {swatch && <span className="w-4 h-4 rounded-full border border-line" style={{ backgroundColor: swatch }} aria-hidden="true" />}
+                          {text}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
                 <select
                   value={selectedVariantId ?? ""}
                   onChange={(e) => setSelectedVariantId(e.target.value || undefined)}
@@ -315,6 +389,7 @@ export default function ProductDetail() {
                     </option>
                   ))}
                 </select>
+                )}
                 {needsVariantSelection && !selectedVariant && (
                   <p className="text-[12px] text-sale mt-1.5">{t("product.selectionRequired")}</p>
                 )}
@@ -322,7 +397,7 @@ export default function ProductDetail() {
             )}
 
             {product.fitment && product.fitment.length > 0 && (
-              <div className="mt-6 pt-6 border-t border-line">
+              <div className="mt-4 pt-4 border-t border-line">
                 <div className="text-[13px] font-semibold mb-2">{t("product.fitmentHeading")}</div>
                 <div className="flex flex-wrap gap-2">
                   {product.fitment.map((f) => (
@@ -334,20 +409,21 @@ export default function ProductDetail() {
               </div>
             )}
 
-            <div className="mt-6">
-              <label className="text-[13px] font-semibold mb-2 block">{t("product.quantityLabel")}</label>
-              <div className="flex items-center border border-line w-fit">
-                <button type="button" onClick={() => setQty((n) => Math.max(1, n - 1))} className="w-10 h-11 grid place-items-center hover:bg-steel-50" aria-label="Decrease quantity">
-                  <Minus className="w-3.5 h-3.5" />
-                </button>
-                <span className="w-10 text-center font-mono text-[14px]">{qty}</span>
-                <button type="button" onClick={() => setQty((n) => n + 1)} className="w-10 h-11 grid place-items-center hover:bg-steel-50" aria-label="Increase quantity">
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
+            {/* Stacked: a compact quantity stepper, then full-width Add to Cart, then full-width Buy Now (accepted-payment
+                logos sit inside it on the right), then one rotating promise strip (admin: Website → Header & footer → Product strip). */}
+            <div className="mt-5 flex flex-col gap-3">
+              <div>
+                <span id="pdp-qty-label" className="sr-only">{t("product.quantityLabel")}</span>
+                <div role="group" aria-labelledby="pdp-qty-label" className="flex h-9 w-fit items-center overflow-hidden rounded-full border border-line">
+                  <button type="button" onClick={() => setQty((n) => Math.max(1, n - 1))} className="grid h-full w-9 place-items-center transition-colors hover:bg-steel-50 active:bg-steel-100" aria-label="Decrease quantity">
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <span className="w-7 text-center font-mono text-[13px]" aria-live="polite">{qty}</span>
+                  <button type="button" onClick={() => setQty((n) => n + 1)} className="grid h-full w-9 place-items-center transition-colors hover:bg-steel-50 active:bg-steel-100" aria-label="Increase quantity">
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
-            </div>
-
-            <div className="flex flex-col gap-3 mt-6">
               <button
                 type="button"
                 disabled={!canAddToCart}
@@ -356,41 +432,36 @@ export default function ProductDetail() {
               >
                 {t("product.addToCart")}
               </button>
-              <button
-                type="button"
-                disabled={!canAddToCart}
-                onClick={() => {
-                  // Buy Now adds the product but must NOT trigger cart feedback (drawer/mobile
-                  // "Added" indicator) — it's navigating straight to checkout, a distinct action
-                  // from Add to Cart. See Documentations MD/responsive-cart-drawer.md.
-                  addToCart(product, qty, { feedback: false, variantId: selectedVariantId });
-                  navigate("/cart");
-                }}
-                className="btn-pill-gold w-full justify-center !py-3.5 disabled:opacity-40 disabled:pointer-events-none"
-              >
-                {t("product.payWith")}
-              </button>
-              <span className="text-[12.5px] font-semibold text-steel-500 self-center">{t("product.morePaymentOptions")}</span>
+              <div>
+                <button
+                  type="button"
+                  disabled={!canAddToCart}
+                  onClick={() => {
+                    // Buy Now adds the product but must NOT trigger cart feedback (drawer/mobile
+                    // "Added" indicator) — it's navigating straight to checkout, a distinct action
+                    // from Add to Cart. See Documentations MD/responsive-cart-drawer.md.
+                    addToCart(product, qty, { feedback: false, variantId: selectedVariantId });
+                    navigate("/cart");
+                  }}
+                  className="btn-pill-gold relative w-full justify-center !py-3.5 disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  {t("product.buyNow")}
+                  <PaymentMethods className="absolute right-4 top-1/2 hidden -translate-y-1/2 min-[381px]:flex" />
+                </button>
+                {/* Very narrow screens: the logos drop below the button instead of crowding the label. */}
+                <div className="mt-2 flex justify-center min-[381px]:hidden">
+                  <PaymentMethods />
+                </div>
+              </div>
+              <ProductTrustStrip />
             </div>
 
-            <div className="flex items-center gap-2 mt-6 pt-6 border-t border-line">
-              <Share2 className="w-4 h-4 text-steel-500" />
-              <span className="text-[12.5px] text-steel-500">{t("product.shareLabel")}</span>
-            </div>
           </div>
         </div>
 
         {/* Product details: quick-facts chips + accordion (Feature details / Reviews / Return &
             Exchange / Delivery & Payment). Multiple sections can be open at once. */}
         <div id="product-tabs" className="mb-16 max-w-3xl">
-          <ul className="flex flex-wrap gap-2 mb-5">
-            {[t("product.moneyBack"), t("product.shipping"), t("product.paymentsChip")].map((chip) => (
-              <li key={chip} className="inline-flex items-center h-8 px-3 rounded-full bg-brand-50 text-brand-700 text-[12px] font-semibold">
-                {chip}
-              </li>
-            ))}
-          </ul>
-
           <div className="border-t border-line">
             {tabs.map((tb) => {
               const isOpen = openTabs.has(tb.id);
@@ -403,14 +474,14 @@ export default function ProductDetail() {
                       aria-expanded={isOpen}
                       aria-controls={`pd-${tb.id}-panel`}
                       onClick={() => toggleTab(tb.id)}
-                      className="w-full flex items-center justify-between gap-4 py-4 text-left"
+                      className="w-full flex items-center justify-between gap-4 py-5 text-left"
                     >
-                      <span className={clsx("text-[14.5px] font-semibold transition-colors", isOpen ? "text-brand-700" : "text-ink")}>{tb.label}</span>
+                      <span className={clsx("text-[20px] font-semibold transition-colors sm:text-[22px]", isOpen ? "text-brand-700" : "text-ink")}>{tb.label}</span>
                       {isOpen ? <Minus className="w-4 h-4 shrink-0 text-steel-500" /> : <Plus className="w-4 h-4 shrink-0 text-steel-500" />}
                     </button>
                   </h3>
-                  {isOpen && (
-                    <div id={`pd-${tb.id}-panel`} role="region" aria-labelledby={`pd-${tb.id}-btn`} className="pb-6">
+                  <AccordionPanel open={isOpen} id={`pd-${tb.id}-panel`} labelledBy={`pd-${tb.id}-btn`}>
+                    <div>
                       {tb.id === "description" && (
                         <div>
                           <p className="text-[14.5px] text-ink/75 leading-relaxed max-w-[75ch] mb-6">{product.description}</p>
@@ -424,44 +495,31 @@ export default function ProductDetail() {
                               ))}
                             </dl>
                           )}
-                          {heroImage && (
-                            <div className="grid sm:grid-cols-2 gap-4">
-                              <div className="relative rounded-2xl overflow-hidden border border-line aspect-video">
-                                <img src={heroImage} alt="" className="w-full h-full object-cover" />
-                                <span className="absolute inset-0 grid place-items-center bg-ink/10">
-                                  <span className="grid place-items-center w-12 h-12 rounded-full bg-white/90">
-                                    <Play className="w-5 h-5 text-ink ml-0.5" fill="currentColor" />
-                                  </span>
-                                </span>
-                              </div>
-                              <div className="rounded-2xl overflow-hidden border border-line aspect-video">
-                                <img src={heroImage} alt="" className="w-full h-full object-cover" />
-                              </div>
-                            </div>
-                          )}
                         </div>
                       )}
                       {tb.id === "reviews" && <ReviewsSection odooTemplateId={product.odooId} />}
                       {tb.id === "returns" && <p className="text-[14.5px] text-ink/75 leading-relaxed max-w-2xl">{t("product.returnExchangeBody")}</p>}
                       {tb.id === "delivery" && <p className="text-[14.5px] text-ink/75 leading-relaxed max-w-2xl">{t("product.deliveryPaymentBody")}</p>}
                     </div>
-                  )}
+                  </AccordionPanel>
                 </section>
               );
             })}
           </div>
         </div>
 
+        <ProductFaq />
+
         {related.length > 0 && (
-          <section className="mb-16">
+          <Reveal as="section" className="mb-16">
             <h2 className="text-xl sm:text-2xl heading mb-5">{t("product.youMightAlsoLike")}</h2>
             <ProductCarousel products={related} tracking={{ surface: "product_detail", strategy: "pdp" }} />
-          </section>
+          </Reveal>
         )}
 
-        <div className="pt-10 border-t border-line">
+        <Reveal className="pt-10 border-t border-line">
           <TrustBadgesRow />
-        </div>
+        </Reveal>
       </div>
     </div>
   );

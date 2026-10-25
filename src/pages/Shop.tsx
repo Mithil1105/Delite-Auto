@@ -1,17 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, ChevronRight, LayoutGrid, List, PackageSearch, Search, SlidersHorizontal, TriangleAlert, X } from "lucide-react";
+import { ChevronRight, PackageSearch, Search, TriangleAlert, X } from "lucide-react";
 import type { Category, Product } from "../data/types";
 import { catalogService, type PagedProductQuery, type PagedProductResult, type ProductSort } from "../services/catalog/catalogService";
 import { brands as mockBrands } from "../data/brands";
 import { ProductCard } from "../components/product/ProductCard";
 import { TrustBadgesRow } from "../components/home/TrustBadgesRow";
+import { buildPriceBands } from "../lib/listing/priceBands";
+import { Chip, ChipGroup, FilterCard, FilterGroup, ListingToolbar, Segmented, SortSelect, ViewToggle } from "../components/listing/ListingKit";
+import { sentenceCase } from "../lib/listing/format";
 import { useCart } from "../context/CartContext";
 import { useLang } from "../i18n/LanguageContext";
 import { SeoHead } from "../components/SeoHead";
 import clsx from "clsx";
 import { track } from "../lib/analytics/client";
-
+import { Reveal, staggerDelay } from "../components/motion/Reveal";
 const MAX_PRICE = 70000;
 const PAGE_SIZE = 9;
 
@@ -20,23 +23,6 @@ const PAGE_SIZE = 9;
 const IS_REAL_CATALOG = import.meta.env.VITE_CATALOG_SOURCE === "supabase";
 
 const EMPTY_CATEGORIES: Category[] = [];
-
-/**
- * A collapsible filter group — "Category type" / "Brands" / "Model name" / "Availability" /
- * "Price" / "Colors" in the Figma sidebar all render this way, each collapsed by default.
- */
-function FilterSection({ title, children, defaultOpen = false }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="border-b border-line py-4">
-      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between text-left">
-        <span className="text-[13.5px] font-semibold">{title}</span>
-        <ChevronDown className={clsx("w-4 h-4 text-steel-500 transition-transform", open && "rotate-180")} />
-      </button>
-      {open && <div className="mt-3">{children}</div>}
-    </div>
-  );
-}
 
 function useCategories() {
   const [categories, setCategories] = useState<Category[] | null>(null);
@@ -225,102 +211,123 @@ export default function Shop() {
     setPage(1);
   };
 
+  // "Reset all" also clears the search text (the older clearAll keeps it, for the "no results" button).
+  const clearAllAndSearch = () => {
+    const next = new URLSearchParams();
+    if (view === "list") next.set("view", "list");
+    if (sort !== "relevance") next.set("sort", sort);
+    setParams(next, { replace: true });
+    setPage(1);
+  };
+
   const pageNumbers = useMemo(() => {
     if (totalPages <= 5) return Array.from({ length: totalPages }, (_, i) => i + 1);
     return [1, 2, 3, "…", totalPages] as const;
   }, [totalPages]);
 
   const categoryLabel = !IS_REAL_CATALOG && category ? dict.categories[category as keyof typeof dict.categories]?.name : null;
-  const realCategoryLabel = IS_REAL_CATALOG && category ? categoryOptions.find((c) => String(c.odooId) === category)?.name : null;
-
-  const optionBtn = (active: boolean) =>
-    clsx(
-      "w-full text-left text-[13.5px] px-2.5 py-1.5 rounded-lg transition-colors",
-      active ? "bg-brand-50 text-brand-700 font-semibold" : "text-ink/80 hover:bg-steel-50 hover:text-brand-700"
-    );
+  const realCategoryLabelRaw = IS_REAL_CATALOG && category ? categoryOptions.find((c) => String(c.odooId) === category)?.name : null;
+  const realCategoryLabel = realCategoryLabelRaw ? sentenceCase(realCategoryLabelRaw) : null;
 
   const brandOptions = IS_REAL_CATALOG
     ? brandCategoryOptions.map((c) => ({ value: String(c.odooId), label: c.name }))
     : mockBrands.map((b) => ({ value: b.slug, label: b.name }));
-  const visibleBrands = brandOptions.filter((b) => b.label.toLowerCase().includes(brandQuery.trim().toLowerCase()));
+  const brandSearch = brandQuery.trim().toLowerCase();
+  const visibleBrands = brandOptions.filter((b) => b.label.toLowerCase().includes(brandSearch));
+
+  const priceBands = buildPriceBands(t);
+  const isBandActive = (b: { min: number; max?: number }) => minPrice === b.min && (b.max === undefined ? maxPrice >= MAX_PRICE : maxPrice === b.max);
+  const setPriceBand = (b: { min: number; max?: number }) => {
+    const next = new URLSearchParams(params);
+    if (b.min > 0) next.set("min", String(b.min));
+    else next.delete("min");
+    if (b.max !== undefined) next.set("max", String(b.max));
+    else next.delete("max");
+    setParams(next, { replace: true });
+    setPage(1);
+  };
+  const smallInput = "w-full h-10 rounded-lg border border-line bg-white pl-7 pr-2 text-[13px] focus:outline-none focus:border-ink";
 
   const FiltersPanel = (
-    <div>
-      <FilterSection title={t("shop.vehicleType")} defaultOpen>
-        <div className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-steel-50">
-          {[
+    <>
+      <FilterGroup title={t("shop.vehicleType")}>
+        <Segmented
+          label={t("shop.vehicleType")}
+          value={vehicle}
+          onChange={(v) => setParam("vehicle", v || null)}
+          options={[
             { value: "", label: t("shop.all") },
             { value: "car", label: t("shop.car") },
             { value: "bike", label: t("shop.bike") },
-          ].map((o) => (
-            <button
-              key={o.value || "all"}
-              type="button"
-              aria-pressed={vehicle === o.value}
-              onClick={() => setParam("vehicle", o.value || null)}
-              className={clsx(
-                "h-9 rounded-lg text-[13px] font-semibold transition-colors",
-                vehicle === o.value ? "bg-white text-brand-700 shadow-card" : "text-ink/70 hover:text-ink"
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
+          ]}
+        />
+      </FilterGroup>
+
+      <FilterGroup title={t("shop.categoryType")}>
+        <ChipGroup
+          allLabel={t("shop.all")}
+          selected={category}
+          onSelect={(v) => setParam("category", v || null)}
+          items={categoryOptions.map((c) => ({
+            value: IS_REAL_CATALOG ? String(c.odooId) : c.slug,
+            label: IS_REAL_CATALOG ? sentenceCase(c.name) : (dict.categories[c.slug as keyof typeof dict.categories]?.name ?? c.slug),
+          }))}
+          limit={9}
+          showMoreLabel={t("shop.showMore")}
+          showLessLabel={t("shop.showLess")}
+        />
+      </FilterGroup>
+
+      <FilterGroup title={t("shop.availability")}>
+        <Segmented
+          label={t("shop.availability")}
+          value={availabilityParam}
+          onChange={(v) => setParam("availability", v === availabilityParam ? null : v)}
+          options={[
+            { value: "in", label: t("shop.inStock") },
+            { value: "out", label: t("shop.outOfStock") },
+          ]}
+        />
+        <div className="mt-3">
+          <Chip selected={onlySale} onClick={() => setParam("sale", onlySale ? null : "1")}>
+            {t("shop.onSale")}
+          </Chip>
         </div>
-      </FilterSection>
+      </FilterGroup>
 
-      <FilterSection title={t("shop.categoryType")} defaultOpen>
-        <ul className="space-y-0.5 max-h-64 overflow-y-auto pr-1">
-          <li>
-            <button onClick={() => setParam("category", null)} className={optionBtn(!category)}>
-              {t("shop.allProductsFilter")}
-            </button>
-          </li>
-          {categoryOptions.map((c) => {
-            const value = IS_REAL_CATALOG ? String(c.odooId) : c.slug;
-            const label = IS_REAL_CATALOG ? c.name : dict.categories[c.slug as keyof typeof dict.categories]?.name;
-            return (
-              <li key={value}>
-                <button onClick={() => setParam("category", value)} className={optionBtn(category === value)}>
-                  {label}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      </FilterSection>
-
-      <FilterSection title={t("shop.brand")} defaultOpen>
-        {brandOptions.length > 8 && (
-          <div className="relative mb-2">
+      <FilterGroup title={t("shop.brand")}>
+        {brandOptions.length > 12 && (
+          <div className="relative mb-3">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-steel-500" />
             <input
               type="search"
               value={brandQuery}
               onChange={(e) => setBrandQuery(e.target.value)}
               placeholder={t("shop.searchBrands")}
-              className="w-full h-10 rounded-full border border-line bg-steel-50 pl-9 pr-3 text-[13px] focus:outline-none focus:border-brand-500"
+              className="w-full h-10 rounded-lg border border-line bg-white pl-9 pr-3 text-[13px] focus:outline-none focus:border-ink"
             />
           </div>
         )}
-        <ul className="space-y-0.5 max-h-56 overflow-y-auto pr-1">
-          <li>
-            <button onClick={() => setParam("brand", null)} className={optionBtn(!brand)}>
-              {t("shop.allBrands")}
-            </button>
-          </li>
-          {visibleBrands.map((b) => (
-            <li key={b.value}>
-              <button onClick={() => setParam("brand", b.value)} className={optionBtn(brand === b.value)}>
-                {b.label}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </FilterSection>
+        <ChipGroup
+          allLabel={t("shop.allBrands")}
+          selected={brand}
+          onSelect={(v) => setParam("brand", v || null)}
+          items={visibleBrands}
+          limit={brandSearch ? visibleBrands.length : 12}
+          showMoreLabel={t("shop.showMore")}
+          showLessLabel={t("shop.showLess")}
+        />
+      </FilterGroup>
 
-      <FilterSection title={t("shop.priceRange")} defaultOpen>
-        <div className="flex items-center gap-2">
+      <FilterGroup title={t("shop.priceRange")}>
+        <div className="flex flex-wrap gap-2">
+          {priceBands.map((b) => (
+            <Chip key={b.key} selected={isBandActive(b)} onClick={() => setPriceBand(b)}>
+              {b.label}
+            </Chip>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center gap-2">
           <label className="flex-1 min-w-0">
             <span className="sr-only">{t("shop.minPrice")}</span>
             <div className="relative">
@@ -336,7 +343,7 @@ export default function Shop() {
                   const n = Math.max(0, Math.min(Number(e.target.value) || 0, maxPrice));
                   setParam("min", n > 0 ? String(n) : null);
                 }}
-                className="w-full h-10 rounded-lg border border-line bg-white pl-7 pr-2 text-[13px] focus:outline-none focus:border-brand-500"
+                className={smallInput}
               />
             </div>
           </label>
@@ -356,59 +363,28 @@ export default function Shop() {
                   const raw = Number(e.target.value);
                   setParam("max", raw > 0 && raw < MAX_PRICE ? String(Math.max(raw, minPrice)) : null);
                 }}
-                className="w-full h-10 rounded-lg border border-line bg-white pl-7 pr-2 text-[13px] focus:outline-none focus:border-brand-500"
+                className={smallInput}
               />
             </div>
           </label>
         </div>
-        <input
-          type="range"
-          aria-label={t("shop.priceUpTo")}
-          min={200}
-          max={MAX_PRICE}
-          step={200}
-          value={maxPrice}
-          onChange={(e) => setParam("max", Number(e.target.value) >= MAX_PRICE ? null : e.target.value)}
-          className="w-full accent-brand-500 mt-4"
-        />
-        <div className="flex justify-between text-[12px] text-steel-500 font-mono">
-          <span>₹200</span>
-          <span>₹{MAX_PRICE.toLocaleString("en-IN")}</span>
-        </div>
-      </FilterSection>
+      </FilterGroup>
 
-      <FilterSection title={t("shop.availability")} defaultOpen>
-        <div className="flex flex-col gap-1">
-          <label className="flex items-center gap-2.5 text-[13.5px] cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-steel-50">
-            <input type="checkbox" className="accent-brand-500 w-4 h-4" checked={availabilityParam === "in"} onChange={(e) => setParam("availability", e.target.checked ? "in" : null)} />
-            {t("shop.inStock")}
-          </label>
-          <label className="flex items-center gap-2.5 text-[13.5px] cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-steel-50">
-            <input type="checkbox" className="accent-brand-500 w-4 h-4" checked={availabilityParam === "out"} onChange={(e) => setParam("availability", e.target.checked ? "out" : null)} />
-            {t("shop.outOfStock")}
-          </label>
-          <label className="flex items-center gap-2.5 text-[13.5px] cursor-pointer px-2.5 py-1.5 rounded-lg hover:bg-steel-50">
-            <input type="checkbox" className="accent-brand-500 w-4 h-4" checked={onlySale} onChange={(e) => setParam("sale", e.target.checked ? "1" : null)} />
-            {t("shop.onSale")}
-          </label>
-        </div>
-      </FilterSection>
-
-      <FilterSection title={t("shop.modelName")}>
+      <FilterGroup title={t("shop.modelName")}>
         <input
           type="text"
           value={model}
           onChange={(e) => setParam("model", e.target.value || null)}
           placeholder={t("shop.modelNamePlaceholder")}
-          className="w-full h-10 rounded-lg border border-line px-3 text-[13px] bg-white focus:outline-none focus:border-brand-500"
+          className="w-full h-10 rounded-lg border border-line px-3 text-[13px] bg-white focus:outline-none focus:border-ink"
         />
-      </FilterSection>
+      </FilterGroup>
 
       {/* Real Odoo products have no reliable colour data (see Documentations MD/odoo-real-catalog.md) —
           explicitly hidden in real-catalog mode rather than relying on incidental emptiness, so it
           can never inconsistently appear for the rare manually-backfilled product (#54). */}
       {!IS_REAL_CATALOG && swatches.length > 0 && (
-        <FilterSection title={t("shop.colorsLabel")}>
+        <FilterGroup title={t("shop.colorsLabel")}>
           <div className="flex flex-wrap gap-2">
             {swatches.map((c) => (
               <button
@@ -416,20 +392,14 @@ export default function Shop() {
                 type="button"
                 aria-label={c}
                 onClick={() => setParam("color", color === c ? null : c)}
-                className={clsx("w-7 h-7 rounded-full border-2 transition-transform", color === c ? "border-brand-500 scale-110" : "border-line")}
+                className={clsx("w-7 h-7 rounded-full border-2 transition-transform", color === c ? "border-ink scale-110" : "border-line")}
                 style={{ backgroundColor: c }}
               />
             ))}
           </div>
-        </FilterSection>
+        </FilterGroup>
       )}
-
-      {activeCount > 0 && (
-        <button onClick={clearAll} className="btn-pill-outline !px-4 !py-2 mt-4 text-[12.5px]">
-          <X className="w-3.5 h-3.5" /> {t("shop.clearAll")}
-        </button>
-      )}
-    </div>
+    </>
   );
 
   // Removable chips for every active filter — the "applied filters" bar under the toolbar.
@@ -488,117 +458,80 @@ export default function Shop() {
     <div className="bg-white">
       <SeoHead routeKey="shop" />
       <div className="container-page py-8">
-        <nav className="flex items-center gap-1.5 text-[12.5px] text-steel-500 mb-6">
+        <nav className="flex items-center gap-1.5 text-[12.5px] text-steel-500 mb-4">
           <Link to="/" className="hover:text-ink">{t("shop.breadcrumbHome")}</Link>
           <ChevronRight className="w-3 h-3" />
           <span className="text-ink">{categoryLabel ?? realCategoryLabel ?? t("shop.shopAllTitle")}</span>
         </nav>
 
-        <h1 className="text-center text-2xl sm:text-3xl font-display uppercase mb-6">
-          {onlyWishlist ? t("shop.savedItems") : categoryLabel ?? realCategoryLabel ?? t("shop.shopAllTitle")}
-        </h1>
-        {q && <p className="text-center text-steel-500 text-[14px] -mt-4 mb-6">{t("shop.showingResultsFor", { query: q })}</p>}
-
-        {/* Toolbar: filters toggle + count (left) · sort + grid/list view (right) */}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-line bg-white px-3 py-2.5 sm:px-4 mb-3 shadow-card">
-          <button
-            type="button"
-            onClick={() => setMobileFiltersOpen(true)}
-            className="lg:hidden inline-flex items-center gap-1.5 h-10 px-3 sm:px-4 rounded-full border border-line bg-white text-[13px] font-semibold hover:border-brand-500 hover:text-brand-700 transition-colors"
-          >
-            <SlidersHorizontal className="w-4 h-4" /> {t("shop.filterToggle")}
-            {activeCount > 0 && <span className="grid place-items-center min-w-5 h-5 px-1 rounded-full bg-brand-500 text-white text-[11px]">{activeCount}</span>}
-          </button>
-          <button
-            type="button"
-            aria-pressed={sidebarOpen}
-            onClick={() => setSidebarOpen((o) => !o)}
-            className={clsx(
-              "hidden lg:inline-flex items-center gap-2 h-10 px-4 rounded-full border text-[13px] font-semibold transition-colors",
-              sidebarOpen ? "border-brand-500 text-brand-700 bg-brand-50" : "border-line bg-white hover:border-brand-500 hover:text-brand-700"
-            )}
-          >
-            <SlidersHorizontal className="w-4 h-4" /> {t("shop.filterToggle")}
-            {activeCount > 0 && <span className="grid place-items-center min-w-5 h-5 px-1 rounded-full bg-brand-500 text-white text-[11px]">{activeCount}</span>}
-          </button>
-
-          <span className="order-last basis-full sm:order-none sm:basis-auto text-[13px] text-steel-500" aria-live="polite">
-            {t("shop.productsCount", { count: total })}
-          </span>
-
-          <div className="ml-auto flex items-center gap-1.5 sm:gap-3 min-w-0">
-            <label className="relative inline-flex items-center min-w-0">
-              <span className="hidden sm:inline text-[13px] text-steel-500 mr-2 whitespace-nowrap">{t("shop.sortByLabel")}</span>
-              <select
-                value={sort}
-                onChange={(e) => setParam("sort", e.target.value === "relevance" ? null : e.target.value)}
-                className="appearance-none h-10 max-w-[8.5rem] sm:max-w-none rounded-full border border-line bg-white pl-3 pr-8 sm:pl-4 sm:pr-9 text-[13px] font-semibold focus:outline-none focus:border-brand-500 cursor-pointer"
-                aria-label={t("shop.sortByLabel")}
-              >
-                <option value="relevance">{t("shop.sortRelevance")}</option>
-                <option value="price-asc">{t("shop.sortPriceAsc")}</option>
-                <option value="price-desc">{t("shop.sortPriceDesc")}</option>
-                <option value="name">{t("shop.sortName")}</option>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 w-4 h-4 text-steel-500" />
-            </label>
-
-            <div role="group" aria-label={t("shop.viewGrid") + " / " + t("shop.viewList")} className="inline-flex p-1 rounded-full bg-steel-50 border border-line">
-              {(
-                [
-                  { value: "grid", label: t("shop.viewGrid"), Icon: LayoutGrid },
-                  { value: "list", label: t("shop.viewList"), Icon: List },
-                ] as const
-              ).map(({ value, label, Icon }) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-label={label}
-                  title={label}
-                  aria-pressed={view === value}
-                  onClick={() => setParam("view", value === "list" ? "list" : null)}
-                  className={clsx(
-                    "grid place-items-center w-8 sm:w-9 h-8 rounded-full transition-colors",
-                    view === value ? "bg-white text-brand-700 shadow-card" : "text-steel-500 hover:text-ink"
-                  )}
-                >
-                  <Icon className="w-4 h-4" />
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Applied-filters bar */}
-        {chips.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 mb-5" aria-label={t("shop.activeFilters")}>
-            {chips.map((c) => (
-              <button
-                key={c.key}
-                type="button"
-                onClick={c.onRemove}
-                aria-label={`${t("shop.removeFilter")}: ${c.label}`}
-                className="inline-flex items-center gap-1.5 h-8 pl-3 pr-2 rounded-full bg-brand-50 text-brand-700 text-[12.5px] font-semibold hover:bg-brand-100 transition-colors"
-              >
-                {c.label}
-                <X className="w-3.5 h-3.5" />
-              </button>
-            ))}
-            <button type="button" onClick={clearAll} className="text-[12.5px] font-semibold text-steel-500 hover:text-ink underline underline-offset-2 ml-1">
-              {t("shop.clearAll")}
-            </button>
-          </div>
-        )}
-
-        <div className={clsx("grid gap-8 mt-5", sidebarOpen ? "lg:grid-cols-[260px_1fr]" : "lg:grid-cols-1")}>
+        <div className={clsx("mt-1 grid gap-6", sidebarOpen ? "lg:grid-cols-[280px_1fr] lg:items-start" : "lg:grid-cols-1")}>
           {sidebarOpen && (
-            <aside className="hidden lg:block lg:sticky lg:top-28 lg:self-start lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto rounded-2xl border border-line bg-white px-4 pt-4 pb-2">
-              <h2 className="font-display uppercase text-[13px] tracking-widish">{t("shop.filtersHeading")}</h2>
-              {FiltersPanel}
+            <aside className="hidden lg:block lg:sticky lg:top-[calc(var(--header-height,110px)+16px)] lg:max-h-[calc(100dvh-var(--header-height,110px)-32px)] lg:overflow-y-auto lg:rounded-2xl">
+              <FilterCard
+                title={t("shop.filtersHeading")}
+                resetLabel={t("shop.resetAll")}
+                onReset={activeCount > 0 || q ? clearAllAndSearch : undefined}
+                closeLabel={t("shop.hideFilters")}
+                onClose={() => setSidebarOpen(false)}
+              >
+                {FiltersPanel}
+              </FilterCard>
             </aside>
           )}
 
-          <div>
+          <div className="min-w-0">
+            <ListingToolbar
+              title={
+                <h1 className="heading text-2xl sm:text-3xl leading-tight">
+                  {onlyWishlist ? t("shop.savedItems") : categoryLabel ?? realCategoryLabel ?? t("shop.shopAllTitle")}
+                </h1>
+              }
+              subtitle={
+                <p className="mt-1 text-[13px] text-steel-500" aria-live="polite">
+                  {t("shop.productsCount", { count: total })}
+                  {q && <> · {t("shop.showingResultsFor", { query: q })}</>}
+                </p>
+              }
+              filtersLabel={t("shop.filterToggle")}
+              activeCount={activeCount}
+              sidebarOpen={sidebarOpen}
+              onToggleSidebar={() => setSidebarOpen((o) => !o)}
+              onOpenDrawer={() => setMobileFiltersOpen(true)}
+              sortSlot={
+                <SortSelect
+                  className="w-full sm:w-auto"
+                  label={t("shop.sortByLabel")}
+                  value={sort}
+                  onChange={(v) => setParam("sort", v === "relevance" ? null : v)}
+                  options={[
+                    { value: "relevance", label: t("shop.sortRelevance") },
+                    { value: "price-asc", label: t("shop.sortPriceAsc") },
+                    { value: "price-desc", label: t("shop.sortPriceDesc") },
+                    { value: "name", label: t("shop.sortName") },
+                  ]}
+                />
+              }
+              viewSlot={<ViewToggle value={view} onChange={(v) => setParam("view", v === "list" ? "list" : null)} gridLabel={t("shop.viewGrid")} listLabel={t("shop.viewList")} />}
+            />
+
+            {/* Applied filters */}
+            {chips.length > 0 && (
+              <div className="mb-5 flex flex-wrap items-center gap-2" aria-label={t("shop.activeFilters")}>
+                {chips.map((c) => (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={c.onRemove}
+                    aria-label={`${t("shop.removeFilter")}: ${c.label}`}
+                    className="inline-flex items-center gap-1.5 h-8 pl-3 pr-2 rounded-full bg-steel-100 text-ink text-[12.5px] font-medium hover:bg-steel-200 transition-colors"
+                  >
+                    {c.label}
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                ))}
+              </div>
+            )}
+
             {total === 0 ? (
               <div className="flex flex-col items-center justify-center text-center py-24 border border-dashed border-line rounded-2xl">
                 <PackageSearch className="w-10 h-10 text-steel-300 mb-4" />
@@ -612,13 +545,13 @@ export default function Shop() {
                 <div
                   className={clsx(
                     "hidden lg:grid",
-                    view === "list"
-                      ? clsx("gap-4", sidebarOpen ? "lg:grid-cols-1" : "lg:grid-cols-2")
-                      : clsx("gap-5", sidebarOpen ? "lg:grid-cols-3" : "lg:grid-cols-4")
+                    view === "list" ? "gap-4 lg:grid-cols-1" : sidebarOpen ? "gap-5 lg:grid-cols-3" : "gap-5 lg:grid-cols-4"
                   )}
                 >
-                  {desktopItems.map((p) => (
-                    <ProductCard key={p.id} product={p} layout={view} onView={() => trackSearchClick(p)} />
+                  {desktopItems.map((p, i) => (
+                    <Reveal key={p.id} delay={staggerDelay(i)} className="h-full">
+                      <ProductCard product={p} layout={view} className="h-full" onView={() => trackSearchClick(p)} />
+                    </Reveal>
                   ))}
                 </div>
                 {totalPages > 1 && (
@@ -641,7 +574,7 @@ export default function Shop() {
                           onClick={() => setPage(n as number)}
                           className={clsx(
                             "w-9 h-9 grid place-items-center rounded-full text-[13px] font-medium transition-colors",
-                            page === n ? "bg-brand-500 text-white" : "hover:bg-steel-50"
+                            page === n ? "bg-ink text-white" : "hover:bg-steel-100"
                           )}
                         >
                           {n}
@@ -660,8 +593,10 @@ export default function Shop() {
 
                 {/* Mobile + tablet: accumulated pages + Load More */}
                 <div className={clsx("grid lg:hidden", view === "list" ? "grid-cols-1 gap-3 md:grid-cols-2" : "grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3")}>
-                  {mobileItems.map((p) => (
-                    <ProductCard key={p.id} product={p} layout={view} onView={() => trackSearchClick(p)} />
+                  {mobileItems.map((p, i) => (
+                    <Reveal key={p.id} delay={staggerDelay(i, 55, 3)} className="h-full">
+                      <ProductCard product={p} layout={view} className="h-full" onView={() => trackSearchClick(p)} />
+                    </Reveal>
                   ))}
                 </div>
                 {page < totalPages && (
@@ -691,7 +626,12 @@ export default function Shop() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            {FiltersPanel}
+            <div className="divide-y divide-line rounded-2xl border border-line">{FiltersPanel}</div>
+            {(activeCount > 0 || q) && (
+              <button type="button" onClick={clearAllAndSearch} className="mt-4 text-[13px] font-medium underline underline-offset-2 hover:text-brand-700">
+                {t("shop.resetAll")}
+              </button>
+            )}
             <button onClick={() => setMobileFiltersOpen(false)} className="btn-pill-dark w-full mt-6 justify-center">
               {t("shop.showResults", { count: total })}
             </button>

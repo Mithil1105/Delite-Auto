@@ -87,9 +87,9 @@ test.describe("Delite Admin", () => {
     await expect(page.getByText(/cms\.|media\.|review\./).first()).toBeVisible();
   });
 
-  test("Odoo status page shows real, non-secret connection state", async ({ page }) => {
+  test("Integrations page shows real, non-secret Odoo connection state", async ({ page }) => {
     await signInAdmin(page);
-    await page.goto("/admin/odoo/status");
+    await page.goto("/admin/system/integrations");
     await page.waitForTimeout(2000);
     const text = await page.locator("body").innerText();
     expect(text).not.toContain("ODOO_API_KEY");

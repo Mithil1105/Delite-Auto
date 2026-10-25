@@ -21,6 +21,8 @@ export function HomeCategoryProductSection({
   activeTab,
   onTabChange,
   products,
+  loading = false,
+  emptyLabel,
 }: {
   title: string;
   ctaLabel: string;
@@ -29,6 +31,10 @@ export function HomeCategoryProductSection({
   activeTab: string;
   onTabChange: (value: string) => void;
   products: Product[];
+  /** The tab's products are still being fetched. */
+  loading?: boolean;
+  /** Shown when the tab has no products. */
+  emptyLabel?: string;
 }) {
   const railRef = useRef<RailHandle>(null);
   const [bounds, setBounds] = useState({ canScrollPrev: false, canScrollNext: false });
@@ -66,7 +72,13 @@ export function HomeCategoryProductSection({
       <div className="mb-5">
         <PillTabs value={activeTab} onChange={onTabChange} options={tabs} variant="segmented" />
       </div>
-      <ProductCarousel ref={railRef} products={products} variant="home-category" hideArrows onBoundsChange={setBounds} />
+      {products.length > 0 ? (
+        <ProductCarousel ref={railRef} products={products} variant="home-category" hideArrows onBoundsChange={setBounds} />
+      ) : (
+        <div className="grid min-h-[12rem] place-items-center rounded-2xl border border-dashed border-line bg-white/60 px-4 text-center text-[14px] text-steel-500" aria-live="polite">
+          {loading ? "…" : emptyLabel ?? ""}
+        </div>
+      )}
     </FullBleedSection>
   );
 }

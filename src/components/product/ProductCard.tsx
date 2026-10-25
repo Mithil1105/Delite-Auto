@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Heart, Plus, Star } from "lucide-react";
+import { Check, Heart, Plus, Star, Video } from "lucide-react";
 import type { Product } from "../../data/types";
 import { ProductMedia } from "./ProductMedia";
 import { productImages } from "../../lib/productImages";
 import { formatINR } from "../../lib/format";
+import { useReviewStat } from "../../lib/reviews/reviewStats";
 import { categoryBySlug } from "../../data/categories";
 import { useCart } from "../../context/CartContext";
 import { useLang } from "../../i18n/LanguageContext";
@@ -41,7 +42,12 @@ export function ProductCard({ product, className = "", variant = "default", onQu
   const wishlisted = isWishlisted(product.id);
   const category = product.categorySlug ? categoryBySlug(product.categorySlug) : undefined;
   const eyebrow = category ? dict.categories[category.slug as keyof typeof dict.categories]?.name : (product.brand?.name ?? product.categories?.[0]?.name ?? "");
-  const hasRating = product.rating != null && !!product.reviewCount;
+  // Real review stars: the approved-review average/count from the database (batched across all cards on the page), falling
+  // back to the built-in rating the mock catalog carries. Only the default card shows them, so only it asks for them.
+  const stat = useReviewStat(variant === "default" ? product.odooId : undefined);
+  const rating = stat?.average ?? product.rating;
+  const reviewCount = stat?.count ?? product.reviewCount;
+  const hasRating = rating != null && !!reviewCount;
 
   const imageSrc = product.primaryImage ?? productImages[product.id];
 
@@ -57,7 +63,7 @@ export function ProductCard({ product, className = "", variant = "default", onQu
   if (variant === "cart-recommendation") {
     const requiresSelection = productRequiresSelection(product);
     return (
-      <div className={clsx("flex items-center gap-3 py-1.5", className)}>
+      <div data-product-card className={clsx("flex items-center gap-3 py-1.5", className)}>
         <Link to={`/product/${product.slug}`} onClick={onView} className="shrink-0">
           <ProductMedia src={imageSrc} alt={product.name} icon={product.icon} className="w-11 h-11 rounded-lg border border-line" iconClassName="w-4 h-4" />
         </Link>
@@ -88,8 +94,9 @@ export function ProductCard({ product, className = "", variant = "default", onQu
 
   return (
     <div
+      data-product-card
       className={clsx(
-        "group relative flex bg-white border border-line rounded-2xl overflow-hidden shadow-card transition-shadow hover:shadow-lift",
+        "group relative flex bg-white border border-line rounded-2xl overflow-hidden shadow-card transition-[box-shadow,transform] duration-300 hover:shadow-lift hover:-translate-y-0.5 motion-reduce:hover:translate-y-0",
         isList ? "flex-row" : "flex-col",
         className
       )}
@@ -97,6 +104,15 @@ export function ProductCard({ product, className = "", variant = "default", onQu
       <Link to={`/product/${product.slug}`} onClick={onView} className={clsx("block", isList && "w-32 sm:w-52 shrink-0 self-stretch")}>
         <ProductMedia src={imageSrc} alt={product.name} icon={product.icon} className={clsx("w-full", isList ? "h-full min-h-[8rem]" : "aspect-square")} />
       </Link>
+      {product.hasVideo && (
+        <span
+          title="Has video"
+          className="pointer-events-none absolute top-3 left-3 z-10 inline-flex items-center gap-1 rounded-full bg-ink/80 px-2 py-1 text-white backdrop-blur"
+        >
+          <Video className="w-3.5 h-3.5" aria-hidden />
+          <span className="sr-only">This product has a video</span>
+        </span>
+      )}
       <button
         type="button"
         onClick={() => toggleWishlist(product.id)}
@@ -127,8 +143,8 @@ export function ProductCard({ product, className = "", variant = "default", onQu
           {hasRating ? (
             <>
               <Star className="w-3.5 h-3.5 fill-gold text-gold" />
-              <span className="text-[12.5px] font-semibold">{product.rating!.toFixed(1)}</span>
-              <span className="text-[11.5px] text-steel-500">({product.reviewCount})</span>
+              <span className="text-[12.5px] font-semibold">{rating!.toFixed(1)}</span>
+              <span className="text-[11.5px] text-steel-500">({reviewCount})</span>
             </>
           ) : (
             <>
@@ -139,8 +155,15 @@ export function ProductCard({ product, className = "", variant = "default", onQu
         </div>
 
         <div className="mt-auto flex items-baseline gap-2 pt-1">
-          <span className="price text-[17px] font-bold text-sale">{formatINR(product.price)}</span>
-          {product.mrp && <span className="price text-[13px] text-steel-500 line-through">{formatINR(product.mrp)}</span>}
+          {product.mrp && product.mrp > product.price ? (
+            // On sale: the new price in red, the old price struck through in black (like H&M).
+            <>
+              <span className="price text-[15px] font-bold text-sale">{formatINR(product.price)}</span>
+              <span className="price text-[13px] text-ink line-through">{formatINR(product.mrp)}</span>
+            </>
+          ) : (
+            <span className="price text-[15px] font-bold text-ink">{formatINR(product.price)}</span>
+          )}
         </div>
 
         {productRequiresSelection(product) ? (

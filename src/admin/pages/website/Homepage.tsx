@@ -26,6 +26,15 @@ const SECTION_LABELS: Record<string, string> = {
   "vehicle-shop-split": "Shop by Cars / Bikes",
   "category-strip": "Category Icon Strip",
   trending: "Trending",
+  "trending-accessories": "Trending Accessories",
+  "blog-latest": "Latest from the blog",
+  "feature-block-1": "Feature Block 1 (text + picture)",
+  "feature-block-2": "Feature Block 2 (text + picture)",
+  "feature-block-3": "Feature Block 3 (text + picture)",
+  "feature-block-4": "Feature Block 4 (text + picture)",
+  "image-banner-1": "Image Banner 1 (landscape)",
+  "image-banner-2": "Image Banner 2 (landscape)",
+  "image-banner-3": "Image Banner 3 (landscape)",
   "perfect-vehicle": "Perfect Vehicle (Popular / New)",
   brands: "Brands",
   "top-categories-car": "Top Categories — Car",
@@ -260,6 +269,24 @@ export default function Homepage() {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-display uppercase text-[12px] text-steel-500">{sectionFields[selected.sectionKey].title}</h3>
                 <EditorToolbar dirty={dirty} canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} />
+              </div>
+              {/* On/off switch for the whole section (same flag as the eye icon in the list, easier to find). */}
+              <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-line bg-steel-50 px-3 py-2.5">
+                <div>
+                  <div className="text-[13px] font-semibold">Show on website</div>
+                  <div className="text-[11.5px] text-steel-500">{selected.visible ? "On — visitors see it once you publish." : "Off — hidden from visitors once you publish."}</div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={selected.visible}
+                  aria-label="Show this section on the website"
+                  disabled={selected.isRequired}
+                  onClick={() => toggleVisible(selected)}
+                  className={clsx("relative h-6 w-11 shrink-0 rounded-full transition-colors disabled:opacity-40", selected.visible ? "bg-emerald-600" : "bg-steel-300")}
+                >
+                  <span className={clsx("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]", selected.visible ? "left-[22px]" : "left-0.5")} />
+                </button>
               </div>
               <SectionInspector sectionKey={selected.sectionKey} content={liveContent} onChange={updateLive} />
               <button type="button" onClick={saveSelected} disabled={!dirty || saving} className="btn-outline disabled:opacity-50 mt-4">

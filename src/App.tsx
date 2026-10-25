@@ -11,7 +11,13 @@ import Shop from "./pages/Shop";
 import ProductDetail from "./pages/ProductDetail";
 import About from "./pages/About";
 import Brands from "./pages/Brands";
+import CarModels from "./pages/CarModels";
+import CarModelPage from "./pages/CarModelPage";
+import Deals from "./pages/Deals";
 import Contact from "./pages/Contact";
+import Faq from "./pages/Faq";
+import Blog from "./pages/Blog";
+import BlogPost from "./pages/BlogPost";
 import Cart from "./pages/Cart";
 import CheckoutRedirect from "./pages/CheckoutRedirect";
 // LEGACY/FALLBACK — no longer routed; see Documentations MD/odoo-native-checkout.md. Kept
@@ -39,7 +45,6 @@ import NotFound from "./pages/NotFound";
 
 import { AdminToastProvider } from "./admin/components/AdminToastProvider";
 import { RequireAdminRole, RoleRoute } from "./admin/components/RequireAdminRole";
-import { AdminPlaceholder } from "./admin/components/AdminPlaceholder";
 // Every admin page (and AdminLayout itself) is lazy-loaded — performance pass, 2026-10-13 (see
 // Documentations MD/storefront-performance-2026-10.md). Previously all ~27 of these were imported
 // eagerly at the top of this file, so every storefront visitor's initial bundle included the
@@ -52,7 +57,11 @@ const Homepage = lazy(() => import("./admin/pages/website/Homepage"));
 const HomeSectionEditor = lazy(() => import("./admin/pages/website/HomeSectionEditor"));
 const HeroEditor = lazy(() => import("./admin/pages/website/Hero"));
 const AnnouncementEditor = lazy(() => import("./admin/pages/website/Announcement"));
+const TrustStripEditor = lazy(() => import("./admin/pages/website/TrustStrip"));
+const BlogList = lazy(() => import("./admin/pages/website/BlogList"));
+const BlogEditor = lazy(() => import("./admin/pages/website/BlogEditor"));
 const PromotionsEditor = lazy(() => import("./admin/pages/website/Promotions"));
+const DealsAdmin = lazy(() => import("./admin/pages/website/Deals"));
 const NavigationEditor = lazy(() => import("./admin/pages/website/Navigation"));
 const FooterEditor = lazy(() => import("./admin/pages/website/Footer"));
 const SeoEditor = lazy(() => import("./admin/pages/website/Seo"));
@@ -64,7 +73,6 @@ const Payments = lazy(() => import("./admin/pages/payments/Payments"));
 const Integrations = lazy(() => import("./admin/pages/system/Integrations"));
 const EmailDelivery = lazy(() => import("./admin/pages/system/EmailDelivery"));
 const AdminReviews = lazy(() => import("./admin/pages/reviews/Reviews"));
-const OdooStatus = lazy(() => import("./admin/pages/odoo/OdooStatus"));
 const ActivityLog = lazy(() => import("./admin/pages/settings/ActivityLog"));
 const AppearanceSettings = lazy(() => import("./admin/pages/settings/Appearance"));
 const AdminUsers = lazy(() => import("./admin/pages/settings/AdminUsers"));
@@ -113,7 +121,11 @@ export default function App() {
                   <Route path="website/homepage/:sectionKey" element={<RoleRoute path="/admin/website/homepage"><HomeSectionEditor /></RoleRoute>} />
                   <Route path="website/hero" element={<RoleRoute path="/admin/website/hero"><HeroEditor /></RoleRoute>} />
                   <Route path="website/announcement" element={<RoleRoute path="/admin/website/announcement"><AnnouncementEditor /></RoleRoute>} />
+                  <Route path="website/trust-strip" element={<RoleRoute path="/admin/website/trust-strip"><TrustStripEditor /></RoleRoute>} />
+                  <Route path="website/blog" element={<RoleRoute path="/admin/website/blog"><BlogList /></RoleRoute>} />
+                  <Route path="website/blog/:id" element={<RoleRoute path="/admin/website/blog"><BlogEditor /></RoleRoute>} />
                   <Route path="website/promotions" element={<RoleRoute path="/admin/website/promotions"><PromotionsEditor /></RoleRoute>} />
+                  <Route path="website/deals" element={<RoleRoute path="/admin/website/deals"><DealsAdmin /></RoleRoute>} />
                   <Route path="website/navigation" element={<RoleRoute path="/admin/website/navigation"><NavigationEditor /></RoleRoute>} />
                   <Route path="website/footer" element={<RoleRoute path="/admin/website/footer"><FooterEditor /></RoleRoute>} />
                   <Route path="website/seo" element={<RoleRoute path="/admin/website/seo"><SeoEditor /></RoleRoute>} />
@@ -124,13 +136,13 @@ export default function App() {
                   <Route path="merchandising/trending" element={<RoleRoute path="/admin/merchandising/trending"><TrendingProducts /></RoleRoute>} />
                   <Route path="merchandising/new-arrivals" element={<RoleRoute path="/admin/merchandising/new-arrivals"><NewArrivalsProducts /></RoleRoute>} />
                   <Route path="merchandising/categories" element={<RoleRoute path="/admin/merchandising/categories"><HomepageCategories /></RoleRoute>} />
-                  <Route path="merchandising/recommendations" element={<RoleRoute path="/admin/merchandising/recommendations"><AdminPlaceholder title="Recommendations" /></RoleRoute>} />
+                  <Route path="merchandising/recommendations" element={<Navigate to="/admin/merchandising/featured" replace />} />
 
                   <Route path="products" element={<RoleRoute path="/admin/products"><ProductBrowser /></RoleRoute>} />
                   <Route path="orders" element={<RoleRoute path="/admin/orders"><AdminOrders /></RoleRoute>} />
                   <Route path="orders/:id" element={<RoleRoute path="/admin/orders"><OrderDetail /></RoleRoute>} />
                   <Route path="payments" element={<RoleRoute path="/admin/payments"><Payments /></RoleRoute>} />
-                  <Route path="customers" element={<RoleRoute path="/admin/customers"><AdminPlaceholder title="Customers" /></RoleRoute>} />
+                  <Route path="customers" element={<Navigate to="/admin/orders" replace />} />
                   {/* Old locations kept as redirects so existing bookmarks keep working. */}
                   <Route path="carts" element={<Navigate to="/admin/analytics/carts" replace />} />
                   <Route path="visitors" element={<Navigate to="/admin/analytics/traffic" replace />} />
@@ -156,7 +168,7 @@ export default function App() {
                   {/* Folded into the new Payments page (filter by Odoo sync state) — old bookmarks redirect. */}
                   <Route path="system/odoo-sync" element={<Navigate to="/admin/payments" replace />} />
                   <Route path="system/email" element={<RoleRoute path="/admin/system/email"><EmailDelivery /></RoleRoute>} />
-                  <Route path="odoo/status" element={<RoleRoute path="/admin/odoo/status"><OdooStatus /></RoleRoute>} />
+                  <Route path="odoo/status" element={<Navigate to="/admin/system/integrations" replace />} />
                   <Route path="settings" element={<RoleRoute path="/admin/settings"><AppearanceSettings /></RoleRoute>} />
                   <Route path="settings/users" element={<RoleRoute path="/admin/settings/users"><AdminUsers /></RoleRoute>} />
                   <Route path="settings/security" element={<RoleRoute path="/admin/settings/security"><Security /></RoleRoute>} />
@@ -169,6 +181,12 @@ export default function App() {
                   <Route path="product/:slug" element={<ProductDetail />} />
                   <Route path="about" element={<About />} />
                   <Route path="brands" element={<Brands />} />
+                  <Route path="deals" element={<Deals />} />
+                  <Route path="cars" element={<CarModels />} />
+                  <Route path="cars/:slug" element={<CarModelPage />} />
+                  <Route path="faq" element={<Faq />} />
+                  <Route path="blog" element={<Blog />} />
+                  <Route path="blog/:slug" element={<BlogPost />} />
                   <Route path="contact" element={<Contact />} />
                   <Route path="cart" element={<Cart />} />
                   {/* Guest checkout (spec #10-11): no RequireAuth — Checkout.tsx itself branches on

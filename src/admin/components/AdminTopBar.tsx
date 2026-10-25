@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Menu, ChevronDown, LogOut, ArrowLeft } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../context/AuthContext";
-import { findNavItem } from "../services/adminAuth";
+import { matchNavLocation } from "../services/adminAuth";
 import { useOdooHealth } from "../hooks/useOdooHealth";
 
 interface AdminTopBarProps {
@@ -17,8 +17,7 @@ export function AdminTopBar({ onOpenMobileMenu }: AdminTopBarProps) {
   const { health, loading } = useOdooHealth();
   const [accountOpen, setAccountOpen] = useState(false);
 
-  const navItem = findNavItem(location.pathname);
-  const title = navItem?.label ?? "Delite Admin";
+  const title = matchNavLocation(location.pathname)?.item.label ?? "Delite Admin";
 
   const odooOk = health?.reachable && (health.legacyRpcAuthenticated || health.json2Authenticated);
 

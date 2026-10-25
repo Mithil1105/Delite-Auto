@@ -57,6 +57,38 @@ Included:
   (previously a mis-sized pill sat beside the default art's baked button while it downloaded).
   Header tightened at 1024px (nav/search gaps) — it overflowed the viewport by ~100px there.
 
+- PDP buy box (2026-10-16): "Pay with" → "Buy Now"; the "More Payment Options" text is replaced by
+  `PaymentMethods` badges (UPI, Cards, Net Banking, Cash on Delivery — generic icons, no third-party
+  logos, matching what checkout really supports); Share moved from the bottom of the buy box to a
+  round icon directly under the wishlist heart (uses `navigator.share`, falls back to copying the
+  link with a "Link copied" hint); the variant selector label now follows Odoo's attribute name —
+  a colour attribute shows colour chips labelled "Select Colour" (swatch dot when the value is a
+  valid CSS colour), another single attribute shows "Select <attribute>", and the generic/free-text
+  "Model" case keeps "Select Car Variant". Colour-chip mode is code-verified only: no live product
+  with a colour attribute was available to screenshot.
+
+- PDP promise strips (2026-10-16): the 30-day money-back and 2–3-day shipping lines are now two
+  full-width strips under the payment badges (replacing the chip row that sat above the accordion;
+  the COD/UPI/cards chip was dropped as it duplicates the payment badges).
+
+- Hero "extended background" model (2026-10-16, replaces the crop/anchor attempts above on explicit
+  request): the WHOLE photo is always shown (`contain`-style fit, never cropped, zoomed or moved) and
+  any leftover space on the sides / top is filled by a blurred, scaled copy of the same photo, with
+  the fitted photo's touching edges soft-faded for a seamless join. Wordmark, car, tagline and the
+  Shop Now pill are therefore always visible and the wordmark can never run into the nav. The pill
+  is placed in the photo's own coordinates (default art: over the baked button; uploaded photo: at
+  the admin's `buttonPosition`, now % of the PHOTO) at full proportional size on every screen.
+  Side effect: the admin's per-device focal point/zoom for the hero image no longer affects the
+  storefront (nothing is cropped). Verified at 14 viewports 320px→2560px (+ portrait): pill below
+  the tagline everywhere, wordmark below the nav, no horizontal scroll.
+
+- Favicon (2026-10-22): the placeholder `favicon.svg` is replaced by the Delite logo — the full
+  "Delite" wordmark from `public/images/brand/delite-logo.png` on a white rounded square, as
+  `favicon.ico` (16/32/48), `favicon-32.png`, `favicon-192.png` and a full-bleed white
+  `apple-touch-icon.png` (180).
+  Linked from `index.html`. The source logo is only 215×94px, so the 192/180 icons are upscaled —
+  swap in a higher-res logo and regenerate for crisper large icons.
+
 Not included (deferred): the review-card visual redesign (awaiting user's photos + link); the real
 PNG logo; a mega-menu.
 
@@ -108,6 +140,9 @@ None new.
 | Date       | Author | Change                                                    |
 |------------|--------|------------------------------------------------------------|
 | 2026-10-10 | Claude | Initial version: Shop toolbar/filters/grid-list view, header logo-left, drawer from right |
+| 2026-10-22 | Claude | Delite logo set as favicon (ico/png/apple-touch), old favicon.svg removed |
+| 2026-10-16 | Claude | Hero rebuilt as fit-whole-photo + extended blurred background (no crop); pill placed in photo coordinates |
+| 2026-10-16 | Claude | PDP: Buy Now text, payment badges, share under wishlist, attribute-aware variant label/colour chips |
 | 2026-10-14 | Claude | Hero Shop Now pill fully responsive (default + CMS image), preload-before-switch, header 1024px overflow fix |
 | 2026-10-11 | Claude | Hero CTA renamed "Shop Now" everywhere; mobile pill no longer overflows |
 | 2026-10-10 | Claude | PDP details tabs → accordion + quick-facts chips; header specs re-run (12/12) |

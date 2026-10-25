@@ -41,12 +41,26 @@ export type ProductTag = "new" | "trending" | "bestseller";
  * `ProductVariant`/`ProductColour` can point at the media it should switch the gallery to via
  * `mediaId`, without embedding the media itself.
  */
+/** A product video that lives on YouTube / Vimeo (a link stored in Odoo's gallery) — see EmbeddedVideo. */
+export interface ProductVideo {
+  provider: "youtube" | "vimeo" | "other";
+  videoId?: string;
+  /** Opens the video on its own site. */
+  watchUrl: string;
+  /** iframe source for the inline player; absent when the link can't be embedded (provider "other"). */
+  embedUrl?: string;
+  thumbnailUrl?: string;
+}
+
 export interface ProductMedia {
   id: string;
   type: "image" | "video";
+  /** For an embedded video: its thumbnail (or the entry's own picture). */
   src: string;
   alt: string;
   thumbnail?: string;
+  /** Present when this entry is a YouTube/Vimeo/other video link; plain files use type "video" with no `video`. */
+  video?: ProductVideo;
 }
 
 /** A purchasable variant of a product (e.g. "Fits Hyundai Creta 2020-23"), not a colour. */
@@ -171,6 +185,8 @@ export interface Product {
    * local mock catalog (which uses `productImages`/`categoryImages` instead).
    */
   primaryImage?: string;
+  /** The Odoo gallery has a video — product cards show a video badge. */
+  hasVideo?: boolean;
 }
 
 /**

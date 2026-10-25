@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { FLY_TO_CART_MS, flyToCart } from "../lib/motion/flyToCart";
 import type { Product, ProductDetail } from "../data/types";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { syncCart, track, type CartSnapshotItem } from "../lib/analytics/client";
@@ -252,12 +253,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
       if (options?.feedback === false) return;
 
+      const flew = flyToCart(); // visual only — see lib/motion/flyToCart.ts
       activityIdRef.current += 1;
       setRecentCartActivity({ type: "item-added", productId: product.id, timestamp: Date.now(), id: activityIdRef.current });
       // Only actually open at the drawer breakpoint — otherwise this would leave the raw flag
       // true from a mobile add, ready to pop the drawer open unprompted if the viewport later
       // grows (e.g. rotating a tablet) without another Add to Cart happening.
-      if (isDrawerBreakpoint) setIsCartDrawerOpenRaw(true);
+      // When the product image is flying to the header cart icon, let it land before the drawer
+      // slides over that icon.
+      if (isDrawerBreakpoint) {
+        if (flew) window.setTimeout(() => setIsCartDrawerOpenRaw(true), FLY_TO_CART_MS - 120);
+        else setIsCartDrawerOpenRaw(true);
+      }
     },
     [isDrawerBreakpoint]
   );

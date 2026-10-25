@@ -49,12 +49,18 @@ test.describe("Support role: sidebar, routes, and backend authorization agree", 
   test("sidebar + route + backend authorization all agree for the support role", async ({ page }) => {
     await signIn(page, SUPPORT_EMAIL!, SUPPORT_PASSWORD!);
 
-    for (const label of ["Overview", "Orders", "Payments", "Reviews", "Contact Enquiries", "Email Delivery", "Security"]) {
+    // Sidebar: one entry per job (related pages are tabs inside the page — see adminAuth.ts).
+    for (const label of ["Overview", "Orders & payments", "Reviews & messages", "System health", "Team & security"]) {
       await expect(page.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
-    for (const label of ["Admin Users", "Homepage", "Featured Products", "Integrations Health"]) {
+    for (const label of ["Homepage", "Deals & Offers", "Product lists", "Header & footer"]) {
       await expect(page.getByRole("link", { name: label, exact: true })).toHaveCount(0);
     }
+    // Tabs: support sees Security (but not Admin users) under Team & security, and Email delivery (but not Integrations) under System health.
+    await page.goto("/admin/settings/security");
+    await expect(page.getByRole("link", { name: "Admin users", exact: true })).toHaveCount(0);
+    await page.goto("/admin/system/email");
+    await expect(page.getByRole("link", { name: "Integrations", exact: true })).toHaveCount(0);
 
     for (const path of ["/admin/orders", "/admin/payments", "/admin/reviews", "/admin/contact", "/admin/settings/security"]) {
       await page.goto(path);

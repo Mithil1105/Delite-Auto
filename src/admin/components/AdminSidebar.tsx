@@ -1,7 +1,7 @@
-import { NavLink } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { X, PanelLeftClose, PanelLeft } from "lucide-react";
 import clsx from "clsx";
-import { ADMIN_NAV } from "../services/adminAuth";
+import { ADMIN_NAV, landingPath, matchNavLocation } from "../services/adminAuth";
 import type { AdminRole } from "../../context/AuthContext";
 
 interface AdminSidebarProps {
@@ -13,6 +13,8 @@ interface AdminSidebarProps {
 }
 
 export function AdminSidebar({ role, collapsed, mobileOpen, onCloseMobile, onToggleCollapsed }: AdminSidebarProps) {
+  const { pathname } = useLocation();
+  const activeItem = matchNavLocation(pathname)?.item;
   const groups = ADMIN_NAV.map((group) => ({
     ...group,
     items: group.items.filter((item) => item.roles.includes(role)),
@@ -44,31 +46,25 @@ export function AdminSidebar({ role, collapsed, mobileOpen, onCloseMobile, onTog
               {!collapsed && (
                 <div className="px-4 mb-1 text-[10.5px] font-semibold uppercase tracking-widish text-white/40">{group.label}</div>
               )}
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  className={({ isActive }) =>
-                    clsx(
+              {group.items.map((item) => {
+                const active = activeItem === item;
+                return (
+                  <Link
+                    key={item.path}
+                    to={landingPath(item, role)}
+                    onClick={onCloseMobile}
+                    aria-current={active ? "page" : undefined}
+                    className={clsx(
                       "flex items-center gap-3 px-4 py-2 text-[13.5px] transition-colors",
-                      isActive ? "bg-white/10 text-white font-semibold" : "text-white/70 hover:bg-white/5 hover:text-white"
-                    )
-                  }
-                  title={collapsed ? item.label : undefined}
-                >
-                  <item.icon className="w-4 h-4 shrink-0" />
-                  {!collapsed && (
-                    <span className="flex-1 truncate flex items-center gap-2">
-                      {item.label}
-                      {item.status === "placeholder" && (
-                        <span className="text-[9.5px] uppercase tracking-wide text-white/40 border border-white/20 rounded-full px-1.5 py-0.5 leading-none">
-                          Soon
-                        </span>
-                      )}
-                    </span>
-                  )}
-                </NavLink>
-              ))}
+                      active ? "bg-white/10 text-white font-semibold" : "text-white/70 hover:bg-white/5 hover:text-white"
+                    )}
+                    title={collapsed ? item.label : undefined}
+                  >
+                    <item.icon className="w-4 h-4 shrink-0" />
+                    {!collapsed && <span className="flex-1 truncate">{item.label}</span>}
+                  </Link>
+                );
+              })}
             </div>
           ))}
         </nav>

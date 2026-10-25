@@ -1,65 +1,81 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { BadgeCheck, Star, Upload, X } from "lucide-react";
+import { Star, Upload, X } from "lucide-react";
 import clsx from "clsx";
 import { useAuth } from "../../context/AuthContext";
 import { supabase } from "../../lib/supabaseClient";
-import { useProductReviews, type ReviewRow } from "../../hooks/useProductReviews";
-import { reviewMediaPublicUrl } from "../../lib/media/reviewMedia";
+import { useProductReviews } from "../../hooks/useProductReviews";
+import { ReviewCard, ReviewsDialog, type StarFilter } from "./ReviewsDialog";
+import { Dialog } from "../ui/Dialog";
 import { useLang } from "../../i18n/LanguageContext";
 
 const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
 const MAX_PHOTO_SIZE_BYTES = 8 * 1024 * 1024;
 const MAX_PHOTOS = 6;
 
-type SortMode = "newest" | "highest" | "lowest";
-type StarFilter = 0 | 1 | 2 | 3 | 4 | 5; // 0 = all
+/** Reviews shown on the page itself; the rest open in a pop-up with filters. */
+const INLINE_REVIEWS = 2;
 
-function RatingBreakdown({ breakdown, total, onFilter, activeFilter }: {
-  breakdown: Record<1 | 2 | 3 | 4 | 5, number>;
-  total: number;
-  activeFilter: StarFilter;
-  onFilter: (n: StarFilter) => void;
-}) {
+/** Myntra-style colour grading: dark green for 5 stars through light green, yellow and orange to red for 1 star. */
+const STAR_BAR_COLOR: Record<1 | 2 | 3 | 4 | 5, string> = { 5: "bg-emerald-600", 4: "bg-lime-500", 3: "bg-yellow-400", 2: "bg-orange-400", 1: "bg-red-500" };
+
+/** The average's colour follows the same scale, so a 4.7 reads green and a 2.4 reads orange at a glance. */
+function averageTone(avg: number): { text: string; star: string } {
+  if (avg >= 4) return { text: "text-emerald-700", star: "fill-emerald-600 text-emerald-600" };
+  if (avg >= 3) return { text: "text-lime-700", star: "fill-lime-600 text-lime-600" };
+  if (avg >= 2) return { text: "text-orange-600", star: "fill-orange-500 text-orange-500" };
+  return { text: "text-red-600", star: "fill-red-500 text-red-500" };
+}
+
+/** Same-size placeholder shown while the reviews load, so the section doesn't jump when they arrive. */
+function ReviewsSkeleton() {
+  const bar = "rounded-full bg-steel-100";
   return (
-    <div className="flex flex-col gap-1.5 max-w-sm">
-      {([5, 4, 3, 2, 1] as const).map((n) => {
-        const count = breakdown[n];
-        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
-        return (
-          <button
-            key={n}
-            type="button"
-            onClick={() => onFilter(activeFilter === n ? 0 : n)}
-            className={clsx(
-              "flex items-center gap-2 text-left group",
-              activeFilter === n ? "opacity-100" : "opacity-80 hover:opacity-100"
-            )}
-          >
-            <span className="w-10 text-[12px] text-steel-500 shrink-0">{n} star</span>
-            <span className="flex-1 h-2 bg-steel-100 rounded-full overflow-hidden">
-              <span
-                className={clsx("block h-full rounded-full", activeFilter === n ? "bg-brand-600" : "bg-gold")}
-                style={{ width: `${pct}%` }}
-              />
-            </span>
-            <span className="w-8 text-[11.5px] text-steel-500 text-right shrink-0">{count}</span>
-          </button>
-        );
-      })}
+    <div className="animate-pulse motion-reduce:animate-none" role="status" aria-label="Loading reviews">
+      <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-8">
+        <div className="shrink-0">
+          <div className="h-12 w-28 rounded-lg bg-steel-100" />
+          <div className="mt-3 h-4 w-20 rounded bg-steel-100" />
+        </div>
+        <div className="hidden w-px self-stretch bg-line sm:block" aria-hidden />
+        <div className="flex w-full max-w-md flex-col gap-3.5">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div key={i} className={`h-2.5 ${bar}`} style={{ width: `${90 - i * 12}%` }} />
+          ))}
+        </div>
+      </div>
+      <div className="mt-6 flex flex-col gap-6">
+        {[0, 1].map((i) => (
+          <div key={i} className="flex flex-col gap-2">
+            <div className="h-4 w-40 rounded bg-steel-100" />
+            <div className="h-4 w-56 rounded bg-steel-100" />
+            <div className="h-4 w-full max-w-xl rounded bg-steel-100" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function ReviewPhotoStrip({ paths }: { paths: string[] }) {
-  if (paths.length === 0) return null;
+/** Rating distribution: one coloured bar per star level; clicking a bar opens all reviews filtered to it. */
+function RatingBars({ breakdown, total, onFilter }: { breakdown: Record<1 | 2 | 3 | 4 | 5, number>; total: number; onFilter: (n: StarFilter) => void }) {
   return (
-    <div className="flex items-center gap-2 mt-2">
-      {paths.map((p) => (
-        <a key={p} href={reviewMediaPublicUrl(p)} target="_blank" rel="noreferrer" className="block w-14 h-14 rounded-lg overflow-hidden border border-line shrink-0">
-          <img src={reviewMediaPublicUrl(p)} alt="" className="w-full h-full object-cover" loading="lazy" />
-        </a>
-      ))}
+    <div className="flex w-full max-w-md flex-col gap-2">
+      {([5, 4, 3, 2, 1] as const).map((n) => {
+        const count = breakdown[n];
+        const pct = total > 0 ? Math.round((count / total) * 100) : 0;
+        return (
+          <button key={n} type="button" onClick={() => onFilter(n)} aria-label={`${n} star: ${count}`} className="group flex items-center gap-2.5 text-left">
+            <span className="flex w-9 shrink-0 items-center gap-0.5 text-[13px] font-semibold text-ink/80">
+              {n} <Star className="h-3 w-3 fill-ink/60 text-ink/60" />
+            </span>
+            <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-steel-100">
+              <span className={clsx("block h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none", STAR_BAR_COLOR[n])} style={{ width: `${pct}%` }} />
+            </span>
+            <span className="w-9 shrink-0 text-right text-[12.5px] text-steel-500 group-hover:text-ink">{count}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -83,19 +99,17 @@ export function ReviewsSection({ odooTemplateId }: { odooTemplateId?: number }) 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [writeOpen, setWriteOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [sort, setSort] = useState<SortMode>("newest");
-  const [starFilter, setStarFilter] = useState<StarFilter>(0);
-
-  const visibleReviews = useMemo(() => {
-    const filtered = starFilter === 0 ? reviews : reviews.filter((r) => r.rating === starFilter);
-    const sorted = [...filtered];
-    if (sort === "highest") sorted.sort((a, b) => b.rating - a.rating || Date.parse(b.created_at) - Date.parse(a.created_at));
-    else if (sort === "lowest") sorted.sort((a, b) => a.rating - b.rating || Date.parse(b.created_at) - Date.parse(a.created_at));
-    else sorted.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-    return sorted;
-  }, [reviews, sort, starFilter]);
+  // The pop-up with every review; a star bar opens it already filtered to that rating.
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogStar, setDialogStar] = useState<StarFilter>(0);
+  const openDialog = (star: StarFilter = 0) => {
+    setDialogStar(star);
+    setDialogOpen(true);
+  };
+  const latest = reviews.slice(0, INLINE_REVIEWS); // already newest-first
 
   if (!odooTemplateId) {
     return <p className="text-[14.5px] text-ink/75">{t("product.noReviewsYet")}</p>;
@@ -141,87 +155,47 @@ export function ReviewsSection({ odooTemplateId }: { odooTemplateId?: number }) 
     refresh();
   };
 
+  // Until the first answer arrives, show the placeholder instead of just the "Write a review" button.
+  if (loading && reviews.length === 0) return <div className="max-w-2xl"><ReviewsSkeleton /></div>;
+
   return (
     <div className="flex flex-col gap-8 max-w-2xl">
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-3">
-          {aggregate.count > 0 ? (
-            <>
-              <div className="flex items-center gap-0.5">
-                {Array.from({ length: 5 }, (_, i) => (
-                  <Star key={i} className={clsx("w-4 h-4", i < Math.round(aggregate.average!) ? "fill-gold text-gold" : "text-line")} />
-                ))}
+      <div className="flex flex-col gap-5">
+        {aggregate.count > 0 ? (
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-8">
+            <div className="shrink-0">
+              <div className="flex items-center gap-2">
+                <span className={clsx("text-5xl font-bold leading-none", averageTone(aggregate.average!).text)}>{aggregate.average!.toFixed(1)}</span>
+                <Star className={clsx("h-7 w-7", averageTone(aggregate.average!).star)} />
               </div>
-              <span className="text-[13px] font-semibold">{aggregate.average!.toFixed(1)}</span>
-              <span className="text-[12.5px] text-steel-500">({aggregate.count})</span>
-            </>
-          ) : (
-            !loading && <span className="text-[13px] text-steel-500">{t("product.noReviewsYet")}</span>
-          )}
-        </div>
-
-        {aggregate.count > 0 && (
-          <RatingBreakdown breakdown={aggregate.breakdown} total={aggregate.count} activeFilter={starFilter} onFilter={setStarFilter} />
+              <div className="mt-2 text-[13px] text-steel-500">{aggregate.count} {t("reviews.ratings")}</div>
+            </div>
+            <div className="hidden w-px self-stretch bg-line sm:block" aria-hidden />
+            <RatingBars breakdown={aggregate.breakdown} total={aggregate.count} onFilter={(n) => openDialog(n)} />
+          </div>
+        ) : (
+          !loading && <span className="text-[13px] text-steel-500">{t("product.noReviewsYet")}</span>
         )}
+        <button type="button" onClick={() => setWriteOpen(true)} className="btn-outline w-fit">{t("reviews.writeReview")}</button>
       </div>
 
       {reviews.length > 0 && (
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-1">
-              {starFilter !== 0 && (
-                <button
-                  type="button"
-                  onClick={() => setStarFilter(0)}
-                  className="inline-flex items-center gap-1 text-[12px] font-semibold text-brand-700 border border-brand-200 rounded-full px-2.5 py-1 hover:bg-brand-50"
-                >
-                  {starFilter} <Star className="w-3 h-3 fill-gold text-gold" /> <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortMode)}
-              className="h-9 px-2.5 border border-line text-[12.5px] bg-white focus:outline-none focus:border-ink"
-            >
-              <option value="newest">{t("reviews.sortNewest")}</option>
-              <option value="highest">{t("reviews.sortHighest")}</option>
-              <option value="lowest">{t("reviews.sortLowest")}</option>
-            </select>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col divide-y divide-line">
+            {latest.map((r) => (
+              <ReviewCard key={r.id} r={r} />
+            ))}
           </div>
-
-          {visibleReviews.length === 0 ? (
-            <p className="text-[13px] text-steel-500">{t("reviews.noReviewsMatchFilter")}</p>
-          ) : (
-            <div className="flex flex-col divide-y divide-line">
-              {visibleReviews.map((r: ReviewRow) => (
-                <div key={r.id} className="py-4">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <div className="flex items-center gap-1">
-                      {Array.from({ length: 5 }, (_, i) => (
-                        <Star key={i} className={clsx("w-3.5 h-3.5", i < r.rating ? "fill-gold text-gold" : "text-line")} />
-                      ))}
-                    </div>
-                    <span className="text-[12.5px] font-semibold">{r.reviewer_name || t("reviews.anonymous")}</span>
-                    {r.verified_purchase && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700">
-                        <BadgeCheck className="w-3.5 h-3.5" /> {t("reviews.verifiedPurchase")}
-                      </span>
-                    )}
-                  </div>
-                  {r.title && <div className="font-semibold text-[13.5px]">{r.title}</div>}
-                  {r.body && <p className="text-[13.5px] text-ink/75 mt-1">{r.body}</p>}
-                  <ReviewPhotoStrip paths={r.photo_paths} />
-                  <div className="text-[11.5px] text-steel-500 mt-1">{new Date(r.created_at).toLocaleDateString()}</div>
-                </div>
-              ))}
-            </div>
+          {reviews.length > INLINE_REVIEWS && (
+            <button type="button" onClick={() => openDialog(0)} className="btn-outline w-fit">
+              {t("reviews.seeAll").replace("{n}", String(reviews.length))}
+            </button>
           )}
+          <ReviewsDialog open={dialogOpen} onClose={() => setDialogOpen(false)} reviews={reviews} breakdown={aggregate.breakdown} initialStar={dialogStar} />
         </div>
       )}
 
-      <div className="border-t border-line pt-6">
-        <h3 className="font-display uppercase text-[13.5px] mb-4">{t("reviews.writeReview")}</h3>
+      <Dialog open={writeOpen} onClose={() => setWriteOpen(false)} title={t("reviews.writeReview")} size="md">
         {!configured ? (
           <p className="text-[13px] text-steel-500">{t("auth.notConfigured")}</p>
         ) : !user ? (
@@ -303,7 +277,7 @@ export function ReviewsSection({ odooTemplateId }: { odooTemplateId?: number }) 
             </button>
           </form>
         )}
-      </div>
+      </Dialog>
     </div>
   );
 }

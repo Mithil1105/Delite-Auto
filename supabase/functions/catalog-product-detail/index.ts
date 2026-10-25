@@ -9,8 +9,8 @@
 // Also enforces the same catalog eligibility domain as the list endpoint, so a non-catalog
 // record (or an unpublished product) can't be reached by guessing its id either.
 
-import { getOdooConfig, odooSearchRead } from "../_shared/odoo/client.ts";
-import { normalizeTemplates } from "../_shared/odoo/fetch.ts";
+import { getOdooConfig } from "../_shared/odoo/client.ts";
+import { normalizeTemplates, searchTemplates } from "../_shared/odoo/fetch.ts";
 import { CATALOG_ELIGIBILITY_DOMAIN, odooIdFromSlug, TEMPLATE_DETAIL_FIELDS } from "../_shared/odoo/catalog.ts";
 import type { OdooProductTemplateRecord } from "../_shared/odoo/types.ts";
 
@@ -36,7 +36,7 @@ Deno.serve(async (req: Request) => {
 
   try {
     const domain = [["id", "=", templateId], ...CATALOG_ELIGIBILITY_DOMAIN];
-    const templates = await odooSearchRead<OdooProductTemplateRecord & Record<string, unknown>>(config, "product.template", domain, TEMPLATE_DETAIL_FIELDS, {
+    const templates = await searchTemplates<OdooProductTemplateRecord & Record<string, unknown>>(config, domain, TEMPLATE_DETAIL_FIELDS, {
       limit: 1,
     });
     const template = templates[0];

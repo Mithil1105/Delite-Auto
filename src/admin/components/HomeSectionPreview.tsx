@@ -8,6 +8,9 @@ import { PillTabs } from "../../components/home/PillTabs";
 import { ProductCarousel } from "../../components/product/ProductCarousel";
 import { CategoryIconStrip } from "../../components/home/CategoryIconStrip";
 import { PromoBannerPair } from "../../components/home/PromoBannerPair";
+import { HomeImageBanner } from "../../components/home/HomeImageBanner";
+import { HomeBlogLatest } from "../../components/home/HomeBlogLatest";
+import { HomeFeatureBlock } from "../../components/home/HomeFeatureBlock";
 import { useMerchandisingCms, useMerchandisedProducts, useResolvedCategorySelections, type CategorySelection } from "../../hooks/useMerchandisingCms";
 import { mediaPublicUrl } from "./AdminMediaPicker";
 import { supabase } from "../../lib/supabaseClient";
@@ -53,6 +56,19 @@ export function HomeSectionPreview({
       return <CategoryTabsPreview content={content} tabs={CAR_TABS} />;
     case "top-categories-bike":
       return <CategoryTabsPreview content={content} tabs={BIKE_TABS} />;
+    case "feature-block-1":
+    case "feature-block-2":
+    case "feature-block-3":
+    case "feature-block-4":
+      return content.title || content.image || content.postId ? <HomeFeatureBlock content={content} /> : <p className="p-6 text-[13px] text-steel-500">Empty — fill in the fields on the right (or pick a blog post). Until then this block is not shown on the website.</p>;
+    case "blog-latest":
+      return <HomeBlogLatest title={String(content.title || "")} ctaLabel={String(content.ctaLabel || "")} />;
+    case "trending-accessories":
+      return <TrendingAccessoriesPreview content={content} />;
+    case "image-banner-1":
+    case "image-banner-2":
+    case "image-banner-3":
+      return content.image ? <HomeImageBanner content={content} /> : <p className="p-6 text-[13px] text-steel-500">No image yet — upload one on the right. Until then this space is empty on the website.</p>;
     case "trending":
       return <MerchandisedRailPreview content={content} merchKey="trending" tabs={[{ value: "car", labelKey: "carLabel", fallback: "Car" }, { value: "bike", labelKey: "bikeLabel", fallback: "Bike" }]} defaultTitle="Trending on Car & Bike" />;
     case "perfect-vehicle":
@@ -136,6 +152,26 @@ function CategoryTabsPreview({ content, tabs }: { content: Record<string, unknow
       ) : error ? (
         <ProductCatalogUnavailable key={retryKey} onRetry={() => setRetryKey((k) => k + 1)} />
       ) : loading || products === null ? (
+        <p className="text-[12.5px] text-steel-500">Loading products…</p>
+      ) : (
+        <ProductCarousel products={products} />
+      )}
+    </div>
+  );
+}
+
+function TrendingAccessoriesPreview({ content }: { content: Record<string, unknown> }) {
+  const ids = Array.isArray(content.productIds) ? (content.productIds as unknown[]).filter((id): id is number => Number.isSafeInteger(id)) : [];
+  const { products } = useMerchandisedProducts(ids);
+  return (
+    <div className="p-6">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xl heading">{String(content.title || "Trending Accessories")}</h2>
+        <span className="text-[12px] font-semibold text-brand-700">{String(content.ctaLabel || "View All")}</span>
+      </div>
+      {ids.length === 0 ? (
+        <p className="text-[12.5px] text-steel-500">No products picked — the website shows Odoo's trending category automatically.</p>
+      ) : products === null ? (
         <p className="text-[12.5px] text-steel-500">Loading products…</p>
       ) : (
         <ProductCarousel products={products} />

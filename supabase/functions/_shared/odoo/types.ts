@@ -91,4 +91,6 @@ export interface OdooProductImageRecord {
   product_variant_id?: OdooMany2One | false;
   /** Cache-versioning signal for this specific gallery image (see buildStorageMediaPath). */
   write_date?: string;
+  /** Odoo website_sale's "Video URL" on a gallery entry (YouTube/Vimeo/…). Only requested when the field exists — see fetchGalleryImagesByTemplateId. */
+  video_url?: string | false;
 }

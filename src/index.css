@@ -113,7 +113,7 @@
   /* Figma-homepage pill primitives — see Documentations MD/figma-homepage-redesign.md.
      Kept separate from .btn-* above so the existing pages keep their current buttons. */
   .btn-pill {
-    @apply inline-flex items-center justify-center gap-2 font-sans font-semibold text-[13.5px] px-6 py-3 rounded-full transition-colors duration-150 whitespace-nowrap;
+    @apply inline-flex items-center justify-center gap-2 font-sans font-semibold text-[13.5px] px-6 py-3 rounded-full transition-[color,background-color,border-color,transform,box-shadow] duration-150 whitespace-nowrap active:scale-[0.97] motion-reduce:active:scale-100;
   }
   .btn-pill-gold {
     @apply btn-pill bg-gold text-ink hover:bg-gold-600;
@@ -231,4 +231,38 @@
 .admin-sidebar-nav::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.46); }
 @media (prefers-reduced-motion: reduce) {
   .admin-glass *, .admin-legacy * { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+}
+
+/* ───────── Motion ─────────
+   Scroll reveals (components/motion/Reveal.tsx) and the route fade-in (components/Layout.tsx).
+   Compositor-only (opacity + transform) and fully disabled by prefers-reduced-motion. */
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 18px, 0);
+  transition: opacity 0.6s cubic-bezier(0.22, 0.7, 0.2, 1), transform 0.6s cubic-bezier(0.22, 0.7, 0.2, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+@keyframes page-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0); }
+  to { opacity: 1; transform: none; }
+}
+/* `backwards` (not `both`): once finished nothing is left applied to the page. */
+.page-in { animation: page-in 0.38s cubic-bezier(0.22, 0.7, 0.2, 1) backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .page-in { animation: none; }
+}
+
+/* Product-page trust strip: each message slides/fades in as the strip rotates. */
+@keyframes strip-rotate-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.strip-rotate-in { animation: strip-rotate-in 0.4s cubic-bezier(0.22, 0.7, 0.2, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .strip-rotate-in { animation: none; }
 }

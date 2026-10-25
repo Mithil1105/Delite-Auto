@@ -9,6 +9,7 @@
 // this file needs to change.
 
 import { odooSearchRead, type OdooConfig } from "./client.ts";
+import { parseVideoUrl, type ProductVideo } from "./video.ts";
 import type {
   OdooMany2One,
   OdooProductImageRecord,
@@ -286,8 +287,11 @@ export interface CatalogVariant {
 
 export interface CatalogMediaItem {
   id: string;
+  /** The picture to show. For a video entry: its thumbnail when the provider has one, else the entry's own Odoo image. */
   url: string;
   alt: string;
+  /** Present when this gallery entry is a video (Odoo's Video URL) — see _shared/odoo/video.ts. */
+  video?: ProductVideo;
 }
 
 export interface CatalogStockSummary {
@@ -313,6 +317,8 @@ export interface CatalogProduct {
   attributes: CatalogAttribute[];
   variants: CatalogVariant[];
   primaryImage: string;
+  /** True when the product's Odoo gallery has a video link — lists show a video badge; media[] (detail only) carries the video itself. */
+  hasVideo: boolean;
   media: CatalogMediaItem[];
   /** Odoo's own `active` flag on this product.template record — record-level, says nothing about inventory. */
   catalogActive: boolean;
@@ -411,6 +417,8 @@ export interface NormalizeProductArgs {
   supabaseUrl: string;
   /** Detail responses include a real gallery (product.image); list responses pass []. */
   galleryImages: OdooProductImageRecord[];
+  /** List responses (no gallery) pass this from a cheap batched lookup; detail derives it from galleryImages. */
+  hasVideo?: boolean;
 }
 
 export function normalizeProduct(args: NormalizeProductArgs): CatalogProduct {
@@ -420,11 +428,16 @@ export function normalizeProduct(args: NormalizeProductArgs): CatalogProduct {
   const templateWriteDate = typeof template.write_date === "string" ? template.write_date : undefined;
   const media: CatalogMediaItem[] = [
     { id: `${template.id}-primary`, url: buildMediaUrl(supabaseUrl, "product.template", template.id, "image_1024", templateWriteDate), alt: template.name },
-    ...galleryImages.map((img) => ({
-      id: `image-${img.id}`,
-      url: buildMediaUrl(supabaseUrl, "product.image", img.id, "image_1024", img.write_date),
-      alt: img.name || template.name,
-    })),
+    ...galleryImages.map((img): CatalogMediaItem => {
+      const imageUrl = buildMediaUrl(supabaseUrl, "product.image", img.id, "image_1024", img.write_date);
+      const video = parseVideoUrl(img.video_url);
+      return {
+        id: `image-${img.id}`,
+        url: video?.thumbnailUrl ?? imageUrl,
+        alt: img.name || template.name,
+        ...(video ? { video } : {}),
+      };
+    }),
   ];
 
   const anyVariantPurchasable = variants.some((v) => v.purchasable);
@@ -444,7 +457,8 @@ export function normalizeProduct(args: NormalizeProductArgs): CatalogProduct {
     price: template.list_price,
     // MRP has no backing Odoo field on this instance — never fabricated. See
     // Documentations MD/odoo-real-catalog.md, "MRP absence".
-    mrp: null,
+    // Sale: Odoo's "Compare to Price" (compare_list_price) when it is higher than the selling price; otherwise no sale.
+    mrp: typeof template.compare_list_price === "number" && template.compare_list_price > template.list_price ? template.compare_list_price : null,
     description: template.description_sale || undefined,
     categoryIds,
     categories: resolveCategoryRefs(categoryIds, categoryNameById),
@@ -454,6 +468,7 @@ export function normalizeProduct(args: NormalizeProductArgs): CatalogProduct {
     attributes,
     variants,
     primaryImage: buildMediaUrl(supabaseUrl, "product.template", template.id, "image_1024", templateWriteDate),
+    hasVideo: args.hasVideo ?? media.some((m) => !!m.video),
     media,
     catalogActive,
     purchasable,

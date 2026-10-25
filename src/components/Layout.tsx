@@ -16,7 +16,10 @@ export function Layout() {
     <div className="min-h-screen flex flex-col">
       <Header />
       <main className="flex-1">
-        <Outlet />
+        {/* Keyed by pathname only, so filter/query changes on the same page don't replay the fade. */}
+        <div key={pathname} className="page-in">
+          <Outlet />
+        </div>
       </main>
       <Footer />
       <Toast />
