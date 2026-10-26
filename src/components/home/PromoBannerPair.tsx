@@ -112,7 +112,8 @@ export function PromoBannerPair({
           const useMobileImage = device === "mobile" && !!promo.mobileImage;
           const activeImage = useMobileImage ? promo.mobileImage : promo.image;
           const activePositionSet = useMobileImage ? promo.mobileImagePosition ?? promo.imagePosition : promo.imagePosition;
-          const style = activeImage ? imagePositionStyleFor(activePositionSet, device) : undefined;
+          // Only crop/zoom when someone set a position for this image in the admin; otherwise show the whole picture (a "cover" crop cut the product art on narrow screens).
+          const style = activeImage && activePositionSet ? imagePositionStyleFor(activePositionSet, device) : undefined;
           return (
             <Link
               key={promo.id}
