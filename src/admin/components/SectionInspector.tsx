@@ -57,7 +57,7 @@ export const PRODUCT_TABS: Record<string, { key: string; label: string }[]> = {
   "feature-block-2": [{ key: "productIds", label: "Products under this block (optional row)" }],
   "feature-block-3": [{ key: "productIds", label: "Products under this block (optional row)" }],
   "feature-block-4": [{ key: "productIds", label: "Products under this block (optional row)" }],
-  "top-categories-bike": [{ key: "helmetsIds", label: "Helmets" }, { key: "coversIds", label: "Covers" }, { key: "saddlebagsIds", label: "Saddlebags" }, { key: "guardsIds", label: "Guards" }],
+  "top-categories-bike": [{ key: "allIds", label: "All Accessories" }, { key: "seatCoversIds", label: "Seat Covers" }, { key: "matsIds", label: "Mats" }, { key: "coversIds", label: "Covers" }],
 };
 
 /** The 9 "generic" Homepage sections' field config — a section not listed here (Hero) has its own

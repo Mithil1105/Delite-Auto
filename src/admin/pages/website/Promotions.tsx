@@ -8,6 +8,7 @@ import {
   listPromotions,
   publishPromotion,
   reorderPromotions,
+  setPromotionEnabled,
   updatePromotion,
   type PromotionInput,
   type PromotionRow,
@@ -134,6 +135,21 @@ export default function Promotions() {
     load();
   };
 
+  /** The feature flag: flips a promotion on or off for the website right away (it must also be Published to be visible). */
+  const onToggleEnabled = async (row: PromotionRow) => {
+    if (!user) return;
+    const next = !row.enabled;
+    setRows((prev) => prev?.map((r) => (r.id === row.id ? { ...r, enabled: next } : r)) ?? null);
+    const { error } = await setPromotionEnabled(row.id, next, user.id);
+    if (error) {
+      setRows((prev) => prev?.map((r) => (r.id === row.id ? { ...r, enabled: row.enabled } : r)) ?? null);
+      showToast(error, "error");
+      return;
+    }
+    showToast(next ? (row.status === "published" ? "Banner is ON — visible on the website" : "Enabled — publish it to show it on the website") : "Banner is OFF — hidden from the website");
+    logActivity("cms.promotion_toggled", "cms_promotion", row.id, { enabled: next });
+  };
+
   const onDelete = async (id: string) => {
     const { error } = await deletePromotion(id);
     if (error) {
@@ -197,9 +213,20 @@ export default function Promotions() {
             >
               {row.status}
             </span>
-            <span className={clsx("text-[10.5px] uppercase font-semibold px-2 py-1 shrink-0", row.enabled ? "text-ink" : "text-steel-300")}>
-              {row.enabled ? "Enabled" : "Disabled"}
-            </span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={row.enabled}
+              aria-label={`Show "${row.internalName}" on the website`}
+              title={row.enabled ? "On — click to hide from the website" : "Off — click to show on the website"}
+              onClick={() => onToggleEnabled(row)}
+              className="flex shrink-0 items-center gap-2"
+            >
+              <span className={clsx("relative h-6 w-11 rounded-full transition-colors", row.enabled ? "bg-emerald-600" : "bg-steel-300")}>
+                <span className={clsx("absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-[left]", row.enabled ? "left-[22px]" : "left-0.5")} />
+              </span>
+              <span className={clsx("w-7 text-left text-[11px] font-semibold uppercase", row.enabled ? "text-emerald-700" : "text-steel-500")}>{row.enabled ? "On" : "Off"}</span>
+            </button>
             <button type="button" onClick={() => startEdit(row)} className="text-[12px] font-semibold text-brand-700 hover:underline shrink-0">
               Edit
             </button>

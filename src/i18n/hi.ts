@@ -72,6 +72,7 @@ export const hi: Translations = {
     brandsSectionTitle: "ब्रांड्स के अनुसार खरीदें",
     tabCar: "कार",
     tabBike: "बाइक",
+    tabBikeAll: "सभी एक्सेसरीज़",
     categoryEmpty: "इस श्रेणी में अभी कोई उत्पाद नहीं है — जल्द ही देखें।",
     trendingAccessoriesTitle: "ट्रेंडिंग एक्सेसरीज़",
     topCategoriesCarTitle: "कार की टॉप श्रेणियां",

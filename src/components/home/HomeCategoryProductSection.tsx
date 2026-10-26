@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { Product } from "../../data/types";
@@ -23,6 +23,7 @@ export function HomeCategoryProductSection({
   products,
   loading = false,
   emptyLabel,
+  topSlot,
 }: {
   title: string;
   ctaLabel: string;
@@ -35,6 +36,8 @@ export function HomeCategoryProductSection({
   loading?: boolean;
   /** Shown when the tab has no products. */
   emptyLabel?: string;
+  /** Optional control shown above the tabs (the Car / Bike switch). */
+  topSlot?: ReactNode;
 }) {
   const railRef = useRef<RailHandle>(null);
   const [bounds, setBounds] = useState({ canScrollPrev: false, canScrollNext: false });
@@ -69,6 +72,7 @@ export function HomeCategoryProductSection({
           </div>
         </div>
       </div>
+      {topSlot && <div className="mb-3">{topSlot}</div>}
       <div className="mb-5">
         <PillTabs value={activeTab} onChange={onTabChange} options={tabs} variant="segmented" />
       </div>

@@ -6,6 +6,8 @@ import type { Product } from "../data/types";
 export interface CategoryTabSpec {
   /** Drops products tagged only for the other vehicle; omit to keep everything. */
   vehicle?: "car" | "bike";
+  /** With `vehicle`: ask Odoo only for that vehicle's products and keep only ones explicitly tagged for it (untagged products are left out). */
+  exact?: boolean;
   /** Odoo product-category id to list. */
   categoryId?: number;
   /** Name searches (each one query; results are merged, de-duplicated). */
@@ -23,7 +25,7 @@ function load(spec: CategoryTabSpec): Promise<Product[]> {
     const run = async () => {
       const pages = [];
       for (const q of spec.queries?.length ? spec.queries : [undefined]) {
-        pages.push(await catalogService.getProductsPage({ page: 1, pageSize: LIMIT, q, categoryId: spec.categoryId }));
+        pages.push(await catalogService.getProductsPage({ page: 1, pageSize: LIMIT, q, categoryId: spec.categoryId, vehicle: spec.exact ? spec.vehicle : undefined }));
       }
       return pages;
     };
@@ -35,7 +37,7 @@ function load(spec: CategoryTabSpec): Promise<Product[]> {
           .flatMap((p) => p.items)
           .filter((p) => !seen.has(p.id) && seen.add(p.id))
           // Untagged products fit either vehicle; only drop ones tagged exclusively for the other.
-          .filter((p) => !(other && p.vehicleTypes?.length && p.vehicleTypes.every((v) => v === other)))
+          .filter((p) => (spec.exact && spec.vehicle ? !!p.vehicleTypes?.includes(spec.vehicle) : !(other && p.vehicleTypes?.length && p.vehicleTypes.every((v) => v === other))))
           .slice(0, LIMIT);
       })
       .catch((err) => {

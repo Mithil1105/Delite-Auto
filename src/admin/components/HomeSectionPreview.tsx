@@ -111,10 +111,10 @@ const CAR_TABS = [
   { value: "care", key: "careLabel", fallback: "Care", idsKey: "careIds" },
 ];
 const BIKE_TABS = [
-  { value: "helmets", key: "helmetsLabel", fallback: "Helmets", idsKey: "helmetsIds" },
+  { value: "all", key: "allLabel", fallback: "All Accessories", idsKey: "allIds" },
+  { value: "seat-covers", key: "seatCoversLabel", fallback: "Seat Covers", idsKey: "seatCoversIds" },
+  { value: "mats", key: "matsLabel", fallback: "Mats", idsKey: "matsIds" },
   { value: "covers", key: "coversLabel", fallback: "Covers", idsKey: "coversIds" },
-  { value: "saddlebags", key: "saddlebagsLabel", fallback: "Saddlebags", idsKey: "saddlebagsIds" },
-  { value: "guards", key: "guardsLabel", fallback: "Guards", idsKey: "guardsIds" },
 ];
 
 function ProductCatalogUnavailable({ onRetry }: { onRetry: () => void }) {

@@ -111,6 +111,15 @@ export async function updatePromotion(id: string, input: PromotionInput, actorId
   return {};
 }
 
+/** The on/off flag for a promotion: only promotions that are Published AND enabled show on the website. */
+export async function setPromotionEnabled(id: string, enabled: boolean, actorId: string): Promise<{ error?: string }> {
+  if (!supabase) return { error: "cms-not-configured" };
+  const { data, error } = await supabase.from("cms_promotions").update({ enabled, updated_by: actorId, updated_at: new Date().toISOString() }).eq("id", id).select("id");
+  if (error) return { error: error.message };
+  if (!data || data.length === 0) return { error: PERMISSION_ERROR };
+  return {};
+}
+
 export async function publishPromotion(id: string, actorId: string): Promise<{ error?: string }> {
   if (!supabase) return { error: "cms-not-configured" };
   const { data, error } = await supabase

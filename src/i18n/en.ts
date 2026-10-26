@@ -69,6 +69,7 @@ export const en = {
     brandsSectionTitle: "Shop by Brands",
     tabCar: "Car",
     tabBike: "Bike",
+    tabBikeAll: "All Accessories",
     categoryEmpty: "No products in this category yet — check back soon.",
     topCategoriesCarTitle: "Shop by Top Categories in Car",
     tabSeatCovers: "Seat Covers",

@@ -72,6 +72,7 @@ export const gu: Translations = {
     brandsSectionTitle: "બ્રાન્ડ્સ પ્રમાણે ખરીદો",
     tabCar: "કાર",
     tabBike: "બાઇક",
+    tabBikeAll: "બધી એક્સેસરીઝ",
     categoryEmpty: "આ શ્રેણીમાં હજી કોઈ પ્રોડક્ટ નથી — ટૂંક સમયમાં જુઓ.",
     trendingAccessoriesTitle: "ટ્રેન્ડિંગ એક્સેસરીઝ",
     topCategoriesCarTitle: "કારની ટોપ શ્રેણીઓ",

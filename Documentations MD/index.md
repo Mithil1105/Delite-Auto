@@ -179,3 +179,7 @@ Template for new docs: [template.md](template.md)
 | 2026-10-23 | Claude | Published blog post "Protect Your Car with Smarter GPS Security" (en/hi/gu) and wired it into home Feature Block 1 with 8 GPS trackers; logo uploaded to marketing-media (blog.md). |
 | 2026-10-23 | Claude | Home: "Latest from the blog" moved above Testimonials; feature blocks got a "Show as plain page content" flag (homepage-feature-blocks.md). |
 | 2026-10-25 | Claude | Product cards now show real review stars site-wide (one batched rpc for all cards) instead of "No Reviews"; added product-card-ratings.md. |
+| 2026-10-26 | Claude | Home: "Shop by Top Categories" is now one block with a Car/Bike switch; bike tabs rebuilt from real bike products (home-category-tabs.md). Found a leftover E2E test promotion published on the live home page (not changed yet — awaiting go-ahead). |
+| 2026-10-26 | Claude | Promo banner layout fixed (single banner fills the row, pill button); real banner content still needed to replace the E2E test promotion (homepage-trending-accessories-and-banners.md). |
+| 2026-10-26 | Claude | Dummy promotion replaces the E2E test banner; Promotions admin gets an On/Off switch per promotion (homepage-trending-accessories-and-banners.md). |
+| 2026-10-26 | Claude | Promo banners: brand navy/blue gradient + gold button instead of purple (homepage-trending-accessories-and-banners.md). |

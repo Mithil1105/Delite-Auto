@@ -71,10 +71,11 @@ const CAR_TAB_SPECS: Record<string, CategoryTabSpec> = {
   care: { vehicle: "car", categoryId: 17 },
 };
 const BIKE_TAB_SPECS: Record<string, CategoryTabSpec> = {
-  helmets: { vehicle: "bike", queries: ["helmet"] },
-  covers: { vehicle: "bike", queries: ["bike cover", "scooter cover"] },
-  saddlebags: { vehicle: "bike", queries: ["saddle", "tank bag"] },
-  guards: { vehicle: "bike", queries: ["crash guard", "leg guard", "bike guard"] },
+  // Built from what the bike catalog really contains (bike-tagged products only): everything, seat covers, mats, covers.
+  all: { vehicle: "bike", exact: true },
+  "seat-covers": { vehicle: "bike", exact: true, queries: ["seat cover"] },
+  mats: { vehicle: "bike", exact: true, queries: ["mat"] },
+  covers: { vehicle: "bike", exact: true, queries: ["cover"] },
 };
 
 function SectionHead({ title, cta, onCta }: { title: string; cta?: string; onCta?: () => void }) {
@@ -145,24 +146,26 @@ export default function Home() {
   const carDashIds = sectionIds("top-categories-car", "dashCamsIds");
   const carMatsIds = sectionIds("top-categories-car", "matsIds");
   const carCareIds = sectionIds("top-categories-car", "careIds");
-  const bikeHelmetsIds = sectionIds("top-categories-bike", "helmetsIds");
+  const bikeAllIds = sectionIds("top-categories-bike", "allIds");
+  const bikeSeatIds = sectionIds("top-categories-bike", "seatCoversIds");
+  const bikeMatsIds = sectionIds("top-categories-bike", "matsIds");
   const bikeCoversIds = sectionIds("top-categories-bike", "coversIds");
-  const bikeSaddlebagsIds = sectionIds("top-categories-bike", "saddlebagsIds");
-  const bikeGuardsIds = sectionIds("top-categories-bike", "guardsIds");
   const { products: carSeatProducts } = useMerchandisedProducts(carSeatIds);
   const { products: carDashProducts } = useMerchandisedProducts(carDashIds);
   const { products: carMatsProducts } = useMerchandisedProducts(carMatsIds);
   const { products: carCareProducts } = useMerchandisedProducts(carCareIds);
-  const { products: bikeHelmetsProducts } = useMerchandisedProducts(bikeHelmetsIds);
+  const { products: bikeAllProducts } = useMerchandisedProducts(bikeAllIds);
+  const { products: bikeSeatProducts } = useMerchandisedProducts(bikeSeatIds);
+  const { products: bikeMatsProducts } = useMerchandisedProducts(bikeMatsIds);
   const { products: bikeCoversProducts } = useMerchandisedProducts(bikeCoversIds);
-  const { products: bikeSaddlebagsProducts } = useMerchandisedProducts(bikeSaddlebagsIds);
-  const { products: bikeGuardsProducts } = useMerchandisedProducts(bikeGuardsIds);
 
   const [trendingVehicle, setTrendingVehicle] = useState<"car" | "bike">("car");
   const [vehicleTab, setVehicleTab] = useState<"popular" | "new">("popular");
   const [brandsVehicle, setBrandsVehicle] = useState<"car" | "bike">("car");
   const [carCategoryTab, setCarCategoryTab] = useState<"seat-covers" | "dash-cams" | "mats" | "care">("seat-covers");
-  const [bikeCategoryTab, setBikeCategoryTab] = useState<"helmets" | "covers" | "saddlebags" | "guards">("helmets");
+  const [bikeCategoryTab, setBikeCategoryTab] = useState<"all" | "seat-covers" | "mats" | "covers">("all");
+  // One "Shop by Top Categories" block with a Car / Bike switch (it takes the car section's slot in the page order).
+  const [catVehicle, setCatVehicle] = useState<"car" | "bike">("car");
 
   const trending = useMemo(() => {
     if (trendingIds.length > 0) {
@@ -198,9 +201,9 @@ export default function Home() {
     trendingAccIds.length > 0 ? trendingAccCurated ?? [] : IS_REAL_CATALOG ? (trendingAccLive ?? []).slice(0, 8) : products.filter((p) => p.tag === "trending" || p.tag === "bestseller").slice(0, 8);
 
   const carHasCurated = (carCategoryTab === "seat-covers" ? carSeatIds : carCategoryTab === "dash-cams" ? carDashIds : carCategoryTab === "mats" ? carMatsIds : carCareIds).length > 0;
-  const bikeHasCurated = (bikeCategoryTab === "helmets" ? bikeHelmetsIds : bikeCategoryTab === "covers" ? bikeCoversIds : bikeCategoryTab === "saddlebags" ? bikeSaddlebagsIds : bikeGuardsIds).length > 0;
-  const carLive = useCategoryTabProducts(IS_REAL_CATALOG && !carHasCurated ? CAR_TAB_SPECS[carCategoryTab] : null);
-  const bikeLive = useCategoryTabProducts(IS_REAL_CATALOG && !bikeHasCurated ? BIKE_TAB_SPECS[bikeCategoryTab] : null);
+  const bikeHasCurated = (bikeCategoryTab === "all" ? bikeAllIds : bikeCategoryTab === "seat-covers" ? bikeSeatIds : bikeCategoryTab === "mats" ? bikeMatsIds : bikeCoversIds).length > 0;
+  const carLive = useCategoryTabProducts(IS_REAL_CATALOG && catVehicle === "car" && !carHasCurated ? CAR_TAB_SPECS[carCategoryTab] : null);
+  const bikeLive = useCategoryTabProducts(IS_REAL_CATALOG && catVehicle === "bike" && !bikeHasCurated ? BIKE_TAB_SPECS[bikeCategoryTab] : null);
 
   const carCategoryProducts = (() => {
     if (IS_REAL_CATALOG && !carHasCurated) return carLive ?? [];
@@ -217,15 +220,14 @@ export default function Home() {
 
   const bikeCategoryProducts = (() => {
     if (IS_REAL_CATALOG && !bikeHasCurated) return bikeLive ?? [];
-    const curated = bikeCategoryTab === "helmets" ? [bikeHelmetsIds, bikeHelmetsProducts] as const : bikeCategoryTab === "covers" ? [bikeCoversIds, bikeCoversProducts] as const : bikeCategoryTab === "saddlebags" ? [bikeSaddlebagsIds, bikeSaddlebagsProducts] as const : [bikeGuardsIds, bikeGuardsProducts] as const;
+    const curated = bikeCategoryTab === "all" ? [bikeAllIds, bikeAllProducts] as const : bikeCategoryTab === "seat-covers" ? [bikeSeatIds, bikeSeatProducts] as const : bikeCategoryTab === "mats" ? [bikeMatsIds, bikeMatsProducts] as const : [bikeCoversIds, bikeCoversProducts] as const;
     if (curated[0].length) return curated[1] ?? [];
     let list: typeof products = [];
-    if (bikeCategoryTab === "helmets") list = products.filter((p) => p.categorySlug === "helmets");
+    if (bikeCategoryTab === "seat-covers") list = products.filter((p) => p.vehicle === "bike" && p.categorySlug === "seat-covers");
+    else if (bikeCategoryTab === "mats") list = products.filter((p) => p.vehicle === "bike" && p.categorySlug === "floor-mats");
     else if (bikeCategoryTab === "covers") list = products.filter((p) => p.categorySlug === "bike-covers");
-    else if (bikeCategoryTab === "saddlebags") list = products.filter((p) => p.categorySlug === "saddlebags");
-    else list = products.filter((p) => p.categorySlug === "bike-guards");
     if (list.length > 0) return list;
-    return products.filter((p) => p.vehicle === "bike" || p.vehicle === "universal" || p.vehicle === "unknown").slice(0, 8);
+    return products.filter((p) => p.vehicle === "bike").slice(0, 8);
   })();
 
   // Real photo for the default (no-CMS-promotion) PromoBannerPair cards — the same curated
@@ -372,19 +374,38 @@ export default function Home() {
 
     "top-categories-car": (
       <HomeCategoryProductSection
-        title={sectionText("top-categories-car", "title", t("home.topCategoriesCarTitle"))}
-        ctaLabel={sectionText("top-categories-car", "ctaLabel", t("home.viewAll"))}
-        ctaHref={sectionLink("top-categories-car", "ctaLink", "/shop?vehicle=car")}
-        activeTab={carCategoryTab}
-        onTabChange={(v) => setCarCategoryTab(v as typeof carCategoryTab)}
-        tabs={[
-          { value: "seat-covers", label: sectionText("top-categories-car", "seatCoversLabel", t("home.tabSeatCovers")), icon: "Armchair" },
-          { value: "dash-cams", label: sectionText("top-categories-car", "dashCamsLabel", t("home.tabDashCams")), icon: "Camera" },
-          { value: "mats", label: sectionText("top-categories-car", "matsLabel", t("home.tabMats")), icon: "Grid2x2" },
-          { value: "care", label: sectionText("top-categories-car", "careLabel", t("home.tabCare")), icon: "SprayCan" },
-        ]}
-        products={carCategoryProducts}
-        loading={IS_REAL_CATALOG && !carHasCurated && carLive === null}
+        title={catVehicle === "car" ? sectionText("top-categories-car", "title", t("home.topCategoriesCarTitle")) : sectionText("top-categories-bike", "title", t("home.topCategoriesBikeTitle"))}
+        ctaLabel={sectionText(catVehicle === "car" ? "top-categories-car" : "top-categories-bike", "ctaLabel", t("home.viewAll"))}
+        ctaHref={catVehicle === "car" ? sectionLink("top-categories-car", "ctaLink", "/shop?vehicle=car") : sectionLink("top-categories-bike", "ctaLink", "/shop?vehicle=bike")}
+        topSlot={
+          <PillTabs
+            value={catVehicle}
+            onChange={(v) => setCatVehicle(v as "car" | "bike")}
+            options={[
+              { value: "car", label: t("home.tabCar"), icon: "Car" },
+              { value: "bike", label: t("home.tabBike"), icon: "Bike" },
+            ]}
+          />
+        }
+        activeTab={catVehicle === "car" ? carCategoryTab : bikeCategoryTab}
+        onTabChange={(v) => (catVehicle === "car" ? setCarCategoryTab(v as typeof carCategoryTab) : setBikeCategoryTab(v as typeof bikeCategoryTab))}
+        tabs={
+          catVehicle === "car"
+            ? [
+                { value: "seat-covers", label: sectionText("top-categories-car", "seatCoversLabel", t("home.tabSeatCovers")), icon: "Armchair" },
+                { value: "dash-cams", label: sectionText("top-categories-car", "dashCamsLabel", t("home.tabDashCams")), icon: "Camera" },
+                { value: "mats", label: sectionText("top-categories-car", "matsLabel", t("home.tabMats")), icon: "Grid2x2" },
+                { value: "care", label: sectionText("top-categories-car", "careLabel", t("home.tabCare")), icon: "SprayCan" },
+              ]
+            : [
+                { value: "all", label: sectionText("top-categories-bike", "allLabel", t("home.tabBikeAll")), icon: "Bike" },
+                { value: "seat-covers", label: sectionText("top-categories-bike", "seatCoversLabel", t("home.tabSeatCovers")), icon: "Armchair" },
+                { value: "mats", label: sectionText("top-categories-bike", "matsLabel", t("home.tabMats")), icon: "Grid2x2" },
+                { value: "covers", label: sectionText("top-categories-bike", "coversLabel", t("home.tabCovers")), icon: "Umbrella" },
+              ]
+        }
+        products={catVehicle === "car" ? carCategoryProducts : bikeCategoryProducts}
+        loading={IS_REAL_CATALOG && (catVehicle === "car" ? !carHasCurated && carLive === null : !bikeHasCurated && bikeLive === null)}
         emptyLabel={t("home.categoryEmpty")}
       />
     ),
@@ -400,24 +421,8 @@ export default function Home() {
       </FullBleedSection>
     ),
 
-    "top-categories-bike": (
-      <HomeCategoryProductSection
-        title={sectionText("top-categories-bike", "title", t("home.topCategoriesBikeTitle"))}
-        ctaLabel={sectionText("top-categories-bike", "ctaLabel", t("home.viewAll"))}
-        ctaHref={sectionLink("top-categories-bike", "ctaLink", "/shop?vehicle=bike")}
-        activeTab={bikeCategoryTab}
-        onTabChange={(v) => setBikeCategoryTab(v as typeof bikeCategoryTab)}
-        tabs={[
-          { value: "helmets", label: sectionText("top-categories-bike", "helmetsLabel", t("home.tabHelmets")), icon: "HardHat" },
-          { value: "covers", label: sectionText("top-categories-bike", "coversLabel", t("home.tabCovers")), icon: "Umbrella" },
-          { value: "saddlebags", label: sectionText("top-categories-bike", "saddlebagsLabel", t("home.tabSaddlebags")), icon: "Backpack" },
-          { value: "guards", label: sectionText("top-categories-bike", "guardsLabel", t("home.tabGuards")), icon: "ShieldCheck" },
-        ]}
-        products={bikeCategoryProducts}
-        loading={IS_REAL_CATALOG && !bikeHasCurated && bikeLive === null}
-        emptyLabel={t("home.categoryEmpty")}
-      />
-    ),
+    // Shown inside the combined "Shop by Top Categories" block above (Car / Bike switch) - nothing to render on its own.
+    "top-categories-bike": null,
 
     testimonials: (
       <FullBleedSection spacing="normal" containerSize="wide">

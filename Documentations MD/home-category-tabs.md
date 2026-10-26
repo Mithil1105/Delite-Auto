@@ -10,7 +10,7 @@
 | Owner          | Claude                                   |
 | Status         | Done — verified in headless Chromium against the live catalog; not committed |
 | Created        | 2026-10-22                               |
-| Last updated   | 2026-10-22                               |
+| Last updated   | 2026-10-26 |
 
 ## Summary
 
@@ -38,6 +38,9 @@ Out: admin-curated ids (unchanged, still win), the section header/layout.
   the mock catalog keeps its old slug filters.
 - `HomeCategoryProductSection` shows a loading dash or the "No products in this category yet" message (`home.categoryEmpty`, en/hi/gu) instead of an empty rail.
 
+- **Update 2026-10-26 — one block with a Car / Bike switch.** The two separate home sections are now one "Shop by Top Categories" block: a Car | Bike pill switch above the category tabs. It sits in the car section's slot in the page order; the "Top Categories — Bike" section still exists in Admin → Homepage but only supplies the bike tab labels, picked products and the bike heading/link (its own position no longer matters and it renders nothing on its own).
+- The bike tabs were empty because Odoo has no helmets/saddlebags/guards products (only 28 bike-tagged products). Bike tabs are now built from what exists: **All Accessories**, **Seat Covers**, **Mats**, **Covers** (bike-tagged products only — `exact` option in `useCategoryTabProducts`). Admin fields: `allIds/seatCoversIds/matsIds/coversIds` (+ labels). Nothing had been saved for the old Helmets/Saddlebags/Guards keys.
+
 ## Interfaces / data
 
 No schema or API change. Uses existing `catalog-products` params `q`, `category`.
@@ -52,7 +55,7 @@ Headless run on the live catalog: Seat Covers 10, Dash Cams 5, Mats 12, Care 12 
 
 ## Known issues / follow-ups
 
-- Odoo has no helmets/saddlebags/guards products yet, so those bike tabs are empty until added (or curated in admin).
+- Add helmets/guards/saddlebags to Odoo (tagged BIKE) and they can get their own tabs; for now the bike tabs follow the 28 bike products that exist.
 - Odoo's "CAR CARE" category contains unrelated items (e.g. a circlip plier); fix the category in Odoo or curate that tab in the admin.
 
 ## Revision log
@@ -60,3 +63,4 @@ Headless run on the live catalog: Seat Covers 10, Dash Cams 5, Mats 12, Care 12 
 | Date       | Author | Change                                  |
 |------------|--------|------------------------------------------|
 | 2026-10-22 | Claude | Initial version                          |
+| 2026-10-26 | Claude | Merged Car and Bike category sections into one block with a Car/Bike switch; bike tabs rebuilt from real bike products (All / Seat Covers / Mats / Covers). |

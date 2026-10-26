@@ -1,4 +1,5 @@
 import { useRef, type CSSProperties } from "react";
+import clsx from "clsx";
 import { Link } from "react-router-dom";
 import { useLang } from "../../i18n/LanguageContext";
 import type { PromoBannerContent } from "../../hooks/usePromotions";
@@ -14,14 +15,17 @@ function imagePositionStyleFor(byDevice: ImagePositionByDevice | null | undefine
 /** Shared "product art bleeding off the right edge" treatment — used both for a real published
  * CMS promotion image and for the default banners' real curated-product image (never a generic
  * icon standing in for a product, per the Figma reference). */
-function PromoArt({ src, style }: { src?: string; style?: CSSProperties }) {
+function PromoArt({ src, style, large = false }: { src?: string; style?: CSSProperties; large?: boolean }) {
   if (src) {
     return (
       <img
         src={src}
         alt=""
         style={style}
-        className="relative z-0 h-[110%] max-h-[190px] w-auto max-w-[46%] object-contain object-right shrink-0 -mr-2 sm:-mr-3"
+        className={clsx(
+          "relative z-0 h-[110%] w-auto object-contain object-right shrink-0 -mr-2 sm:-mr-3",
+          large ? "max-h-[190px] sm:max-h-[260px] max-w-[46%] sm:max-w-[42%]" : "max-h-[190px] max-w-[46%]"
+        )}
       />
     );
   }
@@ -35,10 +39,10 @@ function PromoArt({ src, style }: { src?: string; style?: CSSProperties }) {
   );
 }
 
-/** Alternates the two default gradients for any number of CMS-published promotions — real
- * uploaded images (when set) win over the gradient+icon placeholder. Purple→blue / purple→light-
- * blue, matching the Figma reference's "Best Combo Deals" / "New Launch" cards. */
-const GRADIENTS = ["from-[#5b3fc4] to-[#3f6fd8]", "from-[#6a3fc4] to-[#8fb8f0]"];
+/** Alternates the two gradients for any number of CMS-published promotions — real uploaded images (when set) win over
+ * the placeholder device. Brand colours (deep navy ↔ royal blue, the same blue as the announcement bar) so the banners
+ * sit in the site theme instead of the old purple. */
+const GRADIENTS = ["from-brand-700 to-brand-500", "from-brand-500 to-brand-700"];
 
 const SURFACE = "home_promo";
 const promoMeta = (id: string, label: string) => ({ promotion_id: id, label: label.slice(0, 60) });
@@ -96,8 +100,12 @@ export function PromoBannerPair({
 
   if (promotions && promotions.length > 0) {
     return (
-      <div ref={ref} className="grid sm:grid-cols-2 gap-4">
+      // One promotion fills the whole row (a half-width banner next to an empty gap looked unfinished); two sit side by side;
+      // with an odd number the last one spans the row.
+      <div ref={ref} className={clsx("grid gap-4", promotions.length > 1 && "sm:grid-cols-2")}>
         {promotions.map((promo, i) => {
+          const single = promotions.length === 1;
+          const spansRow = promotions.length > 2 && promotions.length % 2 === 1 && i === promotions.length - 1;
           // Mobile image (when set) wins on mobile; its own position set falls back to the
           // desktop image's positions if a mobile-specific one wasn't saved (spec's per-device
           // fallback chain — never silently 0/0/1).
@@ -110,14 +118,19 @@ export function PromoBannerPair({
               key={promo.id}
               to={promo.ctaUrl || "/shop"}
               onClick={() => track("promotion_click", { surface: SURFACE, metadata: promoMeta(promo.id, promo.heading) })}
-              className={`relative flex items-center gap-4 overflow-hidden rounded-xl min-h-[136px] sm:min-h-[156px] pl-6 sm:pl-8 pr-2 py-6 sm:py-7 text-white bg-gradient-to-br ${GRADIENTS[i % GRADIENTS.length]}`}
+              className={clsx(
+                "relative flex items-center gap-4 overflow-hidden rounded-xl text-white bg-gradient-to-br",
+                GRADIENTS[i % GRADIENTS.length],
+                single ? "min-h-[180px] sm:min-h-[240px] pl-6 sm:pl-12 pr-3 py-8 sm:py-10" : "min-h-[136px] sm:min-h-[156px] pl-6 sm:pl-8 pr-2 py-6 sm:py-7",
+                spansRow && "sm:col-span-2"
+              )}
             >
               <div className="relative z-10 flex-1 min-w-0">
-                <h3 className="font-display text-xl sm:text-2xl mb-1.5">{promo.heading}</h3>
-                {promo.subheading && <p className="text-[13.5px] text-white/75 max-w-[26ch]">{promo.subheading}</p>}
-                {promo.ctaLabel && <span className="inline-block mt-3 text-[13px] font-semibold underline">{promo.ctaLabel}</span>}
+                <h3 className={clsx("font-display mb-1.5", single ? "text-2xl sm:text-4xl" : "text-xl sm:text-2xl")}>{promo.heading}</h3>
+                {promo.subheading && <p className={clsx("text-white/80", single ? "text-[14.5px] sm:text-[16px] max-w-[44ch]" : "text-[13.5px] max-w-[26ch]")}>{promo.subheading}</p>}
+                {promo.ctaLabel && <span className="mt-4 inline-flex rounded-full bg-gold px-5 py-2 text-[13px] font-semibold text-ink shadow-sm transition-colors hover:bg-gold-600">{promo.ctaLabel}</span>}
               </div>
-              <PromoArt src={activeImage ?? undefined} style={style} />
+              <PromoArt src={activeImage ?? undefined} style={style} large={single} />
             </Link>
           );
         })}
