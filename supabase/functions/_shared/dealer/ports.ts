@@ -7,17 +7,21 @@
 import type { PublishPlan } from "./pricing.ts";
 import type {
   AccessRow,
+  AdminGrantRow,
   AuditRow,
   BrandingRow,
   CartItemRow,
   DealerRow,
   DealerStatus,
   DealerUserRow,
+  InsightItem,
   OdooProductSummary,
   OdooVariantInfo,
   OrderItemRow,
   OrderRow,
+  OfferRow,
   OrderStatus,
+  PortalMode,
   PriceRuleRow,
   PriceStatus,
 } from "./types.ts";
@@ -37,7 +41,7 @@ export type NewOrderItem = Omit<OrderItemRow, "id" | "order_id">;
 export type NewAudit = Omit<AuditRow, "id" | "created_at">;
 
 export interface DealerRepo {
-  listDealers(f: { search?: string; status?: DealerStatus; offset: number; limit: number }): Promise<{ rows: DealerRow[]; total: number }>;
+  listDealers(f: { search?: string; status?: DealerStatus; offset: number; limit: number; sortBy?: "name" | "status" | "code" | "created" | "updated"; sortDir?: "asc" | "desc"; onlyIds?: string[] }): Promise<{ rows: DealerRow[]; total: number }>;
   getDealer(id: string): Promise<DealerRow | null>;
   insertDealer(row: NewDealer): Promise<DealerRow>;
   updateDealer(id: string, patch: Partial<DealerRow>): Promise<DealerRow>;
@@ -71,20 +75,41 @@ export interface DealerRepo {
   insertOrder(order: NewOrder, items: NewOrderItem[]): Promise<{ order: OrderRow; created: boolean }>;
   getOrder(id: string): Promise<OrderRow | null>;
   getOrderByKey(dealerId: string, key: string): Promise<OrderRow | null>;
-  listOrders(f: { dealerId?: string; status?: OrderStatus; offset: number; limit: number }): Promise<{ rows: OrderRow[]; total: number }>;
+  listOrders(f: { dealerId?: string; dealerIds?: string[]; status?: OrderStatus; offset: number; limit: number }): Promise<{ rows: OrderRow[]; total: number }>;
+  /** Orders stored in Delite but not yet created in Odoo, oldest first. */
+  listPendingSync(limit: number, dealerIds?: string[]): Promise<OrderRow[]>;
+  /** Sum of totals of orders that are still open (pending_sync / quotation / confirmed) — drives the credit limit. */
+  sumOpenOrders(dealerId: string): Promise<number>;
+  /** Line items of non-cancelled orders since `sinceIso` — drives dealer spend insights. */
+  listInsightItems(dealerId: string, sinceIso: string): Promise<InsightItem[]>;
   listOrderItems(orderId: string): Promise<OrderItemRow[]>;
   updateOrder(id: string, patch: Partial<OrderRow>): Promise<OrderRow>;
   countOrdersByStatus(dealerId: string): Promise<Record<string, number>>;
 
   appendAudit(entry: NewAudit): Promise<void>;
   listAudit(f: { dealerId: string; offset: number; limit: number }): Promise<{ rows: AuditRow[]; total: number }>;
+  countAudit(f: { eventTypes: string[]; sinceIso: string }): Promise<Record<string, number>>;
+
+  listOffers(dealerId: string): Promise<OfferRow[]>;
+  insertOffer(row: Omit<OfferRow, "id" | "created_at">): Promise<OfferRow>;
+  deleteOffer(dealerId: string, id: string): Promise<void>;
+
+  getPortalMode(): Promise<PortalMode>;
+  setPortalMode(mode: PortalMode): Promise<void>;
+
+  getAdminGrant(userId: string): Promise<AdminGrantRow | null>;
+  upsertAdminGrant(row: Omit<AdminGrantRow, "updated_at">): Promise<AdminGrantRow>;
+  /** Admin accounts holding `role` (for the grants screen). */
+  listAdminsByRole(role: string): Promise<{ id: string; fullName: string | null }[]>;
 }
 
 export interface OdooPort {
   /** Live facts per variant id; ids Odoo doesn't know are simply absent from the map. */
   getVariantInfo(variantIds: number[]): Promise<Map<number, OdooVariantInfo>>;
   /** Published/sellable products only. `templateIds` restricts the search server-side (scoping). */
-  searchProducts(q: { text?: string; templateIds?: number[]; offset: number; limit: number }): Promise<{ items: OdooProductSummary[]; total: number }>;
+  searchProducts(q: { text?: string; templateIds?: number[]; excludeTemplateIds?: number[]; offset: number; limit: number }): Promise<{ items: OdooProductSummary[]; total: number }>;
+  /** Public categories per product template (one batched read) — for the dealer's category navigation. */
+  templateCategories(templateIds: number[]): Promise<Map<number, { id: number; name: string }[]>>;
   findVariantsBySku(skus: string[]): Promise<Map<string, OdooVariantInfo[]>>;
   ensurePartner(dealer: DealerRow): Promise<number>;
   createQuotation(args: {
@@ -93,12 +118,16 @@ export interface OdooPort {
     lines: { variantId: number; quantity: number; unitPrice: number }[];
     note?: string;
   }): Promise<{ saleOrderId: number; name: string; amountTotal: number }>;
-  getOrderStates(ids: number[]): Promise<Map<number, string>>;
+  getOrderStates(ids: number[]): Promise<Map<number, { state: string; amountTotalPaise: number }>>;
 }
 
 export interface AuthPort {
   /** Creates (or finds) the auth user and emails a single-use, expiring invite/setup link. */
   inviteDealerUser(email: string, meta: { dealerCode: string; displayName: string }): Promise<{ authUserId: string; existing: boolean }>;
+  /** Single-use password reset email (spec §3.1 / FR-01). */
+  sendPasswordReset(email: string): Promise<void>;
+  /** Ends every Supabase session of these users (refresh tokens deleted) — spec FR-01 "session revoke". */
+  revokeSessions(authUserIds: string[]): Promise<void>;
 }
 
 export interface NotifierPort {

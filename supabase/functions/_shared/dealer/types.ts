@@ -34,6 +34,12 @@ export interface DealerRow {
   currency: "INR";
   status: DealerStatus;
   linked_odoo_partner_id: number | null;
+  purchase_method: "request_order" | "po_required";
+  shipping_policy: "as_agreed" | "free" | "flat";
+  flat_shipping_paise: number;
+  payment_terms: string | null;
+  credit_limit_paise: number | null;
+  is_pilot: boolean;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -44,10 +50,11 @@ export interface DealerUserRow {
   dealer_id: string;
   auth_user_id: string;
   email: string;
-  role: "owner";
+  role: "owner" | "buyer";
   status: DealerUserStatus;
   invited_at: string;
   last_login_at: string | null;
+  sessions_revoked_before: string | null;
 }
 
 export interface BrandingRow {
@@ -81,6 +88,8 @@ export interface PriceRuleRow {
   id: string;
   dealer_id: string;
   odoo_variant_id: number;
+  /** Volume tier: this price applies from this quantity up (1 = the base price). */
+  min_quantity: number;
   unit_price_paise: number;
   currency: "INR";
   tax_basis: TaxBasis;
@@ -177,6 +186,9 @@ export interface OdooVariantInfo {
   purchasable: boolean;
   taxes: TaxRecordLite[];
   attributes: { attribute: string; value: string }[];
+  /** Only meaningful when the store tracks inventory (see odooPort); undefined = not tracked. */
+  inStock?: boolean;
+  inventoryTracked?: boolean;
 }
 
 export interface OdooProductSummary {
@@ -187,4 +199,36 @@ export interface OdooProductSummary {
   categories: string[];
   description?: string;
   variants: OdooVariantInfo[];
+}
+
+export type PortalMode = "off" | "pilot" | "on";
+
+export interface OfferRow {
+  id: string;
+  dealer_id: string;
+  title: string;
+  body: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  is_active: boolean;
+  created_by: string | null;
+  created_at: string;
+}
+
+/** What a `dealer_manager` admin may touch. dealer_ids = null means every dealer. */
+export interface AdminGrantRow {
+  auth_user_id: string;
+  dealer_ids: string[] | null;
+  can_manage_pricing: boolean;
+  granted_by: string | null;
+  updated_at: string;
+}
+
+export interface InsightItem {
+  order_id: string;
+  created_at: string;
+  odoo_variant_id: number;
+  product_name: string;
+  quantity: number;
+  line_total_paise: number;
 }

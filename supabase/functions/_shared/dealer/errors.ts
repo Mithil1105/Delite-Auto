@@ -11,6 +11,7 @@ export type DealerErrorCode =
   | "QUOTE_INVALID"
   | "CHECKOUT_CHANGED"
   | "ODOO_UNAVAILABLE"
+  | "CREDIT_LIMIT"
   | "RATE_LIMITED";
 
 const STATUS: Record<DealerErrorCode, number> = {
@@ -24,6 +25,7 @@ const STATUS: Record<DealerErrorCode, number> = {
   QUOTE_INVALID: 409,
   CHECKOUT_CHANGED: 409,
   ODOO_UNAVAILABLE: 503,
+  CREDIT_LIMIT: 409,
   RATE_LIMITED: 429,
 };
 

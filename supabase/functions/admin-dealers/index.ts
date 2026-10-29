@@ -17,7 +17,7 @@ Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return jsonResponse(req, { error: { code: "VALIDATION", message: "Method not allowed" } }, 405, requestId);
 
   try {
-    const auth = await requireAdmin(req, ["owner", "admin", "support"]);
+    const auth = await requireAdmin(req, ["owner", "admin", "support", "dealer_manager"]);
     if (auth instanceof Response) return await withHeaders(req, auth, requestId);
     rateLimit(`admin:${auth.user.id}`, 300);
 

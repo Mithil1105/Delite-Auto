@@ -10,15 +10,19 @@ import type { PublishPlan } from "./pricing.ts";
 import type { DealerRepo, DealerStats, NewAccess, NewAudit, NewDealer, NewOrder, NewOrderItem, NewRule } from "./ports.ts";
 import type {
   AccessRow,
+  AdminGrantRow,
   AuditRow,
   BrandingRow,
   CartItemRow,
   DealerRow,
   DealerStatus,
   DealerUserRow,
+  InsightItem,
+  OfferRow,
   OrderItemRow,
   OrderRow,
   OrderStatus,
+  PortalMode,
   PriceRuleRow,
   PriceStatus,
 } from "./types.ts";
@@ -42,8 +46,11 @@ export class SupabaseDealerRepo implements DealerRepo {
     this.db = db;
   }
 
-  async listDealers(f: { search?: string; status?: DealerStatus; offset: number; limit: number }) {
-    let q = this.db.from("dealers").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(f.offset, f.offset + f.limit - 1);
+  async listDealers(f: { search?: string; status?: DealerStatus; offset: number; limit: number; sortBy?: "name" | "status" | "code" | "created" | "updated"; sortDir?: "asc" | "desc"; onlyIds?: string[] }) {
+    const column = { name: "display_name", status: "status", code: "dealer_code", created: "created_at", updated: "updated_at" }[f.sortBy ?? "created"];
+    const ascending = (f.sortDir ?? (f.sortBy ? "asc" : "desc")) === "asc";
+    let q = this.db.from("dealers").select("*", { count: "exact" }).order(column, { ascending }).order("created_at", { ascending: false }).range(f.offset, f.offset + f.limit - 1);
+    if (f.onlyIds) q = q.in("id", f.onlyIds.length ? f.onlyIds : ["00000000-0000-0000-0000-000000000000"]);
     if (f.status) q = q.eq("status", f.status);
     const term = f.search ? safeSearch(f.search) : "";
     if (term) q = q.or(`display_name.ilike.%${term}%,legal_name.ilike.%${term}%,dealer_code.ilike.%${term}%,contact_email.ilike.%${term}%`);
@@ -171,13 +178,30 @@ export class SupabaseDealerRepo implements DealerRepo {
   async getOrderByKey(dealerId: string, key: string) {
     return check(await this.db.from("dealer_orders").select("*").eq("dealer_id", dealerId).eq("idempotency_key", key).maybeSingle(), "getOrderByKey") as OrderRow | null;
   }
-  async listOrders(f: { dealerId?: string; status?: OrderStatus; offset: number; limit: number }) {
+  async listOrders(f: { dealerId?: string; dealerIds?: string[]; status?: OrderStatus; offset: number; limit: number }) {
     let q = this.db.from("dealer_orders").select("*", { count: "exact" }).order("created_at", { ascending: false }).range(f.offset, f.offset + f.limit - 1);
     if (f.dealerId) q = q.eq("dealer_id", f.dealerId);
+    if (f.dealerIds) q = q.in("dealer_id", f.dealerIds.length ? f.dealerIds : ["00000000-0000-0000-0000-000000000000"]);
     if (f.status) q = q.eq("status", f.status);
     const res = await q;
     if (res.error) check(res as never, "listOrders");
     return { rows: (res.data ?? []) as OrderRow[], total: res.count ?? 0 };
+  }
+  async listPendingSync(limit: number, dealerIds?: string[]) {
+    let q = this.db.from("dealer_orders").select("*").eq("status", "pending_sync").order("created_at").limit(limit);
+    if (dealerIds) q = q.in("dealer_id", dealerIds.length ? dealerIds : ["00000000-0000-0000-0000-000000000000"]);
+    return check(await q, "listPendingSync") as OrderRow[];
+  }
+  async sumOpenOrders(dealerId: string) {
+    const rows = check(await this.db.from("dealer_orders").select("total_paise").eq("dealer_id", dealerId).in("status", ["pending_sync", "quotation", "confirmed"]).limit(10000), "sumOpenOrders") as { total_paise: number }[];
+    return rows.reduce((sum, r) => sum + Number(r.total_paise), 0);
+  }
+  async listInsightItems(dealerId: string, sinceIso: string): Promise<InsightItem[]> {
+    const orders = check(await this.db.from("dealer_orders").select("id,created_at").eq("dealer_id", dealerId).neq("status", "cancelled").gte("created_at", sinceIso).limit(5000), "insights.orders") as { id: string; created_at: string }[];
+    if (orders.length === 0) return [];
+    const created = new Map(orders.map((o) => [o.id, o.created_at]));
+    const items = check(await this.db.from("dealer_order_items").select("order_id,odoo_variant_id,product_name,quantity,line_total_paise").in("order_id", orders.map((o) => o.id)).limit(20000), "insights.items") as Omit<InsightItem, "created_at">[];
+    return items.map((i) => ({ ...i, created_at: created.get(i.order_id) ?? sinceIso }));
   }
   async listOrderItems(orderId: string) {
     return check(await this.db.from("dealer_order_items").select("*").eq("order_id", orderId).order("product_name"), "listOrderItems") as OrderItemRow[];
@@ -202,5 +226,45 @@ export class SupabaseDealerRepo implements DealerRepo {
     const res = await this.db.from("dealer_audit_log").select("*", { count: "exact" }).eq("dealer_id", f.dealerId).order("id", { ascending: false }).range(f.offset, f.offset + f.limit - 1);
     if (res.error) check(res as never, "listAudit");
     return { rows: (res.data ?? []) as AuditRow[], total: res.count ?? 0 };
+  }
+  async countAudit(f: { eventTypes: string[]; sinceIso: string }) {
+    const out: Record<string, number> = {};
+    await Promise.all(
+      f.eventTypes.map(async (type) => {
+        const res = await this.db.from("dealer_audit_log").select("id", { count: "exact", head: true }).eq("event_type", type).gte("created_at", f.sinceIso);
+        out[type] = res.count ?? 0;
+      })
+    );
+    return out;
+  }
+
+  async listOffers(dealerId: string) {
+    return check(await this.db.from("dealer_offers").select("*").eq("dealer_id", dealerId).order("created_at", { ascending: false }).limit(100), "listOffers") as OfferRow[];
+  }
+  async insertOffer(row: Omit<OfferRow, "id" | "created_at">) {
+    return check(await this.db.from("dealer_offers").insert(row).select("*").single(), "insertOffer") as OfferRow;
+  }
+  async deleteOffer(dealerId: string, id: string) {
+    check(await this.db.from("dealer_offers").delete().eq("dealer_id", dealerId).eq("id", id), "deleteOffer");
+  }
+
+  async getPortalMode(): Promise<PortalMode> {
+    const res = await this.db.schema("private").from("app_config").select("value").eq("key", "dealer_portal_mode").maybeSingle();
+    const v = (res.data as { value?: string } | null)?.value;
+    return v === "off" || v === "on" ? v : "pilot";
+  }
+  async setPortalMode(mode: PortalMode) {
+    check(await this.db.schema("private").from("app_config").upsert({ key: "dealer_portal_mode", value: mode, updated_at: new Date().toISOString() }, { onConflict: "key" }), "setPortalMode");
+  }
+
+  async getAdminGrant(userId: string) {
+    return check(await this.db.from("dealer_admin_grants").select("*").eq("auth_user_id", userId).maybeSingle(), "getAdminGrant") as AdminGrantRow | null;
+  }
+  async upsertAdminGrant(row: Omit<AdminGrantRow, "updated_at">) {
+    return check(await this.db.from("dealer_admin_grants").upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: "auth_user_id" }).select("*").single(), "upsertAdminGrant") as AdminGrantRow;
+  }
+  async listAdminsByRole(role: string) {
+    const rows = check(await this.db.from("profiles").select("id,full_name").eq("admin_role", role).limit(200), "listAdminsByRole") as { id: string; full_name: string | null }[];
+    return rows.map((r) => ({ id: r.id, fullName: r.full_name }));
   }
 }

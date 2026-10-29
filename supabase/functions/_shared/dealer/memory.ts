@@ -23,17 +23,21 @@ import type {
 } from "./ports.ts";
 import type {
   AccessRow,
+  AdminGrantRow,
   AuditRow,
   BrandingRow,
   CartItemRow,
   DealerRow,
   DealerStatus,
   DealerUserRow,
+  InsightItem,
   OdooProductSummary,
   OdooVariantInfo,
   OrderItemRow,
   OrderRow,
+  OfferRow,
   OrderStatus,
+  PortalMode,
   PriceRuleRow,
   PriceStatus,
 } from "./types.ts";
@@ -54,10 +58,15 @@ export interface MemoryState {
   audit: AuditRow[];
   orderSeq: number;
   auditSeq: number;
+  offers: OfferRow[];
+  grants: AdminGrantRow[];
+  /** Admin accounts known to the test harness (id, name, role) for the grants screen. */
+  admins: { id: string; fullName: string | null; role: string }[];
+  portalMode: PortalMode;
 }
 
 export function emptyState(): MemoryState {
-  return { dealers: [], users: [], branding: [], access: [], rules: [], cart: [], orders: [], orderItems: [], audit: [], orderSeq: 1000, auditSeq: 0 };
+  return { dealers: [], users: [], branding: [], access: [], rules: [], cart: [], orders: [], orderItems: [], audit: [], orderSeq: 1000, auditSeq: 0, offers: [], grants: [], admins: [], portalMode: "on" };
 }
 
 export class MemoryRepo implements DealerRepo {
@@ -71,11 +80,14 @@ export class MemoryRepo implements DealerRepo {
     return this.clock().toISOString();
   }
 
-  async listDealers(f: { search?: string; status?: DealerStatus; offset: number; limit: number }) {
+  async listDealers(f: { search?: string; status?: DealerStatus; offset: number; limit: number; sortBy?: "name" | "status" | "code" | "created" | "updated"; sortDir?: "asc" | "desc"; onlyIds?: string[] }) {
     const q = (f.search ?? "").toLowerCase();
+    const key: Record<string, (d: DealerRow) => string> = { name: (d) => d.display_name.toLowerCase(), status: (d) => d.status, code: (d) => d.dealer_code, created: (d) => d.created_at, updated: (d) => d.updated_at };
+    const pick = key[f.sortBy ?? "created"] ?? key.created;
+    const sign = (f.sortDir ?? (f.sortBy ? "asc" : "desc")) === "asc" ? 1 : -1;
     const all = this.state.dealers
-      .filter((d) => (!f.status || d.status === f.status) && (!q || d.display_name.toLowerCase().includes(q) || d.legal_name.toLowerCase().includes(q) || d.dealer_code.toLowerCase().includes(q) || d.contact_email.toLowerCase().includes(q)))
-      .sort((a, b) => b.created_at.localeCompare(a.created_at));
+      .filter((d) => (!f.onlyIds || f.onlyIds.includes(d.id)) && (!f.status || d.status === f.status) && (!q || d.display_name.toLowerCase().includes(q) || d.legal_name.toLowerCase().includes(q) || d.dealer_code.toLowerCase().includes(q) || d.contact_email.toLowerCase().includes(q)))
+      .sort((a, b) => sign * pick(a).localeCompare(pick(b)));
     return { rows: all.slice(f.offset, f.offset + f.limit), total: all.length };
   }
   async getDealer(id: string) {
@@ -169,7 +181,7 @@ export class MemoryRepo implements DealerRepo {
   }
   private assertNoActiveOverlap(rule: PriceRuleRow): void {
     if (rule.status !== "active") return;
-    const clash = this.state.rules.some((r) => r.id !== rule.id && r.status === "active" && r.dealer_id === rule.dealer_id && r.odoo_variant_id === rule.odoo_variant_id && windowsOverlap(r, rule));
+    const clash = this.state.rules.some((r) => r.id !== rule.id && r.status === "active" && r.dealer_id === rule.dealer_id && r.odoo_variant_id === rule.odoo_variant_id && r.min_quantity === rule.min_quantity && windowsOverlap(r, rule));
     if (clash) throw new DealerError("CONFLICT", "Overlapping active price windows for the same product are not allowed");
   }
   async deleteDraftRules(dealerId: string, ids: string[]) {
@@ -188,7 +200,7 @@ export class MemoryRepo implements DealerRepo {
     const actives = next.filter((r) => r.status === "active" && r.dealer_id === dealerId);
     for (let i = 0; i < actives.length; i++) {
       for (let j = i + 1; j < actives.length; j++) {
-        if (actives[i].odoo_variant_id === actives[j].odoo_variant_id && windowsOverlap(actives[i], actives[j])) {
+        if (actives[i].odoo_variant_id === actives[j].odoo_variant_id && actives[i].min_quantity === actives[j].min_quantity && windowsOverlap(actives[i], actives[j])) {
           throw new DealerError("CONFLICT", "Overlapping active price windows for the same product are not allowed");
         }
       }
@@ -228,9 +240,21 @@ export class MemoryRepo implements DealerRepo {
   async getOrderByKey(dealerId: string, key: string) {
     return this.state.orders.find((o) => o.dealer_id === dealerId && o.idempotency_key === key) ?? null;
   }
-  async listOrders(f: { dealerId?: string; status?: OrderStatus; offset: number; limit: number }) {
-    const all = this.state.orders.filter((o) => (!f.dealerId || o.dealer_id === f.dealerId) && (!f.status || o.status === f.status)).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  async listOrders(f: { dealerId?: string; dealerIds?: string[]; status?: OrderStatus; offset: number; limit: number }) {
+    const all = this.state.orders.filter((o) => (!f.dealerId || o.dealer_id === f.dealerId) && (!f.dealerIds || f.dealerIds.includes(o.dealer_id)) && (!f.status || o.status === f.status)).sort((a, b) => b.created_at.localeCompare(a.created_at));
     return { rows: all.slice(f.offset, f.offset + f.limit), total: all.length };
+  }
+  async listPendingSync(limit: number, dealerIds?: string[]) {
+    return this.state.orders.filter((o) => o.status === "pending_sync" && (!dealerIds || dealerIds.includes(o.dealer_id))).sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(0, limit);
+  }
+  async sumOpenOrders(dealerId: string) {
+    return this.state.orders.filter((o) => o.dealer_id === dealerId && (o.status === "pending_sync" || o.status === "quotation" || o.status === "confirmed")).reduce((sum, o) => sum + o.total_paise, 0);
+  }
+  async listInsightItems(dealerId: string, sinceIso: string): Promise<InsightItem[]> {
+    const orders = this.state.orders.filter((o) => o.dealer_id === dealerId && o.status !== "cancelled" && o.created_at >= sinceIso);
+    const out: InsightItem[] = [];
+    for (const o of orders) for (const i of this.state.orderItems.filter((x) => x.order_id === o.id)) out.push({ order_id: o.id, created_at: o.created_at, odoo_variant_id: i.odoo_variant_id, product_name: i.product_name, quantity: i.quantity, line_total_paise: i.line_total_paise });
+    return out;
   }
   async listOrderItems(orderId: string) {
     return this.state.orderItems.filter((i) => i.order_id === orderId);
@@ -253,6 +277,44 @@ export class MemoryRepo implements DealerRepo {
   async listAudit(f: { dealerId: string; offset: number; limit: number }) {
     const all = this.state.audit.filter((a) => a.dealer_id === f.dealerId).sort((a, b) => b.id - a.id);
     return { rows: all.slice(f.offset, f.offset + f.limit), total: all.length };
+  }
+  async countAudit(f: { eventTypes: string[]; sinceIso: string }) {
+    const out: Record<string, number> = {};
+    for (const a of this.state.audit) if (f.eventTypes.includes(a.event_type) && a.created_at >= f.sinceIso) out[a.event_type] = (out[a.event_type] ?? 0) + 1;
+    return out;
+  }
+
+  async listOffers(dealerId: string) {
+    return this.state.offers.filter((o) => o.dealer_id === dealerId).sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }
+  async insertOffer(row: Omit<OfferRow, "id" | "created_at">) {
+    const offer: OfferRow = { ...row, id: uuid(), created_at: this.ts() };
+    this.state.offers.push(offer);
+    return offer;
+  }
+  async deleteOffer(dealerId: string, id: string) {
+    this.state.offers = this.state.offers.filter((o) => !(o.dealer_id === dealerId && o.id === id));
+  }
+
+  async getPortalMode() {
+    return this.state.portalMode;
+  }
+  async setPortalMode(mode: PortalMode) {
+    this.state.portalMode = mode;
+  }
+
+  async getAdminGrant(userId: string) {
+    return this.state.grants.find((g) => g.auth_user_id === userId) ?? null;
+  }
+  async upsertAdminGrant(row: Omit<AdminGrantRow, "updated_at">) {
+    const next: AdminGrantRow = { ...row, updated_at: this.ts() };
+    const idx = this.state.grants.findIndex((g) => g.auth_user_id === row.auth_user_id);
+    if (idx >= 0) this.state.grants[idx] = next;
+    else this.state.grants.push(next);
+    return next;
+  }
+  async listAdminsByRole(role: string) {
+    return this.state.admins.filter((a) => a.role === role).map((a) => ({ id: a.id, fullName: a.fullName }));
   }
 }
 
@@ -288,7 +350,10 @@ export class FakeOdoo implements OdooPort {
   products: FakeProduct[] = FAKE_CATALOGUE.map((p) => ({ ...p, variants: p.variants.map((v) => ({ ...v })) }));
   down = false;
   partners = new Map<string, number>();
-  quotations: { id: number; name: string; state: string; partnerId: number; ref: string; lines: { variantId: number; quantity: number; unitPrice: number }[] }[] = [];
+  quotations: { id: number; name: string; state: string; partnerId: number; ref: string; amountTotal: number; lines: { variantId: number; quantity: number; unitPrice: number }[] }[] = [];
+  /** Test hook: when true the fake store tracks inventory and `stock` decides in/out of stock. */
+  inventoryTracked = false;
+  stock = new Map<number, number>();
   nextId = 5000;
   /** Test hooks. */
   setTaxes: typeof GST_18[] = [GST_18];
@@ -306,6 +371,8 @@ export class FakeOdoo implements OdooPort {
       purchasable: p.published,
       taxes: this.setTaxes.map((t) => ({ ...t })),
       attributes: v.attrs,
+      inventoryTracked: this.inventoryTracked,
+      inStock: this.inventoryTracked ? (this.stock.get(v.variantId) ?? 0) > 0 : undefined,
     };
   }
   async getVariantInfo(variantIds: number[]) {
@@ -314,10 +381,10 @@ export class FakeOdoo implements OdooPort {
     for (const p of this.products) for (const v of p.variants) if (variantIds.includes(v.variantId)) out.set(v.variantId, this.toInfo(p, v));
     return out;
   }
-  async searchProducts(q: { text?: string; templateIds?: number[]; offset: number; limit: number }) {
+  async searchProducts(q: { text?: string; templateIds?: number[]; excludeTemplateIds?: number[]; offset: number; limit: number }) {
     this.guard();
     const text = (q.text ?? "").toLowerCase();
-    const all = this.products.filter((p) => p.published && (!q.templateIds || q.templateIds.includes(p.templateId)) && (!text || p.name.toLowerCase().includes(text) || p.sku.toLowerCase().includes(text) || p.variants.some((v) => v.sku.toLowerCase().includes(text))));
+    const all = this.products.filter((p) => p.published && (!q.templateIds || q.templateIds.includes(p.templateId)) && !(q.excludeTemplateIds ?? []).includes(p.templateId) && (!text || p.name.toLowerCase().includes(text) || p.sku.toLowerCase().includes(text) || p.variants.some((v) => v.sku.toLowerCase().includes(text))));
     const items: OdooProductSummary[] = all.slice(q.offset, q.offset + q.limit).map((p) => ({
       templateId: p.templateId,
       name: p.name,
@@ -328,6 +395,16 @@ export class FakeOdoo implements OdooPort {
       variants: p.variants.map((v) => this.toInfo(p, v)),
     }));
     return { items, total: all.length };
+  }
+  async templateCategories(templateIds: number[]) {
+    this.guard();
+    const out = new Map<number, { id: number; name: string }[]>();
+    const ids = new Map<string, number>();
+    for (const p of this.products) {
+      if (!ids.has(p.category)) ids.set(p.category, 100 + ids.size);
+      if (templateIds.includes(p.templateId)) out.set(p.templateId, [{ id: ids.get(p.category)!, name: p.category }]);
+    }
+    return out;
   }
   async findVariantsBySku(skus: string[]) {
     this.guard();
@@ -353,24 +430,35 @@ export class FakeOdoo implements OdooPort {
     this.guard();
     const id = this.nextId++;
     const name = `S${String(id).padStart(5, "0")}`;
-    this.quotations.push({ id, name, state: "draft", partnerId: args.partnerId, ref: args.clientOrderRef, lines: args.lines });
-    return { saleOrderId: id, name, amountTotal: args.lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0) };
+    // Like Odoo's amount_total: the lines plus tax (the fake's taxes are tax-excluded percent taxes).
+    const rate = this.setTaxes.reduce((sum, t) => sum + t.amount, 0) / 100;
+    const amountTotal = Math.round(args.lines.reduce((sum, l) => sum + l.unitPrice * l.quantity, 0) * (1 + rate) * 100) / 100;
+    this.quotations.push({ id, name, state: "draft", partnerId: args.partnerId, ref: args.clientOrderRef, amountTotal, lines: args.lines });
+    return { saleOrderId: id, name, amountTotal };
   }
   async getOrderStates(ids: number[]) {
     this.guard();
-    return new Map(this.quotations.filter((q) => ids.includes(q.id)).map((q) => [q.id, q.state]));
+    return new Map(this.quotations.filter((q) => ids.includes(q.id)).map((q) => [q.id, { state: q.state, amountTotalPaise: Math.round(q.amountTotal * 100) }]));
   }
 }
 
 export class FakeAuth implements AuthPort {
   users = new Map<string, string>();
   invites: { email: string; at: string }[] = [];
+  resets: string[] = [];
+  revoked: string[][] = [];
   async inviteDealerUser(email: string) {
     const key = email.toLowerCase();
     const existing = this.users.has(key);
     if (!existing) this.users.set(key, uuid());
     this.invites.push({ email: key, at: new Date().toISOString() });
     return { authUserId: this.users.get(key)!, existing };
+  }
+  async sendPasswordReset(email: string) {
+    this.resets.push(email.toLowerCase());
+  }
+  async revokeSessions(authUserIds: string[]) {
+    this.revoked.push(authUserIds);
   }
 }
 

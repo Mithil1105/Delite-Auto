@@ -12,7 +12,7 @@
 // before pilot — see Documentations MD/dealer-portal.md ("Verification still required").
 
 import { odooCreate, odooSearchCount, odooSearchRead, type OdooConfig } from "../odoo/client.ts";
-import { buildCatalogDomain, CATALOG_ELIGIBILITY_DOMAIN, TEMPLATE_LIST_FIELDS } from "../odoo/catalog.ts";
+import { buildCatalogDomain, CATALOG_ELIGIBILITY_DOMAIN, getCategoryNameMap, STORE_INVENTORY_TRACKED, TEMPLATE_LIST_FIELDS, VEHICLE_TYPE_CATEGORY_IDS } from "../odoo/catalog.ts";
 import { normalizeTemplates } from "../odoo/fetch.ts";
 import type { OdooProductTemplateRecord } from "../odoo/types.ts";
 import type { OdooPort } from "./ports.ts";
@@ -26,9 +26,11 @@ interface VariantRecord {
   list_price: number;
   taxes_id: number[];
   product_template_attribute_value_ids: number[];
+  free_qty?: number;
+  qty_available?: number;
 }
 
-const VARIANT_FIELDS = ["id", "product_tmpl_id", "name", "default_code", "list_price", "taxes_id", "product_template_attribute_value_ids"];
+const VARIANT_FIELDS = ["id", "product_tmpl_id", "name", "default_code", "list_price", "taxes_id", "product_template_attribute_value_ids", "free_qty", "qty_available"];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -80,6 +82,9 @@ export class OdooDealerPort implements OdooPort {
         purchasable: eligible.has(r.product_tmpl_id[0]),
         taxes: (r.taxes_id ?? []).map((id) => taxById.get(id)).filter((t): t is TaxRecordLite => !!t),
         attributes,
+        // Stock is only a gate when the store really tracks inventory (see STORE_INVENTORY_TRACKED).
+        inventoryTracked: STORE_INVENTORY_TRACKED,
+        inStock: STORE_INVENTORY_TRACKED ? (typeof r.free_qty === "number" ? r.free_qty : (r.qty_available ?? 0)) > 0 : undefined,
       });
     }
     return out;
@@ -94,9 +99,10 @@ export class OdooDealerPort implements OdooPort {
     });
   }
 
-  async searchProducts(q: { text?: string; templateIds?: number[]; offset: number; limit: number }) {
+  async searchProducts(q: { text?: string; templateIds?: number[]; excludeTemplateIds?: number[]; offset: number; limit: number }) {
     return withRetry(async () => {
       const domain = buildCatalogDomain({ q: q.text, ids: q.templateIds, offset: q.offset, limit: q.limit });
+      if (q.excludeTemplateIds?.length) domain.push(["id", "not in", q.excludeTemplateIds]);
       const total = await odooSearchCount(this.config, "product.template", domain);
       const templates = await odooSearchRead<OdooProductTemplateRecord & Record<string, unknown>>(this.config, "product.template", domain, TEMPLATE_LIST_FIELDS, { offset: q.offset, limit: q.limit, order: "name asc" });
       const products = await normalizeTemplates(this.config, templates, { includeGallery: false, supabaseUrl: this.supabaseUrl });
@@ -117,9 +123,23 @@ export class OdooDealerPort implements OdooPort {
           // Tax rows are only loaded on the quote/order path (getVariantInfo) — a listing never prices anything.
           taxes: [],
           attributes: v.attributes,
+          inventoryTracked: v.inventoryTracked,
+          inStock: v.inventoryTracked ? v.inStock : undefined,
         })),
       }));
       return { items, total };
+    });
+  }
+
+  async templateCategories(templateIds: number[]) {
+    const out = new Map<number, { id: number; name: string }[]>();
+    if (templateIds.length === 0) return out;
+    return withRetry(async () => {
+      const rows = await odooSearchRead<{ id: number; public_categ_ids: number[] }>(this.config, "product.template", [["id", "in", templateIds]], ["id", "public_categ_ids"]);
+      const names = await getCategoryNameMap(this.config);
+      const vehicleIds = new Set<number>([VEHICLE_TYPE_CATEGORY_IDS.car, VEHICLE_TYPE_CATEGORY_IDS.bike]);
+      for (const r of rows) out.set(r.id, (r.public_categ_ids ?? []).filter((id) => !vehicleIds.has(id) && names.has(id)).map((id) => ({ id, name: names.get(id)! })));
+      return out;
     });
   }
 
@@ -187,8 +207,8 @@ export class OdooDealerPort implements OdooPort {
   }
 
   async getOrderStates(ids: number[]) {
-    if (ids.length === 0) return new Map<number, string>();
-    const rows = await withRetry(() => odooSearchRead<{ id: number; state: string }>(this.config, "sale.order", [["id", "in", ids]], ["id", "state"]));
-    return new Map(rows.map((r) => [r.id, r.state]));
+    if (ids.length === 0) return new Map<number, { state: string; amountTotalPaise: number }>();
+    const rows = await withRetry(() => odooSearchRead<{ id: number; state: string; amount_total: number }>(this.config, "sale.order", [["id", "in", ids]], ["id", "state", "amount_total"]));
+    return new Map(rows.map((r) => [r.id, { state: r.state, amountTotalPaise: Math.round(r.amount_total * 100) }]));
   }
 }

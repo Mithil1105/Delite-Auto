@@ -21,7 +21,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const ADMIN_ROLES = ["owner", "admin", "content", "merchandising", "support", "analytics"] as const;
+const ADMIN_ROLES = ["owner", "admin", "content", "merchandising", "support", "analytics", "dealer_manager"] as const;
 type AdminRole = (typeof ADMIN_ROLES)[number];
 
 type Body =

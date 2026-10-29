@@ -4,7 +4,7 @@ import { supabase } from "../../../lib/supabaseClient";
 import { useAuth, type AdminRole } from "../../../context/AuthContext";
 import { useAdminToast } from "../../components/AdminToastProvider";
 
-const ROLES: AdminRole[] = ["owner", "admin", "content", "merchandising", "support", "analytics"];
+const ROLES: AdminRole[] = ["owner", "admin", "content", "merchandising", "support", "analytics", "dealer_manager"];
 
 interface AdminUserRow {
   id: string;

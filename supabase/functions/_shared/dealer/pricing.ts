@@ -34,16 +34,28 @@ export function windowsOverlap(a: Pick<PriceRuleRow, "starts_at" | "ends_at">, b
   return aStart < bEnd && bStart < aEnd;
 }
 
-/** The ACTIVE rule in force for one variant at `now`, or null. Precedence v1 (spec §7): an explicit
- * active dealer+variant fixed price, otherwise "not purchasable" — there is NO public-price
- * fallback, by design. Overlaps are prevented upstream, so at most one rule can match. */
-export function resolveActiveRule(rules: PriceRuleRow[], variantId: number, now: Date): PriceRuleRow | null {
+/** The ACTIVE rule in force for one variant at `now` for a given quantity, or null. Precedence v1 (spec
+ * §7): an explicit active dealer+variant fixed price, otherwise "not purchasable" — there is NO public-
+ * price fallback, by design. With volume tiers several rules can be active at once (one per minimum
+ * quantity); the highest tier the quantity reaches wins. Overlaps within a tier are prevented upstream. */
+export function resolveActiveRule(rules: PriceRuleRow[], variantId: number, now: Date, quantity = 1): PriceRuleRow | null {
   const t = now.getTime();
+  let best: PriceRuleRow | null = null;
   for (const rule of rules) {
     if (rule.status !== "active" || rule.odoo_variant_id !== variantId) continue;
-    if (ts(rule.starts_at, -Infinity) <= t && t < ts(rule.ends_at, Infinity)) return rule;
+    if (!(ts(rule.starts_at, -Infinity) <= t && t < ts(rule.ends_at, Infinity))) continue;
+    if ((rule.min_quantity ?? 1) > quantity) continue;
+    if (!best || (rule.min_quantity ?? 1) > (best.min_quantity ?? 1)) best = rule;
   }
-  return null;
+  return best;
+}
+
+/** Every tier of a variant that is in force at `now`, lowest quantity first (what the dealer is shown). */
+export function activeTiers(rules: PriceRuleRow[], variantId: number, now: Date): PriceRuleRow[] {
+  const t = now.getTime();
+  return rules
+    .filter((r) => r.status === "active" && r.odoo_variant_id === variantId && ts(r.starts_at, -Infinity) <= t && t < ts(r.ends_at, Infinity))
+    .sort((x, y) => (x.min_quantity ?? 1) - (y.min_quantity ?? 1));
 }
 
 export interface PriceInput {
@@ -52,6 +64,8 @@ export interface PriceInput {
   startsAt?: string | null;
   endsAt?: string | null;
   note?: string | null;
+  /** Volume tier (default 1 = base price). */
+  minQuantity?: number;
 }
 
 export function validatePriceInput(input: PriceInput): void {
@@ -65,6 +79,9 @@ export function validatePriceInput(input: PriceInput): void {
   }
   if (input.startsAt && input.endsAt && Date.parse(input.endsAt) <= Date.parse(input.startsAt)) {
     throw new DealerError("VALIDATION", "End date must be after the start date");
+  }
+  if (input.minQuantity !== undefined && (!Number.isInteger(input.minQuantity) || input.minQuantity < 1 || input.minQuantity > 100000)) {
+    throw new DealerError("VALIDATION", "Tier quantity must be a whole number between 1 and 100000");
   }
   if (input.note && input.note.length > 500) throw new DealerError("VALIDATION", "Deal note is limited to 500 characters");
 }
@@ -103,13 +120,13 @@ export function planPublish(drafts: PriceRuleRow[], actives: PriceRuleRow[], now
     }
 
     for (const active of actives) {
-      if (active.odoo_variant_id !== draft.odoo_variant_id || expire.has(active.id)) continue;
+      if (active.odoo_variant_id !== draft.odoo_variant_id || active.min_quantity !== draft.min_quantity || expire.has(active.id)) continue;
       if (!windowsOverlap(candidate, active)) continue;
       if (immediate) expire.add(active.id);
       else throw new DealerError("CONFLICT", "This scheduled deal overlaps the price currently in force — end the current price first", { variantId: draft.odoo_variant_id });
     }
     for (const other of planned) {
-      if (other.odoo_variant_id === candidate.odoo_variant_id && windowsOverlap(candidate, other)) {
+      if (other.odoo_variant_id === candidate.odoo_variant_id && other.min_quantity === candidate.min_quantity && windowsOverlap(candidate, other)) {
         throw new DealerError("CONFLICT", "Two draft prices for the same product overlap", { variantId: draft.odoo_variant_id });
       }
     }
@@ -137,7 +154,7 @@ export function checkReadiness(args: { ownerEmail: string | null; access: Access
   if (!args.ownerEmail) issues.push({ code: "no_owner_email", message: "Owner email is required to send an invite" });
   const sellable = args.access.filter((a) => a.is_visible);
   if (sellable.length === 0) issues.push({ code: "no_products", message: "Assign at least one product" });
-  const missing = sellable.filter((a) => a.is_orderable && !resolveActiveRule(args.rules, a.odoo_variant_id, args.now)).map((a) => a.odoo_variant_id);
+  const missing = sellable.filter((a) => a.is_orderable && !resolveActiveRule(args.rules, a.odoo_variant_id, args.now, a.minimum_quantity)).map((a) => a.odoo_variant_id);
   if (missing.length > 0) {
     issues.push({ code: "missing_price", message: `${missing.length} assigned product${missing.length === 1 ? " has" : "s have"} no published price`, variantIds: missing });
   }

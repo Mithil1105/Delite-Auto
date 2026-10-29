@@ -41,6 +41,8 @@ export interface PriceCsvRow {
   priceRupees: number | null;
   taxBasis: "exclusive" | "inclusive" | null;
   minQty: number | null;
+  /** Volume tier this price applies from (default 1). */
+  tierQty: number;
   qtyMultiple: number | null;
   startsAt: string | null;
   endsAt: string | null;
@@ -73,6 +75,9 @@ const HEADER_ALIASES: Record<string, string> = {
   "end date": "end",
   note: "note",
   "deal note": "note",
+  tier: "tier",
+  "tier qty": "tier",
+  "volume from": "tier",
 };
 
 export function parsePriceCsv(text: string): { rows: PriceCsvRow[]; fatal: string | null } {
@@ -137,6 +142,7 @@ export function parsePriceCsv(text: string): { rows: PriceCsvRow[]; fatal: strin
       priceRupees,
       taxBasis,
       minQty: intOrNull("moq", "Minimum quantity"),
+      tierQty: intOrNull("tier", "Tier quantity") ?? 1,
       qtyMultiple: intOrNull("multiple", "Quantity multiple"),
       startsAt,
       endsAt,

@@ -8,7 +8,7 @@
 import { resolveActiveRule } from "./pricing.ts";
 import type { AccessRow, OdooVariantInfo, PriceRuleRow, TaxBasis, TaxRecordLite } from "./types.ts";
 
-export type LineIssue = "not_assigned" | "hidden" | "not_orderable" | "no_price" | "unavailable" | "below_min" | "bad_multiple" | "tax_unsupported";
+export type LineIssue = "out_of_stock" | "not_assigned" | "hidden" | "not_orderable" | "no_price" | "unavailable" | "below_min" | "bad_multiple" | "tax_unsupported";
 
 export interface QuoteLineInput {
   variantId: number;
@@ -36,6 +36,8 @@ export interface DealerQuoteLine {
   qtyMultiple: number;
   previousPricePaise: number | null;
   priceChanged: boolean;
+  /** Volume tier that priced this line (1 = base). */
+  tierMinQty: number;
   issues: LineIssue[];
 }
 
@@ -135,6 +137,7 @@ export async function buildDealerQuote(args: BuildQuoteArgs): Promise<DealerQuot
       qtyMultiple: access?.quantity_multiple ?? 1,
       previousPricePaise: input.quotedPricePaise ?? null,
       priceChanged: false,
+      tierMinQty: 1,
       issues,
     };
 
@@ -146,8 +149,9 @@ export async function buildDealerQuote(args: BuildQuoteArgs): Promise<DealerQuot
       else if (input.quantity % access.quantity_multiple !== 0) issues.push("bad_multiple");
     }
     if (!info || !info.purchasable) issues.push("unavailable");
+    else if (info.inventoryTracked && info.inStock === false) issues.push("out_of_stock");
 
-    const rule = access ? resolveActiveRule(args.rules, input.variantId, args.now) : null;
+    const rule = access ? resolveActiveRule(args.rules, input.variantId, args.now, input.quantity) : null;
     if (access && !rule) issues.push("no_price");
 
     if (rule) {
@@ -155,6 +159,7 @@ export async function buildDealerQuote(args: BuildQuoteArgs): Promise<DealerQuot
       line.taxBasis = rule.tax_basis;
       line.ruleId = rule.id;
       line.ruleVersion = rule.version;
+      line.tierMinQty = rule.min_quantity ?? 1;
       line.priceChanged = line.previousPricePaise !== null && line.previousPricePaise !== rule.unit_price_paise;
       if (info) {
         const money = computeLineMoney(rule.unit_price_paise, input.quantity, rule.tax_basis, info.taxes);
@@ -179,7 +184,7 @@ export async function buildDealerQuote(args: BuildQuoteArgs): Promise<DealerQuot
 
   const fingerprint = await sha256Hex(
     JSON.stringify({
-      lines: lines.map((l) => [l.variantId, l.quantity, l.unitPricePaise, l.taxBasis, l.taxPaise, l.totalPaise, l.issues]),
+      lines: lines.map((l) => [l.variantId, l.quantity, l.unitPricePaise, l.taxBasis, l.taxPaise, l.totalPaise, l.tierMinQty, l.issues]),
       shippingPaise,
       totalPaise,
     })

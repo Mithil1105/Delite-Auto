@@ -21,7 +21,7 @@
 import { createClient, type SupabaseClient, type User } from "npm:@supabase/supabase-js@2";
 import { decodeJwtAal } from "./jwt.ts";
 
-export type AdminRole = "owner" | "admin" | "content" | "merchandising" | "support" | "analytics";
+export type AdminRole = "owner" | "admin" | "content" | "merchandising" | "support" | "analytics" | "dealer_manager";
 
 export interface AdminAuthContext {
   db: SupabaseClient;

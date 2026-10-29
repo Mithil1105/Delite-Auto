@@ -3,7 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient";
 
 /** Mirrors the public.admin_role Postgres enum (20260917112554_add_admin_roles.sql). */
-export type AdminRole = "owner" | "admin" | "content" | "merchandising" | "support" | "analytics";
+export type AdminRole = "owner" | "admin" | "content" | "merchandising" | "support" | "analytics" | "dealer_manager";
 
 export interface Profile {
   id: string;

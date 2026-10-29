@@ -1,20 +1,13 @@
 // supabase/functions/_shared/dealer/engine.ts
 //
 // The dealer-portal business engine. ALL rules live here — tenant isolation, entitlement vs price,
-// publish/overlap, quoting, idempotent ordering, audit — behind the ports in ports.ts. The Edge
-// Functions authenticate the caller and hand this engine a trusted identity; the engine never
-// accepts a dealer id from a dealer-facing payload.
-// See Documentations MD/dealer-portal.md.
+// publish/overlap/volume tiers, quoting, idempotent ordering, credit limits, team users, session
+// revocation, rollout flag, audit — behind the ports in ports.ts. The Edge Functions authenticate the
+// caller and hand this engine a trusted identity; the engine never accepts a dealer id from a
+// dealer-facing payload. See Documentations MD/dealer-portal.md.
 
 import { DealerError } from "./errors.ts";
-import {
-  adjustPaiseByPercent,
-  checkReadiness,
-  planPublish,
-  resolveActiveRule,
-  rupeesToPaise,
-  validatePriceInput,
-} from "./pricing.ts";
+import { activeTiers, adjustPaiseByPercent, checkReadiness, planPublish, resolveActiveRule, rupeesToPaise, validatePriceInput } from "./pricing.ts";
 import { parsePriceCsv } from "./csv.ts";
 import { buildDealerQuote, computeLineMoney, type DealerQuote, type DealerQuoteLine } from "./quote.ts";
 import {
@@ -45,18 +38,29 @@ import type {
   DealerUserRow,
   OdooProductSummary,
   OdooVariantInfo,
+  OfferRow,
   OrderItemRow,
   OrderRow,
   OrderStatus,
+  PortalMode,
   PriceRuleRow,
 } from "./types.ts";
 
-export type AdminRoleName = "owner" | "admin" | "support" | string;
+export type AdminRoleName = "owner" | "admin" | "support" | "dealer_manager" | string;
+
+export interface AdminScope {
+  /** True = every dealer; otherwise only `dealerIds`. */
+  all: boolean;
+  dealerIds: string[];
+  pricing: boolean;
+}
 
 export interface AdminActor {
   id: string;
   role: AdminRoleName;
   requestId?: string;
+  /** Filled in by callAdmin; handlers read it. */
+  scope?: AdminScope;
 }
 
 export interface DealerSession {
@@ -65,14 +69,16 @@ export interface DealerSession {
   requestId?: string;
 }
 
-/** Explicit, separate capabilities (spec §2: pricing management is its own permission, never
- * implied by "can open the admin"). Only owner/admin hold the write capabilities in v1; the
- * `dealer_manager` role from the spec maps onto this table later without touching the engine. */
-export type Capability = "dealers.view" | "dealers.manage" | "pricing.manage" | "orders.view" | "orders.manage";
+/** Explicit, separate capabilities (spec §2: pricing management is its own permission, never implied by
+ * "can open the admin"). `dealer_manager` holds none of the pricing/portal/roles capabilities by default:
+ * pricing comes only from an explicit per-user grant, and dealers are limited to the granted set. The
+ * spec's "catalogue manager" is the existing `merchandising` admin role, which has no dealer access. */
+export type Capability = "dealers.view" | "dealers.manage" | "pricing.manage" | "orders.view" | "orders.manage" | "portal.manage" | "roles.manage";
 
 const ROLE_CAPABILITIES: Record<string, Capability[]> = {
-  owner: ["dealers.view", "dealers.manage", "pricing.manage", "orders.view", "orders.manage"],
+  owner: ["dealers.view", "dealers.manage", "pricing.manage", "orders.view", "orders.manage", "portal.manage", "roles.manage"],
   admin: ["dealers.view", "dealers.manage", "pricing.manage", "orders.view", "orders.manage"],
+  dealer_manager: ["dealers.view", "dealers.manage", "orders.view", "orders.manage"],
   support: ["dealers.view", "orders.view"],
 };
 
@@ -95,11 +101,17 @@ const ODOO_STATE_TO_STATUS: Record<string, OrderStatus> = {
 const EXPIRING_SOON_MS = 14 * 24 * 60 * 60 * 1000;
 const MAX_CART_QTY = 100_000;
 const MAX_CART_LINES = 200;
+const MAX_TEAM = 10;
+const PENDING_STALE_MS = 15 * 60 * 1000;
+
+/** Actions whose `id` payload field IS a dealer id (everything else uses `dealerId`). */
+const ID_IS_DEALER = new Set(["dealers.get", "dealers.update", "dealers.branding", "dealers.setStatus", "dealers.invite", "dealers.addUser", "dealers.setUserStatus", "dealers.sendReset", "dealers.revokeSessions"]);
 
 export interface DealerEngine {
   callAdmin(actor: AdminActor, action: string, payload: unknown): Promise<unknown>;
   callDealer(session: DealerSession, action: string, payload: unknown): Promise<unknown>;
-  resolveSession(authUserId: string, requestId?: string): Promise<DealerSession>;
+  /** `tokenIssuedAtSec` = the `iat` claim of the caller's verified access token (for session revocation). */
+  resolveSession(authUserId: string, requestId?: string, tokenIssuedAtSec?: number): Promise<DealerSession>;
   recordDenied(args: { actorId: string | null; reason: string; requestId?: string }): Promise<void>;
 }
 
@@ -157,7 +169,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
 
   function priceView(rule: PriceRuleRow | null) {
     return rule
-      ? { id: rule.id, pricePaise: rule.unit_price_paise, taxBasis: rule.tax_basis, startsAt: rule.starts_at, endsAt: rule.ends_at, note: rule.deal_note, version: rule.version }
+      ? { id: rule.id, minQty: rule.min_quantity ?? 1, pricePaise: rule.unit_price_paise, taxBasis: rule.tax_basis, startsAt: rule.starts_at, endsAt: rule.ends_at, note: rule.deal_note, version: rule.version, status: rule.status }
       : null;
   }
 
@@ -182,18 +194,52 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     }
   }
 
-  /** Overlay DRAFT rules over the active ones (admin "preview as dealer" shows what publishing
-   * would produce; the real dealer API never sees drafts). */
+  /** Overlay DRAFT rules over the active ones (admin "preview as dealer" shows what publishing would
+   * produce; the real dealer API never sees drafts). Per variant+tier, a draft replaces the active rule. */
   function effectiveRules(rules: PriceRuleRow[], includeDrafts: boolean): PriceRuleRow[] {
     if (!includeDrafts) return rules.filter((r) => r.status === "active");
     const drafts = rules.filter((r) => r.status === "draft");
-    const draftVariants = new Set(drafts.map((d) => d.odoo_variant_id));
+    const draftKeys = new Set(drafts.map((d) => `${d.odoo_variant_id}:${d.min_quantity ?? 1}`));
     const past = new Date(0).toISOString();
     return [
-      ...rules.filter((r) => r.status === "active" && !draftVariants.has(r.odoo_variant_id)),
+      ...rules.filter((r) => r.status === "active" && !draftKeys.has(`${r.odoo_variant_id}:${r.min_quantity ?? 1}`)),
       ...drafts.map((d) => ({ ...d, status: "active" as const, starts_at: d.starts_at ?? past })),
     ];
   }
+
+  function shippingFor(dealer: DealerRow): { paise: number; label: string } {
+    if (dealer.shipping_policy === "free") return { paise: 0, label: "Free" };
+    if (dealer.shipping_policy === "flat") return { paise: dealer.flat_shipping_paise, label: "Flat rate" };
+    return { paise: 0, label: "As agreed with Delite" };
+  }
+
+  function parseTerms(p: Payload): Partial<DealerRow> {
+    const out: Partial<DealerRow> = {};
+    if ("purchaseMethod" in p) {
+      const v = reqStr(p, "purchaseMethod", 20, "Order method");
+      if (v !== "request_order" && v !== "po_required") throw new DealerError("VALIDATION", "Order method must be request_order or po_required");
+      out.purchase_method = v;
+    }
+    if ("shippingPolicy" in p) {
+      const v = reqStr(p, "shippingPolicy", 20, "Shipping policy");
+      if (v !== "as_agreed" && v !== "free" && v !== "flat") throw new DealerError("VALIDATION", "Shipping policy must be as_agreed, free or flat");
+      out.shipping_policy = v;
+    }
+    if ("flatShippingPaise" in p) out.flat_shipping_paise = reqInt(p, "flatShippingPaise", 0, 10_000_000, "Flat shipping");
+    if ("paymentTerms" in p) out.payment_terms = optStr(p, "paymentTerms", 120, "Payment terms");
+    if ("creditLimitPaise" in p) out.credit_limit_paise = p.creditLimitPaise === null || p.creditLimitPaise === "" ? null : reqInt(p, "creditLimitPaise", 1, 100_000_000_000, "Credit limit");
+    if ("isPilot" in p) out.is_pilot = optBool(p, "isPilot") === true;
+    return out;
+  }
+
+  function assertTermsConsistent(d: Pick<DealerRow, "shipping_policy" | "flat_shipping_paise">): void {
+    if (d.shipping_policy === "flat" && !(d.flat_shipping_paise > 0)) throw new DealerError("VALIDATION", "A flat shipping rate needs an amount greater than zero");
+  }
+
+  const termsView = (d: DealerRow) => ({ purchaseMethod: d.purchase_method, shippingPolicy: d.shipping_policy, flatShippingPaise: d.flat_shipping_paise, paymentTerms: d.payment_terms, creditLimitPaise: d.credit_limit_paise, isPilot: d.is_pilot });
+
+  const inScope = (actor: AdminActor, dealerId: string): boolean => !actor.scope || actor.scope.all || actor.scope.dealerIds.includes(dealerId);
+  const scopeIds = (actor: AdminActor): string[] | undefined => (!actor.scope || actor.scope.all ? undefined : actor.scope.dealerIds);
 
   // ------------------------------------------------------------------------------------------
   // the dealer-facing catalogue — assignment-scoped BEFORE any product data is fetched
@@ -206,22 +252,32 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     includeDrafts?: boolean;
     templateId?: number;
     featuredOnly?: boolean;
+    categoryId?: number | null;
   }
 
-  async function buildCatalog(dealer: DealerRow, opts: CatalogOptions) {
+  async function assignedTemplates(dealer: DealerRow, opts: { templateId?: number; featuredOnly?: boolean } = {}) {
     const [allAccess, allRules, branding] = await Promise.all([repo.listAccess(dealer.id), repo.listRules(dealer.id), repo.getBranding(dealer.id)]);
-    const showPublic = branding?.show_public_price ?? false;
     let access = allAccess.filter((a) => a.is_visible);
     if (opts.templateId !== undefined) access = access.filter((a) => a.odoo_template_id === opts.templateId);
     if (opts.featuredOnly) {
       const featured = access.filter((a) => a.featured_rank !== null).sort((a, b) => (a.featured_rank ?? 0) - (b.featured_rank ?? 0));
       if (featured.length > 0) access = featured;
     }
+    const ordered: number[] = [];
+    for (const a of [...access].sort((x, y) => x.product_name.localeCompare(y.product_name))) if (!ordered.includes(a.odoo_template_id)) ordered.push(a.odoo_template_id);
+    return { access, allRules, branding, ordered };
+  }
+
+  async function buildCatalog(dealer: DealerRow, opts: CatalogOptions) {
+    const { access, allRules, branding, ordered } = await assignedTemplates(dealer, opts);
+    const showPublic = branding?.show_public_price ?? false;
     const rules = effectiveRules(allRules, opts.includeDrafts ?? false);
 
-    const orderedTemplates: number[] = [];
-    for (const a of [...access].sort((x, y) => x.product_name.localeCompare(y.product_name))) {
-      if (!orderedTemplates.includes(a.odoo_template_id)) orderedTemplates.push(a.odoo_template_id);
+    let orderedTemplates = ordered;
+    if (orderedTemplates.length > 0 && opts.categoryId) {
+      // Category navigation is scoped to the dealer's own assigned products — never the master catalogue.
+      const cats = await wrapOdoo(() => odoo.templateCategories(orderedTemplates));
+      orderedTemplates = orderedTemplates.filter((id) => (cats.get(id) ?? []).some((c) => c.id === opts.categoryId));
     }
     if (orderedTemplates.length === 0) return { items: [], page: opts.page, pageSize: opts.pageSize, total: 0, totalPages: 1 };
 
@@ -250,8 +306,9 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
           .filter((v) => accessByVariant.has(v.variantId))
           .map((v) => {
             const a = accessByVariant.get(v.variantId)!;
-            const rule = resolveActiveRule(rules, v.variantId, t);
-            const reason = !v.purchasable ? "unavailable" : !a.is_orderable ? "not_orderable" : !rule ? "no_price" : null;
+            const rule = resolveActiveRule(rules, v.variantId, t, a.minimum_quantity);
+            const outOfStock = v.inventoryTracked === true && v.inStock === false;
+            const reason = !v.purchasable ? "unavailable" : outOfStock ? "out_of_stock" : !a.is_orderable ? "not_orderable" : !rule ? "no_price" : null;
             return {
               variantId: v.variantId,
               sku: v.sku ?? a.sku,
@@ -259,6 +316,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
               attributes: v.attributes,
               pricePaise: rule ? rule.unit_price_paise : null,
               taxBasis: rule ? rule.tax_basis : null,
+              tiers: activeTiers(rules, v.variantId, t).map((r) => ({ minQty: r.min_quantity ?? 1, pricePaise: r.unit_price_paise })),
               orderable: reason === null,
               unavailableReason: reason,
               minQty: a.minimum_quantity,
@@ -290,17 +348,19 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
   async function quoteForCart(dealer: DealerRow) {
     const [cart, access, rules] = await Promise.all([repo.listCart(dealer.id), repo.listAccess(dealer.id), repo.listRules(dealer.id, { statuses: ["active"] })]);
     const variants = cart.length ? await variantInfoOrThrow(cart.map((c) => c.odoo_variant_id)) : new Map<number, OdooVariantInfo>();
+    const shipping = shippingFor(dealer);
     const quote = await buildDealerQuote({
       lines: cart.map((c) => ({ variantId: c.odoo_variant_id, quantity: c.quantity, quotedPricePaise: c.quoted_price_paise })),
       access,
       rules,
       variants,
       now: now(),
+      shippingPaise: cart.length ? shipping.paise : 0,
     });
-    return { quote, cart, access, variants };
+    return { quote, cart, access, variants, shipping };
   }
 
-  async function decorateQuote(quote: DealerQuote, variants: Map<number, OdooVariantInfo>) {
+  async function decorateQuote(quote: DealerQuote, variants: Map<number, OdooVariantInfo>, dealer: DealerRow, shippingLabel: string) {
     const templateIds = [...new Set(quote.lines.map((l) => l.templateId).filter((x): x is number => x !== null))];
     const images = new Map<number, string | null>();
     if (templateIds.length) {
@@ -311,8 +371,13 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
         /* images are decoration only — never fail a quote over them */
       }
     }
+    const used = quote.lines.length ? await repo.sumOpenOrders(dealer.id) : 0;
     return {
       ...quote,
+      shippingLabel,
+      purchaseMethod: dealer.purchase_method,
+      paymentTerms: dealer.payment_terms,
+      credit: dealer.credit_limit_paise ? { limitPaise: dealer.credit_limit_paise, usedPaise: used, availablePaise: Math.max(0, dealer.credit_limit_paise - used), wouldExceed: used + quote.totalPaise > dealer.credit_limit_paise } : null,
       lines: quote.lines.map((l: DealerQuoteLine) => ({
         ...l,
         imageUrl: l.templateId !== null ? (images.get(l.templateId) ?? null) : null,
@@ -322,7 +387,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
   }
 
   // ------------------------------------------------------------------------------------------
-  // Odoo sync of a stored order (used on placement and by admin retry)
+  // Odoo sync of a stored order (placement, admin retry, automatic retry)
   // ------------------------------------------------------------------------------------------
 
   async function syncOrderToOdoo(dealer: DealerRow, order: OrderRow, items: OrderItemRow[], actor: { type: "dealer" | "admin" | "system"; id: string | null }): Promise<OrderRow> {
@@ -343,14 +408,9 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       }
       const a = order.shipping_address;
       const shipTo = [a.name, a.phone, a.line1, a.line2, a.city, a.state, a.pincode].filter(Boolean).join(", ");
-      const note = [`Dealer order ${order.order_number}`, order.po_reference ? `Dealer PO: ${order.po_reference}` : null, shipTo ? `Ship to: ${shipTo}` : null, order.notes].filter(Boolean).join("\n");
+      const note = [`Dealer order ${order.order_number}`, order.po_reference ? `Dealer PO: ${order.po_reference}` : null, dealer.payment_terms ? `Terms: ${dealer.payment_terms}` : null, shipTo ? `Ship to: ${shipTo}` : null, order.notes].filter(Boolean).join("\n");
       const created = await odoo.createQuotation({ partnerId, clientOrderRef: order.order_number, lines, note });
-      const updated = await repo.updateOrder(order.id, {
-        status: "quotation",
-        odoo_sale_order_id: created.saleOrderId,
-        odoo_order_name: created.name,
-        last_sync_error: null,
-      });
+      const updated = await repo.updateOrder(order.id, { status: "quotation", odoo_sale_order_id: created.saleOrderId, odoo_order_name: created.name, last_sync_error: null });
       await audit({ dealerId: dealer.id, actorType: actor.type, actorId: actor.id, event: "order.synced", entity: "order", entityId: order.id, newValue: { odooOrder: created.name } });
       return updated;
     } catch (err) {
@@ -361,11 +421,29 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     }
   }
 
+  /** Automatic retry (spec §11 "retry queue"): orders stuck in pending_sync are re-sent with exponential
+   * backoff (1, 2, 4 … 60 min) whenever someone lists orders — no separate worker needed, and the real
+   * Odoo port is idempotent on the order number so a retry can never create a second quotation. */
+  async function retryDue(dealerIds?: string[], max = 2): Promise<number> {
+    let done = 0;
+    for (const o of await repo.listPendingSync(20, dealerIds)) {
+      if (done >= max) break;
+      if (o.retry_count >= 12) continue;
+      const waitMs = Math.min(60, 2 ** Math.max(0, o.retry_count - 1)) * 60_000;
+      if (o.retry_count > 0 && now().getTime() - Date.parse(o.updated_at) < waitMs) continue;
+      const dealer = await repo.getDealer(o.dealer_id);
+      if (!dealer) continue;
+      await syncOrderToOdoo(dealer, o, await repo.listOrderItems(o.id), { type: "system", id: null });
+      done++;
+    }
+    return done;
+  }
+
   async function refreshOrderStatus(dealerId: string, order: OrderRow): Promise<OrderRow> {
     if (!order.odoo_sale_order_id || order.status === "completed" || order.status === "cancelled" || order.status === "pending_sync") return order;
     try {
       const states = await odoo.getOrderStates([order.odoo_sale_order_id]);
-      const mapped = ODOO_STATE_TO_STATUS[states.get(order.odoo_sale_order_id) ?? ""];
+      const mapped = ODOO_STATE_TO_STATUS[states.get(order.odoo_sale_order_id)?.state ?? ""];
       if (mapped && mapped !== order.status) {
         const updated = await repo.updateOrder(order.id, { status: mapped });
         await audit({ dealerId, actorType: "system", actorId: null, event: "order.status_changed", entity: "order", entityId: order.id, oldValue: { status: order.status }, newValue: { status: mapped } });
@@ -411,6 +489,26 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     };
   }
 
+  async function revokeDealerSessions(dealerId: string): Promise<number> {
+    const users = await repo.listDealerUsers(dealerId);
+    const ids = users.map((u) => u.auth_user_id);
+    if (ids.length === 0) return 0;
+    await auth.revokeSessions(ids);
+    const t = now().toISOString();
+    for (const u of users) await repo.updateDealerUser(u.id, { sessions_revoked_before: t });
+    return ids.length;
+  }
+
+  async function addTeamUser(dealer: DealerRow, email: string, role: "owner" | "buyer"): Promise<DealerUserRow> {
+    const users = await repo.listDealerUsers(dealer.id);
+    if (users.length >= MAX_TEAM) throw new DealerError("VALIDATION", `A dealer can have at most ${MAX_TEAM} users`);
+    if (users.some((u) => u.email.toLowerCase() === email.toLowerCase())) throw new DealerError("CONFLICT", "That person already has access");
+    const invited = await auth.inviteDealerUser(email, { dealerCode: dealer.dealer_code, displayName: dealer.display_name });
+    const mapped = await repo.getDealerUserByAuthId(invited.authUserId);
+    if (mapped) throw new DealerError("CONFLICT", "That email already belongs to a dealer account");
+    return repo.insertDealerUser({ dealer_id: dealer.id, auth_user_id: invited.authUserId, email, role, status: "invited", invited_at: now().toISOString(), last_login_at: null, sessions_revoked_before: null });
+  }
+
   // ------------------------------------------------------------------------------------------
   // ADMIN actions
   // ------------------------------------------------------------------------------------------
@@ -424,6 +522,13 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     "dealers.setStatus": "dealers.manage",
     "dealers.bulkSuspend": "dealers.manage",
     "dealers.invite": "dealers.manage",
+    "dealers.addUser": "dealers.manage",
+    "dealers.setUserStatus": "dealers.manage",
+    "dealers.sendReset": "dealers.manage",
+    "dealers.revokeSessions": "dealers.manage",
+    "offers.list": "dealers.view",
+    "offers.save": "dealers.manage",
+    "offers.delete": "dealers.manage",
     "catalog.searchMaster": "pricing.manage",
     "catalog.get": "dealers.view",
     "catalog.assign": "pricing.manage",
@@ -431,6 +536,8 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     "catalog.updateAccess": "pricing.manage",
     "prices.saveDraft": "pricing.manage",
     "prices.discardDraft": "pricing.manage",
+    "prices.removeTier": "pricing.manage",
+    "prices.applyToVariants": "pricing.manage",
     "prices.publish": "pricing.manage",
     "prices.history": "dealers.view",
     "prices.revert": "pricing.manage",
@@ -442,14 +549,30 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     "orders.list": "orders.view",
     "orders.get": "orders.view",
     "orders.retrySync": "orders.manage",
+    "orders.reconcile": "orders.view",
     "audit.list": "dealers.view",
+    "security.summary": "dealers.view",
+    "portal.getMode": "dealers.view",
+    "portal.setMode": "portal.manage",
+    "roles.listManagers": "roles.manage",
+    "roles.setGrant": "roles.manage",
   };
 
   const admin: Record<string, AdminHandler> = {
-    "dealers.list": async (_a, p) => {
+    "dealers.list": async (a, p) => {
       const { page, pageSize, offset } = pageParams(p, 25, 100);
       const status = optStr(p, "status", 20) as DealerStatus | null;
-      const { rows, total } = await repo.listDealers({ search: optStr(p, "search", 100) ?? undefined, status: status ?? undefined, offset, limit: pageSize });
+      const sortBy = optStr(p, "sortBy", 20);
+      const sortDir = optStr(p, "sortDir", 4);
+      const { rows, total } = await repo.listDealers({
+        search: optStr(p, "search", 100) ?? undefined,
+        status: status ?? undefined,
+        offset,
+        limit: pageSize,
+        sortBy: sortBy === "name" || sortBy === "status" || sortBy === "code" || sortBy === "created" || sortBy === "updated" ? sortBy : undefined,
+        sortDir: sortDir === "asc" || sortDir === "desc" ? sortDir : undefined,
+        onlyIds: scopeIds(a),
+      });
       const stats = await repo.dealerStats(rows.map((r) => r.id));
       const branding = await Promise.all(rows.map((r) => repo.getBranding(r.id)));
       return {
@@ -462,6 +585,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
           displayName: r.display_name,
           legalName: r.legal_name,
           status: r.status,
+          isPilot: r.is_pilot,
           logoPath: branding[i]?.logo_path ?? null,
           accentColor: branding[i]?.accent_color ?? null,
           ownerEmail: stats.get(r.id)?.ownerEmail ?? r.contact_email,
@@ -475,18 +599,21 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
 
     "dealers.get": async (_a, p) => {
       const dealer = await mustDealer(reqUuid(p, "id"));
-      const [branding, users, access, rules, orderCounts] = await Promise.all([
+      const [branding, users, access, rules, orderCounts, offers] = await Promise.all([
         repo.getBranding(dealer.id),
         repo.listDealerUsers(dealer.id),
         repo.listAccess(dealer.id),
         repo.listRules(dealer.id),
         repo.countOrdersByStatus(dealer.id),
+        repo.listOffers(dealer.id),
       ]);
       const readiness = checkReadiness({ ownerEmail: dealer.contact_email, access, rules: rules.filter((r) => r.status === "active"), now: now() });
       return {
         dealer,
+        terms: termsView(dealer),
         branding,
-        users: users.map((u) => ({ id: u.id, email: u.email, status: u.status, invitedAt: u.invited_at, lastLoginAt: u.last_login_at })),
+        users: users.map((u) => ({ id: u.id, email: u.email, role: u.role, status: u.status, invitedAt: u.invited_at, lastLoginAt: u.last_login_at })),
+        offers,
         stats: { assigned: access.length, draftPrices: rules.filter((r) => r.status === "draft").length, activePrices: rules.filter((r) => r.status === "active").length, orders: orderCounts },
         readiness,
         ready: readiness.length === 0,
@@ -494,8 +621,12 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     },
 
     "dealers.create": async (a, p) => {
+      if (a.scope && !a.scope.all) throw new DealerError("FORBIDDEN", "You can only manage the dealers you were granted");
       const displayName = reqStr(p, "displayName", 120, "Display name");
       const email = reqEmail(p, "contactEmail", "Owner email");
+      const terms = parseTerms(p);
+      const base: DealerRow["shipping_policy"] = terms.shipping_policy ?? "as_agreed";
+      assertTermsConsistent({ shipping_policy: base, flat_shipping_paise: terms.flat_shipping_paise ?? 0 });
       const dealer = await repo.insertDealer({
         dealer_code: genDealerCode(displayName),
         legal_name: reqStr(p, "legalName", 200, "Legal business name"),
@@ -509,6 +640,12 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
         currency: "INR",
         status: "draft",
         linked_odoo_partner_id: null,
+        purchase_method: terms.purchase_method ?? "request_order",
+        shipping_policy: base,
+        flat_shipping_paise: terms.flat_shipping_paise ?? 0,
+        payment_terms: terms.payment_terms ?? null,
+        credit_limit_paise: terms.credit_limit_paise ?? null,
+        is_pilot: terms.is_pilot ?? false,
         created_by: a.id,
       });
       await repo.upsertBranding(dealer.id, { accent_color: reqAccent(p, "accentColor") ?? "#10148F" });
@@ -529,9 +666,11 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       if ("gstin" in p) patch.gstin = optGstin(p, "gstin");
       if ("billingAddress" in p) patch.billing_address = parseAddress(p.billingAddress, false, "Billing address");
       if ("shippingAddress" in p) patch.shipping_address = parseAddress(p.shippingAddress, false, "Shipping address");
+      Object.assign(patch, parseTerms(p));
+      assertTermsConsistent({ shipping_policy: patch.shipping_policy ?? dealer.shipping_policy, flat_shipping_paise: patch.flat_shipping_paise ?? dealer.flat_shipping_paise });
       const updated = await repo.updateDealer(dealer.id, patch);
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "dealer.updated", entity: "dealer", entityId: dealer.id, oldValue: pick(dealer, Object.keys(patch)), newValue: pick(updated, Object.keys(patch)), requestId: a.requestId });
-      return { dealer: updated };
+      return { dealer: updated, terms: termsView(updated) };
     },
 
     "dealers.branding": async (a, p) => {
@@ -565,6 +704,8 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
         target = users.some((u) => u.status === "active") ? "active" : "invited";
       } else assertTransition(dealer.status, to);
       const updated = await repo.updateDealer(dealer.id, { status: target });
+      // Suspension/archival also ends every live session, so reactivation always needs a fresh sign-in.
+      if (target === "suspended" || target === "archived") await revokeDealerSessions(dealer.id);
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: `dealer.${target === "suspended" ? "suspended" : target === "archived" ? "archived" : "reactivated"}`, entity: "dealer", entityId: dealer.id, oldValue: { status: dealer.status }, newValue: { status: target }, requestId: a.requestId });
       return { dealer: updated };
     },
@@ -577,11 +718,12 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const skipped: string[] = [];
       for (const id of ids) {
         const dealer = await repo.getDealer(id);
-        if (!dealer || !ALLOWED_TRANSITIONS[dealer.status].includes("suspended")) {
+        if (!dealer || !inScope(a, id) || !ALLOWED_TRANSITIONS[dealer.status].includes("suspended")) {
           skipped.push(id);
           continue;
         }
         await repo.updateDealer(id, { status: "suspended" });
+        await revokeDealerSessions(id);
         await audit({ dealerId: id, actorType: "admin", actorId: a.id, event: "dealer.suspended", entity: "dealer", entityId: id, oldValue: { status: dealer.status }, newValue: { status: "suspended", bulk: true }, requestId: a.requestId });
         suspended++;
       }
@@ -600,15 +742,79 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
 
       const invited = await auth.inviteDealerUser(dealer.contact_email, { dealerCode: dealer.dealer_code, displayName: dealer.display_name });
       const existingMapping = await repo.getDealerUserByAuthId(invited.authUserId);
-      if (existingMapping && existingMapping.dealer_id !== dealer.id) {
-        throw new DealerError("CONFLICT", "That email already belongs to another dealer account");
-      }
+      if (existingMapping && existingMapping.dealer_id !== dealer.id) throw new DealerError("CONFLICT", "That email already belongs to another dealer account");
       if (!existingMapping) {
-        await repo.insertDealerUser({ dealer_id: dealer.id, auth_user_id: invited.authUserId, email: dealer.contact_email, role: "owner", status: "invited", invited_at: now().toISOString(), last_login_at: null });
+        await repo.insertDealerUser({ dealer_id: dealer.id, auth_user_id: invited.authUserId, email: dealer.contact_email, role: "owner", status: "invited", invited_at: now().toISOString(), last_login_at: null, sessions_revoked_before: null });
       }
       const updated = dealer.status === "draft" ? await repo.updateDealer(dealer.id, { status: "invited" }) : dealer;
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "invite.sent", entity: "dealer_user", entityId: invited.authUserId, newValue: { email: dealer.contact_email, existingAccount: invited.existing }, requestId: a.requestId });
       return { dealer: updated, existingAccount: invited.existing };
+    },
+
+    "dealers.addUser": async (a, p) => {
+      const dealer = await mustDealer(reqUuid(p, "id"));
+      if (dealer.status !== "invited" && dealer.status !== "active") throw new DealerError("CONFLICT", "Invite the dealer's owner first — team members can be added once the dealer is invited or active");
+      const email = reqEmail(p, "email");
+      const role = optStr(p, "role", 10) === "owner" ? "owner" : "buyer";
+      const user = await addTeamUser(dealer, email, role);
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "team.user_added", entity: "dealer_user", entityId: user.auth_user_id, newValue: { email, role }, requestId: a.requestId });
+      return { user: { id: user.id, email: user.email, role: user.role, status: user.status } };
+    },
+
+    "dealers.setUserStatus": async (a, p) => {
+      const dealer = await mustDealer(reqUuid(p, "id"));
+      const userId = reqUuid(p, "userId", "User");
+      const to = reqStr(p, "status", 10);
+      if (to !== "disabled" && to !== "active") throw new DealerError("VALIDATION", "Status must be disabled or active");
+      const users = await repo.listDealerUsers(dealer.id);
+      const user = users.find((u) => u.id === userId);
+      if (!user) throw new DealerError("NOT_FOUND", "User not found");
+      if (to === "disabled" && user.role === "owner" && !users.some((u) => u.id !== user.id && u.role === "owner" && u.status !== "disabled")) throw new DealerError("CONFLICT", "You can't disable the only owner of a dealer");
+      const updated = await repo.updateDealerUser(user.id, { status: to === "disabled" ? "disabled" : user.last_login_at ? "active" : "invited" });
+      if (to === "disabled") {
+        await auth.revokeSessions([user.auth_user_id]);
+        await repo.updateDealerUser(user.id, { sessions_revoked_before: now().toISOString() });
+      }
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: to === "disabled" ? "team.user_disabled" : "team.user_enabled", entity: "dealer_user", entityId: user.auth_user_id, requestId: a.requestId });
+      return { user: { id: updated.id, status: updated.status } };
+    },
+
+    "dealers.sendReset": async (a, p) => {
+      const dealer = await mustDealer(reqUuid(p, "id"));
+      const user = (await repo.listDealerUsers(dealer.id)).find((u) => u.id === reqUuid(p, "userId", "User"));
+      if (!user) throw new DealerError("NOT_FOUND", "User not found");
+      if (user.status === "disabled") throw new DealerError("CONFLICT", "Enable this user before sending a reset");
+      await auth.sendPasswordReset(user.email);
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "auth.reset_sent", entity: "dealer_user", entityId: user.auth_user_id, newValue: { email: user.email }, requestId: a.requestId });
+      return { sent: true };
+    },
+
+    "dealers.revokeSessions": async (a, p) => {
+      const dealer = await mustDealer(reqUuid(p, "id"));
+      const count = await revokeDealerSessions(dealer.id);
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "auth.sessions_revoked", entity: "dealer", entityId: dealer.id, newValue: { users: count }, requestId: a.requestId });
+      return { revoked: count };
+    },
+
+    "offers.list": async (_a, p) => ({ offers: await repo.listOffers((await mustDealer(reqUuid(p, "dealerId"))).id) }),
+
+    "offers.save": async (a, p) => {
+      const dealer = await mustDealer(reqUuid(p, "dealerId"));
+      const startsAt = optStr(p, "startsAt", 40);
+      const endsAt = optStr(p, "endsAt", 40);
+      if ((startsAt && Number.isNaN(Date.parse(startsAt))) || (endsAt && Number.isNaN(Date.parse(endsAt)))) throw new DealerError("VALIDATION", "Offer dates are not valid");
+      if (startsAt && endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) throw new DealerError("VALIDATION", "Offer end must be after its start");
+      const offer = await repo.insertOffer({ dealer_id: dealer.id, title: reqStr(p, "title", 120, "Title"), body: optStr(p, "body", 600, "Details"), starts_at: startsAt ? new Date(startsAt).toISOString() : null, ends_at: endsAt ? new Date(endsAt).toISOString() : null, is_active: optBool(p, "isActive") ?? true, created_by: a.id });
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "offer.created", entity: "offer", entityId: offer.id, newValue: { title: offer.title }, requestId: a.requestId });
+      return { offer };
+    },
+
+    "offers.delete": async (a, p) => {
+      const dealer = await mustDealer(reqUuid(p, "dealerId"));
+      const id = reqUuid(p, "offerId", "Offer");
+      await repo.deleteOffer(dealer.id, id);
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "offer.deleted", entity: "offer", entityId: id, requestId: a.requestId });
+      return { ok: true };
     },
 
     "catalog.searchMaster": async (_a, p) => {
@@ -616,7 +822,9 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const { page, pageSize, offset } = pageParams(p, 20, 50);
       const access = await repo.listAccess(dealer.id);
       const assigned = new Set(access.map((x) => x.odoo_variant_id));
-      const res = await wrapOdoo(() => odoo.searchProducts({ text: optStr(p, "q", 100) ?? undefined, offset, limit: pageSize }));
+      // "Unassigned" view (spec §5.4 filter): products with no variant assigned to this dealer yet.
+      const exclude = optBool(p, "unassignedOnly") ? [...new Set(access.map((x) => x.odoo_template_id))] : undefined;
+      const res = await wrapOdoo(() => odoo.searchProducts({ text: optStr(p, "q", 100) ?? undefined, excludeTemplateIds: exclude, offset, limit: pageSize }));
       return {
         page,
         pageSize,
@@ -642,10 +850,12 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const rows = access
         .filter((a) => !q || a.product_name.toLowerCase().includes(q) || (a.sku ?? "").toLowerCase().includes(q))
         .map((a) => {
-          const active = resolveActiveRule(rules, a.odoo_variant_id, t);
-          const draft = rules.find((r) => r.status === "draft" && r.odoo_variant_id === a.odoo_variant_id) ?? null;
+          const active = resolveActiveRule(rules, a.odoo_variant_id, t, a.minimum_quantity);
+          const drafts = rules.filter((r) => r.status === "draft" && r.odoo_variant_id === a.odoo_variant_id).sort((x, y) => (x.min_quantity ?? 1) - (y.min_quantity ?? 1));
+          const draft = drafts.find((d) => (d.min_quantity ?? 1) === (active?.min_quantity ?? 1)) ?? drafts[0] ?? null;
           const expiring = !!active && !!active.ends_at && Date.parse(active.ends_at) - t.getTime() < EXPIRING_SOON_MS;
           const state = !active ? (draft ? "draft_only" : "missing_price") : expiring ? "expiring" : draft ? "draft_pending" : "ok";
+          const tiers = [...activeTiers(rules, a.odoo_variant_id, t), ...drafts].map((r) => priceView(r)!).filter((r) => r.minQty > 1 || r.status === "draft" || activeTiers(rules, a.odoo_variant_id, t).length > 1);
           return {
             variantId: a.odoo_variant_id,
             templateId: a.odoo_template_id,
@@ -658,10 +868,11 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
             featuredRank: a.featured_rank,
             activePrice: priceView(active),
             draftPrice: priceView(draft),
+            tiers,
             state,
           };
         })
-        .filter((r) => filter === "all" || filter === "assigned" || (filter === "missing_price" && (r.state === "missing_price" || r.state === "draft_only")) || (filter === "expiring" && r.state === "expiring") || (filter === "drafts" && !!r.draftPrice))
+        .filter((r) => filter === "all" || filter === "assigned" || (filter === "missing_price" && (r.state === "missing_price" || r.state === "draft_only")) || (filter === "expiring" && r.state === "expiring") || (filter === "drafts" && (!!r.draftPrice || r.tiers.some((x) => x.status === "draft"))))
         .sort((x, y) => x.name.localeCompare(y.name));
       const slice = rows.slice(offset, offset + pageSize);
       // Public reference price is live Odoo data — fetched for the visible page only, best-effort.
@@ -735,7 +946,14 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     "prices.saveDraft": async (a, p) => {
       const dealer = await mustDealer(reqUuid(p, "dealerId"));
       const variantId = reqInt(p, "variantId");
-      const input = { pricePaise: reqInt(p, "pricePaise", 1, 1_000_000_000_000, "Price"), taxBasis: reqStr(p, "taxBasis", 12) as "exclusive" | "inclusive", startsAt: optStr(p, "startsAt", 40), endsAt: optStr(p, "endsAt", 40), note: optStr(p, "note", 500) };
+      const input = {
+        pricePaise: reqInt(p, "pricePaise", 1, 1_000_000_000_000, "Price"),
+        taxBasis: reqStr(p, "taxBasis", 12) as "exclusive" | "inclusive",
+        startsAt: optStr(p, "startsAt", 40),
+        endsAt: optStr(p, "endsAt", 40),
+        note: optStr(p, "note", 500),
+        minQuantity: optInt(p, "minQuantity", 1, 100_000, "Tier quantity") ?? 1,
+      };
       validatePriceInput(input);
       return saveDraft(dealer.id, variantId, input, a);
     },
@@ -749,6 +967,38 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       return { discarded: drafts.length };
     },
 
+    "prices.removeTier": async (a, p) => {
+      const dealer = await mustDealer(reqUuid(p, "dealerId"));
+      const ruleId = reqUuid(p, "ruleId", "Price");
+      const rule = (await repo.listRules(dealer.id)).find((r) => r.id === ruleId);
+      if (!rule) throw new DealerError("NOT_FOUND", "That price doesn't exist");
+      if (rule.status === "draft") await repo.deleteDraftRules(dealer.id, [rule.id]);
+      else if (rule.status === "active") await repo.applyPricePlan(dealer.id, { at: now().toISOString(), expireIds: [rule.id], activate: [] });
+      else throw new DealerError("CONFLICT", "That price has already ended");
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "price.tier_removed", entity: "price_rule", entityId: rule.id, oldValue: { variantId: rule.odoo_variant_id, minQty: rule.min_quantity, pricePaise: rule.unit_price_paise, status: rule.status }, requestId: a.requestId });
+      return { ok: true };
+    },
+
+    "prices.applyToVariants": async (a, p) => {
+      // Spec §7 "product-level price covering variants": copy one variant's price to every other
+      // assigned variant of the same product, as drafts (so it stays reviewable and audited).
+      const dealer = await mustDealer(reqUuid(p, "dealerId"));
+      const variantId = reqInt(p, "variantId");
+      const tier = optInt(p, "minQuantity", 1, 100_000) ?? 1;
+      const [access, rules] = await Promise.all([repo.listAccess(dealer.id), repo.listRules(dealer.id)]);
+      const source = access.find((x) => x.odoo_variant_id === variantId);
+      if (!source) throw new DealerError("NOT_FOUND", "That product isn't assigned to this dealer");
+      const rule = rules.find((r) => r.status === "draft" && r.odoo_variant_id === variantId && r.min_quantity === tier) ?? activeTiers(rules, variantId, now()).find((r) => r.min_quantity === tier);
+      if (!rule) throw new DealerError("VALIDATION", "Set a price on this variant first");
+      let drafted = 0;
+      for (const sibling of access.filter((x) => x.odoo_template_id === source.odoo_template_id && x.odoo_variant_id !== variantId)) {
+        await saveDraft(dealer.id, sibling.odoo_variant_id, { pricePaise: rule.unit_price_paise, taxBasis: rule.tax_basis, startsAt: rule.starts_at, endsAt: rule.ends_at, note: `Same as variant ${variantId}`, minQuantity: tier }, a, true);
+        drafted++;
+      }
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "price.applied_to_variants", entity: "price_rule", newValue: { fromVariantId: variantId, drafted }, requestId: a.requestId });
+      return { drafted };
+    },
+
     "prices.publish": async (a, p) => {
       const dealer = await mustDealer(reqUuid(p, "dealerId"));
       const only = Array.isArray(p.variantIds) ? intArray(p, "variantIds", 500, "Products") : undefined;
@@ -759,7 +1009,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const dealer = await mustDealer(reqUuid(p, "dealerId"));
       const variantId = optInt(p, "variantId");
       const rules = await repo.listRules(dealer.id, variantId ? { variantIds: [variantId] } : undefined);
-      return { rules: rules.sort((x, y) => y.created_at.localeCompare(x.created_at)).slice(0, 200).map((r) => ({ id: r.id, variantId: r.odoo_variant_id, status: r.status, pricePaise: r.unit_price_paise, taxBasis: r.tax_basis, startsAt: r.starts_at, endsAt: r.ends_at, note: r.deal_note, version: r.version, createdAt: r.created_at })) };
+      return { rules: rules.sort((x, y) => y.created_at.localeCompare(x.created_at)).slice(0, 200).map((r) => ({ id: r.id, variantId: r.odoo_variant_id, minQty: r.min_quantity ?? 1, status: r.status, pricePaise: r.unit_price_paise, taxBasis: r.tax_basis, startsAt: r.starts_at, endsAt: r.ends_at, note: r.deal_note, version: r.version, createdAt: r.created_at })) };
     },
 
     "prices.revert": async (a, p) => {
@@ -771,7 +1021,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const access = (await repo.listAccess(dealer.id)).find((x) => x.odoo_variant_id === old.odoo_variant_id);
       if (!access) throw new DealerError("VALIDATION", "That product is no longer assigned to this dealer");
       // A revert is a NEW price effective now (history stays immutable), audited as its own event.
-      await saveDraft(dealer.id, old.odoo_variant_id, { pricePaise: old.unit_price_paise, taxBasis: old.tax_basis, startsAt: null, endsAt: null, note: `Restored from ${old.created_at.slice(0, 10)}` }, a);
+      await saveDraft(dealer.id, old.odoo_variant_id, { pricePaise: old.unit_price_paise, taxBasis: old.tax_basis, startsAt: null, endsAt: null, note: `Restored from ${old.created_at.slice(0, 10)}`, minQuantity: old.min_quantity ?? 1 }, a);
       return publish(dealer.id, [old.odoo_variant_id], a, "price.reverted");
     },
 
@@ -785,12 +1035,14 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       let drafted = 0;
       const skipped: number[] = [];
       for (const id of variantIds) {
-        const active = resolveActiveRule(rules, id, t);
-        if (!active) {
+        const tiers = activeTiers(rules, id, t);
+        if (tiers.length === 0) {
           skipped.push(id);
           continue;
         }
-        await saveDraft(dealer.id, id, { pricePaise: adjustPaiseByPercent(active.unit_price_paise, percent), taxBasis: active.tax_basis, startsAt: null, endsAt: null, note: `Bulk ${percent > 0 ? "+" : ""}${percent}%` }, a, true);
+        for (const tier of tiers) {
+          await saveDraft(dealer.id, id, { pricePaise: adjustPaiseByPercent(tier.unit_price_paise, percent), taxBasis: tier.tax_basis, startsAt: null, endsAt: null, note: `Bulk ${percent > 0 ? "+" : ""}${percent}%`, minQuantity: tier.min_quantity ?? 1 }, a, true);
+        }
         drafted++;
       }
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "price.bulk_adjusted", entity: "price_rule", newValue: { percent, drafted, skipped: skipped.length }, requestId: a.requestId });
@@ -801,6 +1053,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const dealer = await mustDealer(reqUuid(p, "dealerId"));
       const source = await mustDealer(reqUuid(p, "fromDealerId", "Source dealer"));
       if (source.id === dealer.id) throw new DealerError("VALIDATION", "Choose a different dealer to copy from");
+      if (!inScope(a, source.id)) throw new DealerError("NOT_FOUND", "Dealer not found");
       const withPrices = optBool(p, "withPrices") ?? true;
       const [srcAccess, srcRules, mine] = await Promise.all([repo.listAccess(source.id), repo.listRules(source.id, { statuses: ["active"] }), repo.listAccess(dealer.id)]);
       const have = new Set(mine.map((x) => x.odoo_variant_id));
@@ -812,10 +1065,11 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       if (withPrices) {
         const t = now();
         for (const x of fresh) {
-          const rule = resolveActiveRule(srcRules, x.odoo_variant_id, t);
-          if (!rule) continue;
-          await saveDraft(dealer.id, x.odoo_variant_id, { pricePaise: rule.unit_price_paise, taxBasis: rule.tax_basis, startsAt: null, endsAt: null, note: `Copied from ${source.dealer_code}` }, a, true);
-          drafted++;
+          const tiers = activeTiers(srcRules, x.odoo_variant_id, t);
+          for (const rule of tiers) {
+            await saveDraft(dealer.id, x.odoo_variant_id, { pricePaise: rule.unit_price_paise, taxBasis: rule.tax_basis, startsAt: null, endsAt: null, note: `Copied from ${source.dealer_code}`, minQuantity: rule.min_quantity ?? 1 }, a, true);
+          }
+          if (tiers.length) drafted++;
         }
       }
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "catalog.copied", entity: "dealer", entityId: source.id, newValue: { assigned: fresh.length, drafted, withPrices }, requestId: a.requestId });
@@ -854,7 +1108,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       let drafted = 0;
       for (const r of good) {
         if (r.action === "unchanged") continue;
-        await saveDraft(dealer.id, r.variantId!, { pricePaise: r.newPricePaise!, taxBasis: r.taxBasis!, startsAt: r.startsAt, endsAt: r.endsAt, note: r.note ?? "CSV import" }, a, true);
+        await saveDraft(dealer.id, r.variantId!, { pricePaise: r.newPricePaise!, taxBasis: r.taxBasis!, startsAt: r.startsAt, endsAt: r.endsAt, note: r.note ?? "CSV import", minQuantity: r.tierQty }, a, true);
         drafted++;
       }
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "price.imported", entity: "price_rule", newValue: { rows: good.length, drafted, assigned: toAssign.length, skipped: bad.length }, requestId: a.requestId });
@@ -871,19 +1125,21 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       return { preview: true, dealer: { displayName: dealer.display_name, legalName: dealer.legal_name }, branding, catalog };
     },
 
-    "orders.list": async (_a, p) => {
+    "orders.list": async (a, p) => {
       const { page, pageSize, offset } = pageParams(p, 25, 100);
       const dealerId = p.dealerId ? reqUuid(p, "dealerId") : undefined;
+      if (dealerId && !inScope(a, dealerId)) throw new DealerError("NOT_FOUND", "Dealer not found");
       const status = optStr(p, "status", 20) as OrderStatus | null;
-      const { rows, total } = await repo.listOrders({ dealerId, status: status ?? undefined, offset, limit: pageSize });
+      await retryDue(dealerId ? [dealerId] : scopeIds(a));
+      const { rows, total } = await repo.listOrders({ dealerId, dealerIds: dealerId ? undefined : scopeIds(a), status: status ?? undefined, offset, limit: pageSize });
       const dealers = new Map<string, DealerRow | null>();
       for (const r of rows) if (!dealers.has(r.dealer_id)) dealers.set(r.dealer_id, await repo.getDealer(r.dealer_id));
       return { page, pageSize, total, rows: rows.map((r) => ({ ...orderView(r), dealerId: r.dealer_id, dealerName: dealers.get(r.dealer_id)?.display_name ?? "—", lastSyncError: r.last_sync_error, retryCount: r.retry_count })) };
     },
 
-    "orders.get": async (_a, p) => {
+    "orders.get": async (a, p) => {
       const order = await repo.getOrder(reqUuid(p, "id"));
-      if (!order) throw new DealerError("NOT_FOUND", "Order not found");
+      if (!order || !inScope(a, order.dealer_id)) throw new DealerError("NOT_FOUND", "Order not found");
       const refreshed = await refreshOrderStatus(order.dealer_id, order);
       const [items, dealer] = await Promise.all([repo.listOrderItems(order.id), repo.getDealer(order.dealer_id)]);
       return { order: { ...orderView(refreshed), dealerId: order.dealer_id, dealerName: dealer?.display_name ?? "—", lastSyncError: refreshed.last_sync_error, retryCount: refreshed.retry_count }, items: items.map(itemView) };
@@ -891,11 +1147,42 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
 
     "orders.retrySync": async (a, p) => {
       const order = await repo.getOrder(reqUuid(p, "id"));
-      if (!order) throw new DealerError("NOT_FOUND", "Order not found");
+      if (!order || !inScope(a, order.dealer_id)) throw new DealerError("NOT_FOUND", "Order not found");
       if (order.status !== "pending_sync") throw new DealerError("CONFLICT", "Only an order waiting for Odoo can be retried");
       const [dealer, items] = await Promise.all([mustDealer(order.dealer_id), repo.listOrderItems(order.id)]);
       const updated = await syncOrderToOdoo(dealer, order, items, { type: "admin", id: a.id });
       return { order: orderView(updated), synced: updated.status !== "pending_sync" };
+    },
+
+    // Reconciliation report (spec §11): every dealer order vs. the authoritative Odoo record.
+    "orders.reconcile": async (a) => {
+      const { rows } = await repo.listOrders({ dealerIds: scopeIds(a), offset: 0, limit: 200 });
+      const withOdoo = rows.filter((o) => o.odoo_sale_order_id);
+      let states = new Map<number, { state: string; amountTotalPaise: number }>();
+      let odooReachable = true;
+      try {
+        states = withOdoo.length ? await odoo.getOrderStates(withOdoo.map((o) => o.odoo_sale_order_id!)) : states;
+      } catch {
+        odooReachable = false;
+      }
+      const dealers = new Map<string, string>();
+      for (const o of rows) if (!dealers.has(o.dealer_id)) dealers.set(o.dealer_id, (await repo.getDealer(o.dealer_id))?.display_name ?? "—");
+      const issues: { orderId: string; orderNumber: string; dealerName: string; kind: string; detail: string }[] = [];
+      const t = now().getTime();
+      for (const o of rows) {
+        const base = { orderId: o.id, orderNumber: o.order_number, dealerName: dealers.get(o.dealer_id) ?? "—" };
+        if (o.status === "pending_sync" && t - Date.parse(o.created_at) > PENDING_STALE_MS) issues.push({ ...base, kind: "pending_too_long", detail: `Not in Odoo after ${Math.round((t - Date.parse(o.created_at)) / 60000)} min${o.last_sync_error ? ` — ${o.last_sync_error}` : ""}` });
+        if (!o.odoo_sale_order_id || !odooReachable) continue;
+        const od = states.get(o.odoo_sale_order_id);
+        if (!od) {
+          issues.push({ ...base, kind: "missing_in_odoo", detail: `Odoo order ${o.odoo_order_name ?? o.odoo_sale_order_id} was not found (deleted?)` });
+          continue;
+        }
+        const mapped = ODOO_STATE_TO_STATUS[od.state];
+        if (mapped && mapped !== o.status) issues.push({ ...base, kind: "status_mismatch", detail: `Portal says ${o.status}, Odoo says ${od.state}` });
+        if (Math.abs(od.amountTotalPaise - o.total_paise) > 100) issues.push({ ...base, kind: "amount_mismatch", detail: `Portal total ${o.total_paise / 100}, Odoo total ${od.amountTotalPaise / 100}` });
+      }
+      return { checkedAt: now().toISOString(), checked: rows.length, odooReachable, issues };
     },
 
     "audit.list": async (_a, p) => {
@@ -904,17 +1191,59 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const { rows, total } = await repo.listAudit({ dealerId: dealer.id, offset, limit: pageSize });
       return { page, pageSize, total, rows: rows.map((r) => ({ id: r.id, at: r.created_at, actorType: r.actor_type, actorId: r.actor_id, event: r.event_type, entity: r.entity, entityId: r.entity_id, oldValue: r.old_value, newValue: r.new_value })) };
     },
+
+    // Alerting for unusual failed access (spec §10): denied/cross-tenant attempts in the last 24 h.
+    "security.summary": async () => {
+      const since = new Date(now().getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const counts = await repo.countAudit({ eventTypes: ["security.denied", "security.cross_tenant_denied"], sinceIso: since });
+      const denied = counts["security.denied"] ?? 0;
+      const cross = counts["security.cross_tenant_denied"] ?? 0;
+      return { sinceHours: 24, denied, crossTenant: cross, alert: denied + cross >= 5 || cross > 0 };
+    },
+
+    "portal.getMode": async () => ({ mode: await repo.getPortalMode() }),
+
+    "portal.setMode": async (a, p) => {
+      const mode = reqStr(p, "mode", 8) as PortalMode;
+      if (mode !== "off" && mode !== "pilot" && mode !== "on") throw new DealerError("VALIDATION", "Mode must be off, pilot or on");
+      const before = await repo.getPortalMode();
+      await repo.setPortalMode(mode);
+      await audit({ dealerId: null, actorType: "admin", actorId: a.id, event: "portal.mode_changed", entity: "portal", oldValue: { mode: before }, newValue: { mode }, requestId: a.requestId });
+      return { mode };
+    },
+
+    "roles.listManagers": async () => {
+      const managers = await repo.listAdminsByRole("dealer_manager");
+      const grants = await Promise.all(managers.map((m) => repo.getAdminGrant(m.id)));
+      return { managers: managers.map((m, i) => ({ userId: m.id, name: m.fullName, dealerIds: grants[i]?.dealer_ids ?? null, hasGrant: !!grants[i], canManagePricing: grants[i]?.can_manage_pricing ?? false })) };
+    },
+
+    "roles.setGrant": async (a, p) => {
+      const userId = reqUuid(p, "userId", "User");
+      const managers = await repo.listAdminsByRole("dealer_manager");
+      if (!managers.some((m) => m.id === userId)) throw new DealerError("VALIDATION", "That account doesn't have the Dealer manager role — assign it under Settings → Admin users first");
+      let dealerIds: string[] | null = null;
+      if (Array.isArray(p.dealerIds)) {
+        dealerIds = [...new Set(p.dealerIds.map(String))].slice(0, 500);
+        for (const id of dealerIds) await mustDealer(id);
+      }
+      const grant = await repo.upsertAdminGrant({ auth_user_id: userId, dealer_ids: dealerIds, can_manage_pricing: optBool(p, "canManagePricing") === true, granted_by: a.id });
+      await audit({ dealerId: null, actorType: "admin", actorId: a.id, event: "roles.grant_set", entity: "admin_grant", entityId: userId, newValue: { dealerIds: grant.dealer_ids === null ? "all" : grant.dealer_ids.length, pricing: grant.can_manage_pricing }, requestId: a.requestId });
+      return { grant };
+    },
   };
 
-  async function saveDraft(dealerId: string, variantId: number, input: { pricePaise: number; taxBasis: "exclusive" | "inclusive"; startsAt?: string | null; endsAt?: string | null; note?: string | null }, a: AdminActor, quiet = false) {
+  async function saveDraft(dealerId: string, variantId: number, input: { pricePaise: number; taxBasis: "exclusive" | "inclusive"; startsAt?: string | null; endsAt?: string | null; note?: string | null; minQuantity?: number }, a: AdminActor, quiet = false) {
     validatePriceInput(input);
+    const tier = input.minQuantity ?? 1;
     const access = (await repo.listAccess(dealerId)).find((x) => x.odoo_variant_id === variantId);
     if (!access) throw new DealerError("VALIDATION", "Assign this product to the dealer before setting a price");
-    const existingDrafts = await repo.listRules(dealerId, { statuses: ["draft"], variantIds: [variantId] });
+    const existingDrafts = (await repo.listRules(dealerId, { statuses: ["draft"], variantIds: [variantId] })).filter((d) => (d.min_quantity ?? 1) === tier);
     await repo.deleteDraftRules(dealerId, existingDrafts.map((d) => d.id));
     const rule = await repo.insertRule({
       dealer_id: dealerId,
       odoo_variant_id: variantId,
+      min_quantity: tier,
       unit_price_paise: input.pricePaise,
       currency: "INR",
       tax_basis: input.taxBasis,
@@ -925,7 +1254,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       created_by: a.id,
     });
     if (!quiet) {
-      await audit({ dealerId, actorType: "admin", actorId: a.id, event: "price.draft_saved", entity: "price_rule", entityId: rule.id, newValue: { variantId, pricePaise: input.pricePaise, taxBasis: input.taxBasis, startsAt: rule.starts_at, endsAt: rule.ends_at }, requestId: a.requestId });
+      await audit({ dealerId, actorType: "admin", actorId: a.id, event: "price.draft_saved", entity: "price_rule", entityId: rule.id, newValue: { variantId, minQty: tier, pricePaise: input.pricePaise, taxBasis: input.taxBasis, startsAt: rule.starts_at, endsAt: rule.ends_at }, requestId: a.requestId });
     }
     return { rule: priceView(rule) };
   }
@@ -943,8 +1272,8 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       actorId: a.id,
       event,
       entity: "price_rule",
-      oldValue: drafts.map((d) => ({ variantId: d.odoo_variant_id, pricePaise: resolveActiveRule(actives, d.odoo_variant_id, t)?.unit_price_paise ?? null })),
-      newValue: drafts.map((d) => ({ variantId: d.odoo_variant_id, pricePaise: d.unit_price_paise, taxBasis: d.tax_basis, startsAt: d.starts_at, endsAt: d.ends_at })),
+      oldValue: drafts.map((d) => ({ variantId: d.odoo_variant_id, minQty: d.min_quantity ?? 1, pricePaise: resolveActiveRule(actives, d.odoo_variant_id, t, d.min_quantity ?? 1)?.unit_price_paise ?? null })),
+      newValue: drafts.map((d) => ({ variantId: d.odoo_variant_id, minQty: d.min_quantity ?? 1, pricePaise: d.unit_price_paise, taxBasis: d.tax_basis, startsAt: d.starts_at, endsAt: d.ends_at })),
       requestId: a.requestId,
     });
     return { published: drafts.length, expired: plan.expireIds.length };
@@ -957,7 +1286,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     const t = now();
     const skus = [...new Set(parsed.rows.map((r) => r.sku).filter(Boolean))];
     const found = await wrapOdoo(() => odoo.findVariantsBySku(skus));
-    const seen = new Set<number>();
+    const seen = new Set<string>();
     const rows: ImportRow[] = parsed.rows.map((r) => {
       const errors = [...r.errors];
       const matches = found.get(r.sku) ?? [];
@@ -967,10 +1296,11 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       else if (matches.length === 1) variant = matches[0];
       if (variant && !variant.purchasable) errors.push(`${variant.name} is not available in the catalogue (archived or unpublished)`);
       if (variant) {
-        if (seen.has(variant.variantId)) errors.push("This product appears more than once in the file");
-        seen.add(variant.variantId);
+        const key = `${variant.variantId}:${r.tierQty}`;
+        if (seen.has(key)) errors.push("This product appears more than once in the file");
+        seen.add(key);
       }
-      const current = variant ? resolveActiveRule(rules, variant.variantId, t) : null;
+      const current = variant ? (activeTiers(rules, variant.variantId, t).find((x) => (x.min_quantity ?? 1) === r.tierQty) ?? null) : null;
       const newPricePaise = r.priceRupees !== null ? rupeesToPaise(r.priceRupees) : null;
       const taxBasis = r.taxBasis ?? current?.tax_basis ?? "exclusive";
       const assigned = variant ? access.some((x) => x.odoo_variant_id === variant!.variantId) : false;
@@ -986,6 +1316,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
         currentPricePaise: current?.unit_price_paise ?? null,
         newPricePaise,
         taxBasis,
+        tierQty: r.tierQty,
         minQty: r.minQty,
         qtyMultiple: r.qtyMultiple,
         startsAt: r.startsAt,
@@ -1002,15 +1333,20 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
   // DEALER actions — identity always comes from the session
   // ------------------------------------------------------------------------------------------
 
+  const requireOwner = (s: DealerSession): void => {
+    if (s.user.role !== "owner") throw new DealerError("FORBIDDEN", "Only the account owner can do that");
+  };
+
   const dealerActions: Record<string, DealerHandler> = {
     me: async (s) => {
       const { dealer } = s;
-      const [branding, access, rules, cart, orders] = await Promise.all([repo.getBranding(dealer.id), repo.listAccess(dealer.id), repo.listRules(dealer.id, { statuses: ["active"] }), repo.listCart(dealer.id), repo.listOrders({ dealerId: dealer.id, offset: 0, limit: 5 })]);
+      const [branding, access, rules, cart, orders, offers] = await Promise.all([repo.getBranding(dealer.id), repo.listAccess(dealer.id), repo.listRules(dealer.id, { statuses: ["active"] }), repo.listCart(dealer.id), repo.listOrders({ dealerId: dealer.id, offset: 0, limit: 5 }), repo.listOffers(dealer.id)]);
       const t = now();
       const visible = access.filter((a) => a.is_visible);
-      const orderable = visible.filter((a) => a.is_orderable && resolveActiveRule(rules, a.odoo_variant_id, t)).length;
+      const orderable = visible.filter((a) => a.is_orderable && resolveActiveRule(rules, a.odoo_variant_id, t, a.minimum_quantity)).length;
       const counts = await repo.countOrdersByStatus(dealer.id);
       const open = (counts.pending_sync ?? 0) + (counts.quotation ?? 0) + (counts.confirmed ?? 0);
+      const used = dealer.credit_limit_paise ? await repo.sumOpenOrders(dealer.id) : 0;
       let featured: Awaited<ReturnType<typeof buildCatalog>>["items"] = [];
       try {
         featured = (await buildCatalog(dealer, { page: 1, pageSize: 4, featuredOnly: true })).items;
@@ -1019,8 +1355,11 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       }
       return {
         dealer: { code: dealer.dealer_code, displayName: dealer.display_name, legalName: dealer.legal_name, status: dealer.status },
-        user: { email: s.user.email },
+        user: { email: s.user.email, role: s.user.role },
         branding: branding ? { logoPath: branding.logo_path, coverPath: branding.cover_path, accentColor: branding.accent_color, tagline: branding.tagline, welcomeText: branding.welcome_text } : null,
+        terms: { purchaseMethod: dealer.purchase_method, paymentTerms: dealer.payment_terms, shippingLabel: shippingFor(dealer).label },
+        credit: dealer.credit_limit_paise ? { limitPaise: dealer.credit_limit_paise, usedPaise: used, availablePaise: Math.max(0, dealer.credit_limit_paise - used) } : null,
+        offers: offers.filter((o) => o.is_active && (!o.starts_at || Date.parse(o.starts_at) <= t.getTime()) && (!o.ends_at || t.getTime() < Date.parse(o.ends_at))).map((o: OfferRow) => ({ id: o.id, title: o.title, body: o.body, endsAt: o.ends_at })),
         stats: { assignedProducts: visible.length, orderableProducts: orderable, totalOrders: Object.values(counts).reduce((x, y) => x + y, 0), openOrders: open, cartLines: cart.length },
         recentOrders: orders.rows.map(orderView),
         featured,
@@ -1029,7 +1368,17 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
 
     "catalog.list": async (s, p) => {
       const { page, pageSize } = pageParams(p, 12, 48);
-      return buildCatalog(s.dealer, { q: optStr(p, "q", 100), page, pageSize });
+      return buildCatalog(s.dealer, { q: optStr(p, "q", 100), page, pageSize, categoryId: optInt(p, "categoryId") });
+    },
+
+    // Category navigation scoped to THIS dealer's assigned products only.
+    "catalog.categories": async (s) => {
+      const { ordered } = await assignedTemplates(s.dealer);
+      if (ordered.length === 0) return { categories: [] };
+      const cats = await wrapOdoo(() => odoo.templateCategories(ordered));
+      const counts = new Map<number, { id: number; name: string; count: number }>();
+      for (const id of ordered) for (const c of cats.get(id) ?? []) counts.set(c.id, { id: c.id, name: c.name, count: (counts.get(c.id)?.count ?? 0) + 1 });
+      return { categories: [...counts.values()].sort((x, y) => x.name.localeCompare(y.name)) };
     },
 
     "catalog.get": async (s, p) => {
@@ -1041,8 +1390,8 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     },
 
     "cart.get": async (s) => {
-      const { quote, variants } = await quoteForCart(s.dealer);
-      return { quote: await decorateQuote(quote, variants) };
+      const { quote, variants, shipping } = await quoteForCart(s.dealer);
+      return { quote: await decorateQuote(quote, variants, s.dealer, shipping.label) };
     },
 
     "cart.setItem": async (s, p) => {
@@ -1060,11 +1409,12 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       if (!row.is_orderable) throw new DealerError("VALIDATION", "This product can't be ordered right now");
       if (quantity < row.minimum_quantity) throw new DealerError("VALIDATION", `Minimum order quantity is ${row.minimum_quantity}`);
       if (quantity % row.quantity_multiple !== 0) throw new DealerError("VALIDATION", `Quantity must be a multiple of ${row.quantity_multiple}`);
-      const rule = resolveActiveRule(rules, variantId, now());
+      const rule = resolveActiveRule(rules, variantId, now(), quantity);
       if (!rule) throw new DealerError("VALIDATION", "Pricing for this product isn't available — it can't be ordered yet");
       if (!cart.some((c) => c.odoo_variant_id === variantId) && cart.length >= MAX_CART_LINES) throw new DealerError("VALIDATION", `A cart can hold at most ${MAX_CART_LINES} different products`);
       const info = (await variantInfoOrThrow([variantId])).get(variantId);
       if (!info || !info.purchasable) throw new DealerError("VALIDATION", "This product is currently unavailable");
+      if (info.inventoryTracked && info.inStock === false) throw new DealerError("VALIDATION", "This product is out of stock");
       await repo.upsertCartItem(dealerId, variantId, quantity, rule.unit_price_paise);
       return dealerActions["cart.get"](s, {});
     },
@@ -1079,7 +1429,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
 
     "cart.removeInvalid": async (s) => {
       const { quote } = await quoteForCart(s.dealer);
-      for (const l of quote.lines) if (l.issues.some((i) => i === "not_assigned" || i === "hidden" || i === "no_price" || i === "unavailable" || i === "not_orderable")) await repo.deleteCartItem(s.dealer.id, l.variantId);
+      for (const l of quote.lines) if (l.issues.some((i) => i === "not_assigned" || i === "hidden" || i === "no_price" || i === "unavailable" || i === "not_orderable" || i === "out_of_stock")) await repo.deleteCartItem(s.dealer.id, l.variantId);
       return dealerActions["cart.get"](s, {});
     },
 
@@ -1101,11 +1451,18 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const address = parseAddress(p.shippingAddress, true, "Delivery address");
       const poReference = optStr(p, "poReference", 60, "PO reference");
       const notes = optStr(p, "notes", 500, "Notes");
+      if (dealer.purchase_method === "po_required" && !poReference) throw new DealerError("VALIDATION", "Your account requires a purchase order reference on every order");
 
       const { quote } = await quoteForCart(dealer);
       if (quote.lines.length === 0) throw new DealerError("VALIDATION", "Your cart is empty");
       if (!quote.canOrder) throw new DealerError("QUOTE_INVALID", "Some items in your cart can't be ordered — review your cart", { quote });
       if (quote.fingerprint !== accepted) throw new DealerError("CHECKOUT_CHANGED", "Prices or availability changed — please review the updated total", { quote });
+      if (dealer.credit_limit_paise) {
+        const used = await repo.sumOpenOrders(dealer.id);
+        if (used + quote.totalPaise > dealer.credit_limit_paise) {
+          throw new DealerError("CREDIT_LIMIT", "This order would exceed your credit limit — please contact Delite to confirm or settle earlier orders", { limitPaise: dealer.credit_limit_paise, usedPaise: used, orderPaise: quote.totalPaise });
+        }
+      }
 
       const { order, created } = await repo.insertOrder(
         {
@@ -1162,6 +1519,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     "orders.list": async (s, p) => {
       const { page, pageSize, offset } = pageParams(p, 20, 100);
       const status = optStr(p, "status", 20) as OrderStatus | null;
+      await retryDue([s.dealer.id], 1);
       const { rows, total } = await repo.listOrders({ dealerId: s.dealer.id, status: status ?? undefined, offset, limit: pageSize });
       return { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)), rows: rows.map(orderView) };
     },
@@ -1174,7 +1532,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
         throw new DealerError("NOT_FOUND", "Order not found");
       }
       const refreshed = await refreshOrderStatus(s.dealer.id, order);
-      return { order: orderView(refreshed), items: (await repo.listOrderItems(order.id)).map(itemView) };
+      return { order: orderView(refreshed), items: (await repo.listOrderItems(order.id)).map(itemView), dealer: { legalName: s.dealer.legal_name, displayName: s.dealer.display_name, gstin: s.dealer.gstin, billingAddress: s.dealer.billing_address, paymentTerms: s.dealer.payment_terms } };
     },
 
     "orders.reorder": async (s, p) => {
@@ -1188,26 +1546,87 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const skipped: { name: string; reason: string }[] = [];
       for (const item of items) {
         const row = access.find((a) => a.odoo_variant_id === item.odoo_variant_id && a.is_visible && a.is_orderable);
-        const rule = resolveActiveRule(rules, item.odoo_variant_id, t);
         const info = infos.get(item.odoo_variant_id);
+        const multiple = row?.quantity_multiple ?? 1;
+        const qty = row ? Math.min(MAX_CART_QTY, Math.max(row.minimum_quantity, Math.ceil(item.quantity / multiple) * multiple)) : item.quantity;
+        const rule = row ? resolveActiveRule(rules, item.odoo_variant_id, t, qty) : null;
         if (!row || !rule || !info?.purchasable) {
           skipped.push({ name: item.product_name, reason: !row ? "no longer in your catalogue" : !rule ? "no current price" : "currently unavailable" });
           continue;
         }
-        const multiple = row.quantity_multiple;
-        const qty = Math.min(MAX_CART_QTY, Math.max(row.minimum_quantity, Math.ceil(item.quantity / multiple) * multiple));
         await repo.upsertCartItem(s.dealer.id, item.odoo_variant_id, qty, rule.unit_price_paise);
         added.push(item.product_name);
       }
       return { added, skipped };
     },
 
+    // Spend insights (spec Phase 4): totals, monthly trend and top products from the order snapshots.
+    insights: async (s, p) => {
+      const days = Math.min(365, Math.max(7, Math.floor(Number(p.days) || 90)));
+      const since = new Date(now().getTime() - days * 24 * 60 * 60 * 1000).toISOString();
+      const items = await repo.listInsightItems(s.dealer.id, since);
+      const orderIds = new Set(items.map((i) => i.order_id));
+      const spend = items.reduce((sum, i) => sum + i.line_total_paise, 0);
+      const byMonth = new Map<string, number>();
+      const byProduct = new Map<number, { name: string; qty: number; spendPaise: number }>();
+      for (const i of items) {
+        const month = i.created_at.slice(0, 7);
+        byMonth.set(month, (byMonth.get(month) ?? 0) + i.line_total_paise);
+        const cur = byProduct.get(i.odoo_variant_id) ?? { name: i.product_name, qty: 0, spendPaise: 0 };
+        cur.qty += i.quantity;
+        cur.spendPaise += i.line_total_paise;
+        byProduct.set(i.odoo_variant_id, cur);
+      }
+      return {
+        days,
+        orders: orderIds.size,
+        spendPaise: spend,
+        averageOrderPaise: orderIds.size ? Math.round(spend / orderIds.size) : 0,
+        monthly: [...byMonth.entries()].sort(([x], [y]) => x.localeCompare(y)).map(([month, paise]) => ({ month, spendPaise: paise })),
+        topProducts: [...byProduct.values()].sort((x, y) => y.spendPaise - x.spendPaise).slice(0, 5),
+      };
+    },
+
+    "team.list": async (s) => {
+      const users = await repo.listDealerUsers(s.dealer.id);
+      return { canManage: s.user.role === "owner", users: users.map((u) => ({ id: u.id, email: u.email, role: u.role, status: u.status, lastLoginAt: u.last_login_at, isYou: u.id === s.user.id })) };
+    },
+
+    "team.invite": async (s, p) => {
+      requireOwner(s);
+      const email = reqEmail(p, "email");
+      const user = await addTeamUser(s.dealer, email, "buyer");
+      await audit({ dealerId: s.dealer.id, actorType: "dealer", actorId: s.user.auth_user_id, event: "team.user_added", entity: "dealer_user", entityId: user.auth_user_id, newValue: { email, role: "buyer" }, requestId: s.requestId });
+      return { user: { id: user.id, email: user.email, role: user.role, status: user.status } };
+    },
+
+    "team.setStatus": async (s, p) => {
+      requireOwner(s);
+      const userId = reqUuid(p, "userId", "User");
+      const to = reqStr(p, "status", 10);
+      if (to !== "disabled" && to !== "active") throw new DealerError("VALIDATION", "Status must be disabled or active");
+      const users = await repo.listDealerUsers(s.dealer.id);
+      const user = users.find((u) => u.id === userId);
+      if (!user) throw new DealerError("NOT_FOUND", "User not found");
+      if (user.id === s.user.id) throw new DealerError("CONFLICT", "You can't change your own access");
+      if (user.role === "owner") throw new DealerError("FORBIDDEN", "Only Delite can change an owner's access");
+      const updated = await repo.updateDealerUser(user.id, { status: to === "disabled" ? "disabled" : user.last_login_at ? "active" : "invited" });
+      if (to === "disabled") {
+        await auth.revokeSessions([user.auth_user_id]);
+        await repo.updateDealerUser(user.id, { sessions_revoked_before: now().toISOString() });
+      }
+      await audit({ dealerId: s.dealer.id, actorType: "dealer", actorId: s.user.auth_user_id, event: to === "disabled" ? "team.user_disabled" : "team.user_enabled", entity: "dealer_user", entityId: user.auth_user_id, requestId: s.requestId });
+      return { user: { id: updated.id, status: updated.status } };
+    },
+
     "account.get": async (s) => ({
-      dealer: { legalName: s.dealer.legal_name, displayName: s.dealer.display_name, code: s.dealer.dealer_code, gstin: s.dealer.gstin, contactName: s.dealer.contact_name, contactEmail: s.dealer.contact_email, contactPhone: s.dealer.contact_phone, billingAddress: s.dealer.billing_address, shippingAddress: s.dealer.shipping_address },
+      dealer: { legalName: s.dealer.legal_name, displayName: s.dealer.display_name, code: s.dealer.dealer_code, gstin: s.dealer.gstin, contactName: s.dealer.contact_name, contactEmail: s.dealer.contact_email, contactPhone: s.dealer.contact_phone, billingAddress: s.dealer.billing_address, shippingAddress: s.dealer.shipping_address, paymentTerms: s.dealer.payment_terms, purchaseMethod: s.dealer.purchase_method },
+      role: s.user.role,
     }),
 
     "account.update": async (s, p) => {
       // Dealers may change contact + delivery details only — legal name, GSTIN and billing address are Delite-managed.
+      requireOwner(s);
       const patch: Partial<DealerRow> = {};
       if ("contactName" in p) patch.contact_name = optStr(p, "contactName", 120);
       if ("contactPhone" in p) patch.contact_phone = optPhone(p, "contactPhone");
@@ -1222,13 +1641,29 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
   // dispatch + session
   // ------------------------------------------------------------------------------------------
 
+  async function scopeFor(actor: AdminActor): Promise<{ caps: Capability[]; scope: AdminScope }> {
+    const base = ROLE_CAPABILITIES[actor.role] ?? [];
+    if (actor.role !== "dealer_manager") return { caps: base, scope: { all: true, dealerIds: [], pricing: base.includes("pricing.manage") } };
+    // A dealer manager has no power until an owner grants it: the grant says WHICH dealers and whether
+    // they may also change prices (spec §2: "authorized dealers only", pricing "only if explicitly granted").
+    const grant = await repo.getAdminGrant(actor.id);
+    if (!grant) throw new DealerError("FORBIDDEN", "No dealers have been assigned to you yet — ask an owner to grant access");
+    const caps: Capability[] = grant.can_manage_pricing ? [...base, "pricing.manage"] : base;
+    return { caps, scope: { all: grant.dealer_ids === null, dealerIds: grant.dealer_ids ?? [], pricing: grant.can_manage_pricing } };
+  }
+
   return {
     async callAdmin(actor, action, payload) {
       const handler = admin[action];
       const cap = adminCaps[action];
       if (!handler || !cap) throw new DealerError("NOT_FOUND", "Unknown action");
-      if (!(ROLE_CAPABILITIES[actor.role] ?? []).includes(cap)) throw new DealerError("FORBIDDEN", "You don't have permission to do that");
-      return handler(actor, asPayload(payload));
+      const { caps, scope } = await scopeFor(actor);
+      if (!caps.includes(cap)) throw new DealerError("FORBIDDEN", "You don't have permission to do that");
+      const p = asPayload(payload);
+      const scoped: AdminActor = { ...actor, scope };
+      const targetRaw = ID_IS_DEALER.has(action) ? p.id : p.dealerId;
+      if (typeof targetRaw === "string" && !inScope(scoped, targetRaw)) throw new DealerError("NOT_FOUND", "Dealer not found");
+      return handler(scoped, p);
     },
 
     async callDealer(session, action, payload) {
@@ -1238,15 +1673,24 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       return handler(session, asPayload(payload));
     },
 
-    async resolveSession(authUserId, requestId) {
+    async resolveSession(authUserId, requestId, tokenIssuedAtSec) {
       const user = await repo.getDealerUserByAuthId(authUserId);
       if (!user || user.status === "disabled") {
         await audit({ dealerId: user?.dealer_id ?? null, actorType: "dealer", actorId: authUserId, event: "security.denied", entity: "dealer_session", newValue: { reason: user ? "user_disabled" : "not_a_dealer_user" }, requestId });
-        throw new DealerError("FORBIDDEN", "This account doesn't have dealer access");
+        throw new DealerError("FORBIDDEN", user ? "Your access to this portal has ended. Please contact Delite." : "This account doesn't have dealer access");
       }
       let dealer = await mustDealer(user.dealer_id);
       if (dealer.status === "suspended" || dealer.status === "archived") throw new DealerError("DEALER_INACTIVE", dealer.status === "suspended" ? "This dealer account is suspended. Please contact Delite." : "This dealer account is closed.");
       if (dealer.status === "draft") throw new DealerError("FORBIDDEN", "This dealer account isn't active yet");
+      // Rollout flag (spec §12): off = nobody; pilot = only dealers flagged as pilots; on = everyone.
+      const mode = await repo.getPortalMode();
+      if (mode === "off" || (mode === "pilot" && !dealer.is_pilot)) {
+        throw new DealerError("DEALER_INACTIVE", mode === "off" ? "The dealer portal isn't open yet. We'll let you know when it is." : "The dealer portal is currently open to our pilot partners only. We'll let you know when your account is ready.");
+      }
+      // Real session revocation: a token issued before the revoke time is refused outright.
+      if (user.sessions_revoked_before && tokenIssuedAtSec !== undefined && tokenIssuedAtSec * 1000 < Date.parse(user.sessions_revoked_before)) {
+        throw new DealerError("UNAUTHENTICATED", "Your session has ended — please sign in again");
+      }
       const t = now().toISOString();
       let current = user;
       if (user.status === "invited" || dealer.status === "invited") {
@@ -1276,6 +1720,7 @@ interface ImportRow {
   currentPricePaise: number | null;
   newPricePaise: number | null;
   taxBasis: "exclusive" | "inclusive" | null;
+  tierQty: number;
   minQty: number | null;
   qtyMultiple: number | null;
   startsAt: string | null;

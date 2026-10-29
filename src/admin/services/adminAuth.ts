@@ -50,12 +50,13 @@ export interface AdminNavGroup {
   items: AdminNavItem[];
 }
 
-const ALL_ROLES: AdminRole[] = ["owner", "admin", "content", "merchandising", "support", "analytics"];
+const ALL_ROLES: AdminRole[] = ["owner", "admin", "content", "merchandising", "support", "analytics", "dealer_manager"];
 const OWNER: AdminRole[] = ["owner"];
 const OWNER_ADMIN: AdminRole[] = ["owner", "admin"];
 const OWNER_ADMIN_CONTENT: AdminRole[] = ["owner", "admin", "content"];
 const OWNER_ADMIN_MERCH: AdminRole[] = ["owner", "admin", "merchandising"];
 const OWNER_ADMIN_SUPPORT: AdminRole[] = ["owner", "admin", "support"];
+const DEALER_ADMINS: AdminRole[] = ["owner", "admin", "support", "dealer_manager"];
 const OWNER_ADMIN_ANALYTICS: AdminRole[] = ["owner", "admin", "analytics"];
 
 const union = (tabs: AdminNavTab[]): AdminRole[] => ALL_ROLES.filter((r) => tabs.some((t) => t.roles.includes(r)));
@@ -113,8 +114,8 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       // orders; every write (and all pricing) is further restricted server-side to owner/admin by the
       // admin-dealers function's capability table — this list is only the UX gate.
       tabbed("Dealers", Building2, [
-        { label: "Dealers", path: "/admin/dealers", roles: OWNER_ADMIN_SUPPORT },
-        { label: "Dealer orders", path: "/admin/dealer-orders", roles: OWNER_ADMIN_SUPPORT },
+        { label: "Dealers", path: "/admin/dealers", roles: DEALER_ADMINS },
+        { label: "Dealer orders", path: "/admin/dealer-orders", roles: DEALER_ADMINS },
       ]),
     ],
   },

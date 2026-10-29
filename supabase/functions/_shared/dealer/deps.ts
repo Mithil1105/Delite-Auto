@@ -21,6 +21,7 @@ class UnconfiguredOdoo implements OdooPort {
   }
   getVariantInfo = async () => this.fail();
   searchProducts = async () => this.fail();
+  templateCategories = async () => this.fail();
   findVariantsBySku = async () => this.fail();
   ensurePartner = async () => this.fail();
   createQuotation = async () => this.fail();
@@ -53,6 +54,24 @@ class SupabaseInviteAuth implements AuthPort {
     }
     console.error("[dealer-auth] invite failed:", invited.error?.message);
     throw new DealerError("VALIDATION", "Couldn't send the invite — check the owner email address and try again");
+  }
+
+  async sendPasswordReset(email: string) {
+    const { error } = await this.db.auth.resetPasswordForEmail(email, { redirectTo: `${PORTAL_URL()}/reset-password` });
+    if (error) {
+      console.error("[dealer-auth] reset failed:", error.message);
+      throw new DealerError("VALIDATION", "Couldn't send the reset email — please try again shortly");
+    }
+  }
+
+  async revokeSessions(authUserIds: string[]) {
+    // Deletes the users' sessions + refresh tokens (service-role-only SQL function), so a stolen or
+    // lingering token can't be refreshed; the dealer-portal function also rejects pre-revoke tokens.
+    const { error } = await this.db.rpc("dealer_revoke_sessions", { p_user_ids: authUserIds });
+    if (error) {
+      console.error("[dealer-auth] revoke failed:", error.message);
+      throw new DealerError("VALIDATION", "Couldn't revoke the sessions — please try again");
+    }
   }
 }
 

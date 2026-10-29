@@ -12,6 +12,17 @@ import { adminClient, buildDeps, corsHeaders, errorResponse, jsonResponse, rateL
 import { DealerError } from "../_shared/dealer/errors.ts";
 import { createDealerEngine } from "../_shared/dealer/engine.ts";
 
+/** `iat` of the (already verified by getUser) access token — used to refuse tokens issued before a revoke. */
+function tokenIssuedAt(authHeader: string): number | undefined {
+  try {
+    const payload = authHeader.replace(/^Bearer\s+/i, "").split(".")[1];
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof json.iat === "number" ? json.iat : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders(req) });
   const requestId = crypto.randomUUID();
@@ -27,7 +38,7 @@ Deno.serve(async (req: Request) => {
 
     const { action, payload } = await readJsonBody(req);
     const engine = createDealerEngine(buildDeps(db));
-    const session = await engine.resolveSession(data.user.id, requestId);
+    const session = await engine.resolveSession(data.user.id, requestId, tokenIssuedAt(authHeader));
     const result = await engine.callDealer(session, action, payload);
     return jsonResponse(req, result, 200, requestId);
   } catch (err) {
