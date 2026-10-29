@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Copy, Eye, FileUp, History, Plus, Trash2, UploadCloud } from "lucide-react";
+import { Copy, Eye, FileUp, History, Layers, Plus, Trash2, UploadCloud } from "lucide-react";
 import { rupeesToPaise } from "../../../../supabase/functions/_shared/dealer/pricing";
 import { ApiError } from "../../../dealer/lib/transport";
 import { brandingImageUrl } from "../../../dealer/lib/media";
@@ -44,6 +44,7 @@ export default function DealerCatalog() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [modal, setModal] = useState<null | "pick" | "import" | "copy" | "preview" | "adjust" | "remove" | "publish">(null);
   const [historyFor, setHistoryFor] = useState<GridRow | null>(null);
+  const [tiersFor, setTiersFor] = useState<GridRow | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
 
@@ -142,6 +143,19 @@ export default function DealerCatalog() {
     }
   };
 
+  /** Pasting several lines (e.g. a column copied from Excel) into a price cell fills that cell and the rows below it. */
+  const pastePrices = (startIndex: number, text: string) => {
+    const values = text.split(/\r?\n/).map((l) => l.split("\t")[0].replace(/[₹,\s]/g, "")).filter((v, i, arr) => v !== "" || i < arr.length - 1);
+    let applied = 0;
+    values.forEach((v, i) => {
+      const row = rows[startIndex + i];
+      if (!row || !Number.isFinite(Number(v)) || Number(v) <= 0) return;
+      setEdit(row, { ...(edits.get(row.variantId) ?? baseline(row)), price: Number(v).toFixed(2) });
+      applied += 1;
+    });
+    setNotice({ ok: applied > 0, text: applied > 0 ? `Pasted ${applied} price${applied === 1 ? "" : "s"}. Review them, then Save draft.` : "Nothing valid to paste — copy a column of numbers." });
+  };
+
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.variantId));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(rows.map((r) => r.variantId)));
   const toggle = (id: number) => setSelected((s) => {
@@ -201,8 +215,8 @@ export default function DealerCatalog() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {rows.map((row) => (
-                  <GridLine key={row.variantId} row={row} edit={edits.get(row.variantId)} selected={selected.has(row.variantId)} onSelect={() => toggle(row.variantId)} onEdit={(e) => setEdit(row, e)} onAccess={(patch) => changeAccess(row, patch)} onHistory={() => setHistoryFor(row)} />
+                {rows.map((row, index) => (
+                  <GridLine key={row.variantId} row={row} onPaste={(text) => pastePrices(index, text)} onTiers={() => setTiersFor(row)} edit={edits.get(row.variantId)} selected={selected.has(row.variantId)} onSelect={() => toggle(row.variantId)} onEdit={(e) => setEdit(row, e)} onAccess={(patch) => changeAccess(row, patch)} onHistory={() => setHistoryFor(row)} />
                 ))}
               </tbody>
             </table>
@@ -244,12 +258,13 @@ export default function DealerCatalog() {
           <div className="flex justify-end gap-2"><button type="button" className={btnOutline} onClick={() => setModal(null)}>Cancel</button><button type="button" className={btnPrimary} disabled={busy} onClick={publish}>{busy && <Spinner />} Publish</button></div>
         </Modal>
       )}
+      {tiersFor && <TiersModal dealerId={dealerId} row={tiersFor} onClose={() => setTiersFor(null)} onChanged={(text) => { setTiersFor(null); if (text) setNotice({ ok: true, text }); refresh(); }} />}
       {historyFor && <HistoryModal dealerId={dealerId} row={historyFor} onClose={() => setHistoryFor(null)} onRestored={() => { setHistoryFor(null); setNotice({ ok: true, text: "Previous price restored as a new, audited price." }); refresh(); }} />}
     </div>
   );
 }
 
-function GridLine({ row, edit, selected, onSelect, onEdit, onAccess, onHistory }: { row: GridRow; edit: Edit | undefined; selected: boolean; onSelect: () => void; onEdit: (e: Edit) => void; onAccess: (patch: Record<string, unknown>) => void; onHistory: () => void }) {
+function GridLine({ row, edit, selected, onSelect, onEdit, onAccess, onHistory, onPaste, onTiers }: { onPaste: (text: string) => void; onTiers: () => void; row: GridRow; edit: Edit | undefined; selected: boolean; onSelect: () => void; onEdit: (e: Edit) => void; onAccess: (patch: Record<string, unknown>) => void; onHistory: () => void }) {
   const current = edit ?? baseline(row);
   const [moq, setMoq] = useState(String(row.minQty));
   const [pack, setPack] = useState(String(row.qtyMultiple));
@@ -267,7 +282,7 @@ function GridLine({ row, edit, selected, onSelect, onEdit, onAccess, onHistory }
       <td className="p-2.5 text-right price text-steel-700">{row.publicPricePaise !== null ? money(row.publicPricePaise) : "—"}</td>
       <td className="p-2.5">
         <label className="sr-only" htmlFor={`price-${row.variantId}`}>Dealer price for {row.name}</label>
-        <input id={`price-${row.variantId}`} value={current.price} inputMode="decimal" placeholder="Not set" onChange={(e) => onEdit({ ...current, price: e.target.value })} className={`${adminInput} w-28 text-right price`} />
+        <input id={`price-${row.variantId}`} value={current.price} inputMode="decimal" placeholder="Not set" onChange={(e) => onEdit({ ...current, price: e.target.value })} onPaste={(e) => { const t = e.clipboardData.getData("text"); if (/[\r\n]\s*\S/.test(t.trim() ? t : "") ) { e.preventDefault(); onPaste(t); } }} className={`${adminInput} w-28 text-right price`} />
         {row.draftPrice && row.activePrice && !edit && <div className="text-[11px] text-steel-500 mt-0.5">live {money(row.activePrice.pricePaise)}</div>}
       </td>
       <td className="p-2.5">
@@ -280,8 +295,64 @@ function GridLine({ row, edit, selected, onSelect, onEdit, onAccess, onHistory }
       <td className="p-2.5"><label className="sr-only" htmlFor={`pack-${row.variantId}`}>Quantity multiple</label><input id={`pack-${row.variantId}`} value={pack} inputMode="numeric" onChange={(e) => setPack(e.target.value)} onBlur={() => commit("qtyMultiple", pack, row.qtyMultiple)} className={`${adminInput} w-14 text-right`} /></td>
       <td className="p-2.5"><label className="inline-flex items-center gap-1.5"><input type="checkbox" checked={row.isVisible} onChange={(e) => onAccess({ isVisible: e.target.checked })} /><span className="sr-only">Visible to dealer</span></label></td>
       <td className="p-2.5"><span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${badge.cls}`}>{badge.label}</span></td>
-      <td className="p-2.5"><button type="button" onClick={onHistory} className="p-1.5 text-steel-500 hover:text-ink" aria-label={`Price history for ${row.name}`}><History className="w-4 h-4" /></button></td>
+      <td className="p-2.5 whitespace-nowrap"><button type="button" onClick={onTiers} className="p-1.5 text-steel-500 hover:text-ink relative" aria-label={`Volume pricing for ${row.name}`}><Layers className="w-4 h-4" />{row.tiers.some((t) => t.minQty > 1) && <span className="absolute top-0.5 right-0.5 w-2 h-2 rounded-full bg-gold" aria-hidden />}</button><button type="button" onClick={onHistory} className="p-1.5 text-steel-500 hover:text-ink" aria-label={`Price history for ${row.name}`}><History className="w-4 h-4" /></button></td>
     </tr>
+  );
+}
+
+function TiersModal({ dealerId, row, onClose, onChanged }: { dealerId: string; row: GridRow; onClose: () => void; onChanged: (text: string) => void }) {
+  const tiers = row.tiers.filter((t) => t.minQty > 1).sort((a, b) => a.minQty - b.minQty);
+  const [qty, setQty] = useState("");
+  const [price, setPrice] = useState("");
+  const [basis, setBasis] = useState<TaxBasis>(row.draftPrice?.taxBasis ?? row.activePrice?.taxBasis ?? "exclusive");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const run = async (fn: () => Promise<string | void>, done: string) => {
+    setBusy(true);
+    setErr(null);
+    try {
+      const msg = await fn();
+      onChanged(msg || done);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Something went wrong");
+      setBusy(false);
+    }
+  };
+  const add = () => {
+    const n = Number(qty);
+    const rupees = Number(price.replace(/,/g, ""));
+    if (!Number.isInteger(n) || n < 2) return setErr("Quantity must be a whole number of 2 or more.");
+    if (!Number.isFinite(rupees) || rupees <= 0) return setErr("Enter a valid unit price.");
+    void run(() => adminDealers.saveDraft({ dealerId, variantId: row.variantId, pricePaise: rupeesToPaise(rupees), taxBasis: basis, minQuantity: n }).then(() => undefined), `Volume price saved as a draft for ${row.name}. Publish to make it live.`);
+  };
+
+  return (
+    <Modal title={`Volume pricing — ${row.name}`} onClose={onClose} wide>
+      <p className="text-[13px] text-steel-500 mb-4">Set a lower unit price once the dealer orders at least a given quantity. The base price above applies below the first tier. Tier prices go live when you publish.</p>
+      {tiers.length === 0 ? <p className="text-[13px] mb-4">No volume tiers yet.</p> : (
+        <table className="w-full text-[13px] mb-4 border border-line rounded-lg">
+          <thead className="text-left text-[11.5px] uppercase tracking-wide text-steel-500 border-b border-line"><tr><th className="p-2 font-medium">From qty</th><th className="p-2 font-medium text-right">Unit price</th><th className="p-2 font-medium">Status</th><th className="p-2" /></tr></thead>
+          <tbody className="divide-y divide-line">
+            {tiers.map((t) => (
+              <tr key={t.id}><td className="p-2">{t.minQty}+</td><td className="p-2 text-right price">{money(t.pricePaise)} <span className="text-[11px] text-steel-500 font-sans">{t.taxBasis === "inclusive" ? "incl." : "excl."} tax</span></td><td className="p-2 capitalize">{t.status}</td>
+                <td className="p-2 text-right"><button type="button" className="underline text-sale text-[12.5px]" disabled={busy} onClick={() => run(() => adminDealers.removeTier(dealerId, t.id).then(() => undefined), "Volume price removed.")}>Remove</button></td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="grid sm:grid-cols-4 gap-3 items-end">
+        <div><label className={labelClass} htmlFor="tier-qty">From quantity</label><input id="tier-qty" inputMode="numeric" className={inputClass} value={qty} onChange={(e) => setQty(e.target.value)} placeholder="e.g. 10" /></div>
+        <div><label className={labelClass} htmlFor="tier-price">Unit price (₹)</label><input id="tier-price" inputMode="decimal" className={inputClass} value={price} onChange={(e) => setPrice(e.target.value)} /></div>
+        <div><label className={labelClass} htmlFor="tier-basis">Tax</label><select id="tier-basis" className={adminInput} value={basis} onChange={(e) => setBasis(e.target.value as TaxBasis)}><option value="exclusive">excl. tax</option><option value="inclusive">incl. tax</option></select></div>
+        <button type="button" className={btnPrimary} disabled={busy} onClick={add}>{busy && <Spinner />} Add tier</button>
+      </div>
+      {err && <p role="alert" className="mt-3 text-[13px] text-sale">{err}</p>}
+      <div className="mt-6 pt-4 border-t border-line">
+        <p className="text-[13px] text-steel-500 mb-2">Other sizes or colours of this product can start from this variant's price.</p>
+        <button type="button" className={btnOutline} disabled={busy} onClick={() => run(() => adminDealers.applyToVariants(dealerId, row.variantId).then((r) => `Copied this price to ${r.drafted} other variant${r.drafted === 1 ? "" : "s"} as drafts.`), "")}>Apply this price to all variants of the product</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -294,13 +365,14 @@ function PickerModal({ dealerId, onClose, onDone }: { dealerId: string; onClose:
   const [dq, setDq] = useState("");
   const [page, setPage] = useState(1);
   const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [unassignedOnly, setUnassignedOnly] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     const t = setTimeout(() => { setDq(q); setPage(1); }, 250);
     return () => clearTimeout(t);
   }, [q]);
-  const { data, error, loading, reload } = useApi(() => adminDealers.searchMaster({ dealerId, q: dq || undefined, page }), [dealerId, dq, page]);
+  const { data, error, loading, reload } = useApi(() => adminDealers.searchMaster({ dealerId, q: dq || undefined, page, unassignedOnly }), [dealerId, dq, page, unassignedOnly]);
   const toggle = (id: number) => setPicked((s) => {
     const n = new Set(s);
     if (n.has(id)) n.delete(id);
@@ -322,6 +394,7 @@ function PickerModal({ dealerId, onClose, onDone }: { dealerId: string; onClose:
     <Modal title="Add products to this dealer" onClose={onClose} wide>
       <div className="space-y-3">
         <div><label className={labelClass} htmlFor="pk-q">Search the master catalogue</label><input id="pk-q" autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name or SKU" className={inputClass} /></div>
+        <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={unassignedOnly} onChange={(e) => { setUnassignedOnly(e.target.checked); setPage(1); }} /> Only products not assigned to any dealer yet</label>
         {loading && <PageSkeleton rows={2} />}
         {error && <ErrorState error={error} onRetry={reload} />}
         {data && data.items.length === 0 && <p className="text-[13px] text-steel-500">No published products match.</p>}

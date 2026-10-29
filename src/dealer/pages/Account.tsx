@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Mail, Phone } from "lucide-react";
 import { site } from "../../data/site";
-import { dealerApi, type Address } from "../lib/dealerApi";
+import { dealerApi, type Address, type TeamUser } from "../lib/dealerApi";
 import { ApiError } from "../lib/transport";
 import { useMe } from "../DealerShell";
-import { btnPrimary, ErrorState, inputClass, labelClass, PageSkeleton, Spinner, useApi } from "../ui";
+import { btnDanger, btnOutline, btnPrimary, ErrorState, formatDateTime, inputClass, labelClass, PageSkeleton, Spinner, useApi } from "../ui";
 
 export function Account() {
   const { reloadMe } = useMe();
@@ -27,6 +27,7 @@ export function Account() {
   if (error) return <ErrorState error={error} onRetry={reload} />;
   if (!data) return null;
   const d = data.dealer;
+  const owner = data.role === "owner";
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
@@ -53,12 +54,16 @@ export function Account() {
         <div><div className={labelClass}>Dealer code</div><span className="font-mono">{d.code}</span></div>
         <div><div className={labelClass}>GSTIN</div>{d.gstin ?? "—"}</div>
         <div><div className={labelClass}>Sign-in email</div>{d.contactEmail}</div>
+        <div><div className={labelClass}>Ordering</div>{d.purchaseMethod === "po_required" ? "Purchase order required" : "Purchase request"}</div>
+        <div><div className={labelClass}>Payment terms</div>{d.paymentTerms ?? "As agreed with Delite"}</div>
         <div className="sm:col-span-2"><div className={labelClass}>Billing address</div>{fmt(d.billingAddress)}</div>
-        <p className="sm:col-span-2 text-[12.5px] text-steel-500">Legal name, GSTIN and billing address are managed by Delite — contact your representative to change them.</p>
+        <p className="sm:col-span-2 text-[12.5px] text-steel-500">Legal name, GSTIN, billing address and terms are managed by Delite — contact your representative to change them.</p>
       </section>
+
       <form onSubmit={save} className="card-surface rounded-lg p-5 space-y-4">
         <h2 className="font-semibold">Contact &amp; delivery details</h2>
-        <div className="grid sm:grid-cols-2 gap-4">
+        {!owner && <p className="text-[12.5px] text-steel-500">Only the account owner can change these details.</p>}
+        <fieldset disabled={!owner} className="grid sm:grid-cols-2 gap-4 disabled:opacity-70">
           <div><label htmlFor="cn" className={labelClass}>Contact name</label><input id="cn" value={contactName} onChange={(e) => setContactName(e.target.value)} className={inputClass} maxLength={120} /></div>
           <div><label htmlFor="cp" className={labelClass}>Phone</label><input id="cp" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className={inputClass} /></div>
           <div className="sm:col-span-2"><label htmlFor="a1" className={labelClass}>Delivery street address</label><input id="a1" value={addr.line1 ?? ""} onChange={set("line1")} className={inputClass} /></div>
@@ -66,17 +71,86 @@ export function Account() {
           <div><label htmlFor="ac" className={labelClass}>City</label><input id="ac" value={addr.city ?? ""} onChange={set("city")} className={inputClass} /></div>
           <div><label htmlFor="as" className={labelClass}>State</label><input id="as" value={addr.state ?? ""} onChange={set("state")} className={inputClass} /></div>
           <div><label htmlFor="ap" className={labelClass}>PIN code</label><input id="ap" value={addr.pincode ?? ""} onChange={set("pincode")} className={inputClass} maxLength={6} inputMode="numeric" /></div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button type="submit" disabled={busy} className={btnPrimary}>{busy && <Spinner />} Save changes</button>
-          {msg && <span role={msg.ok ? "status" : "alert"} className={`text-[13px] ${msg.ok ? "text-emerald-700" : "text-sale"}`}>{msg.text}</span>}
-        </div>
+        </fieldset>
+        {owner && (
+          <div className="flex items-center gap-3">
+            <button type="submit" disabled={busy} className={btnPrimary}>{busy && <Spinner />} Save changes</button>
+            {msg && <span role={msg.ok ? "status" : "alert"} className={`text-[13px] ${msg.ok ? "text-emerald-700" : "text-sale"}`}>{msg.text}</span>}
+          </div>
+        )}
       </form>
+
+      <TeamPanel />
+
       <section className="card-surface rounded-lg p-5">
         <h2 className="font-semibold mb-2">Sign-in security</h2>
-        <p className="text-[13.5px] text-steel-500">To change your password, sign out and use <strong>Forgot your password?</strong> on the sign-in page — you'll get a single-use link by email.</p>
+        <p className="text-[13.5px] text-steel-500">To change your password, sign out and use <strong>Forgot your password?</strong> on the sign-in page — you'll get a single-use link by email. Passwords need at least 10 characters with a letter and a number.</p>
       </section>
     </div>
+  );
+}
+
+function TeamPanel() {
+  const { data, error, loading, reload } = useApi(() => dealerApi.team(), []);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const run = async (key: string, fn: () => Promise<unknown>, done: string) => {
+    setBusy(key);
+    setMsg(null);
+    try {
+      await fn();
+      setMsg({ ok: true, text: done });
+      reload();
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof ApiError ? err.message : "Something went wrong" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (loading && !data) return <PageSkeleton rows={1} />;
+  if (error || !data) return error ? <ErrorState error={error} onRetry={reload} /> : null;
+  const label = (u: TeamUser) => (u.status === "disabled" ? "Access removed" : u.status === "invited" ? "Invited" : "Active");
+
+  return (
+    <section className="card-surface rounded-lg p-5 space-y-4" aria-labelledby="team-title">
+      <div>
+        <h2 id="team-title" className="font-semibold">Your team</h2>
+        <p className="text-[12.5px] text-steel-500">Buyers can browse and place orders. Only the owner can change account details or manage the team.</p>
+      </div>
+      <ul className="divide-y divide-line border border-line rounded-md">
+        {data.users.map((u) => (
+          <li key={u.id} className="p-3 flex flex-wrap items-center justify-between gap-3 text-[13.5px]">
+            <div className="min-w-0">
+              <div className="font-medium truncate">{u.email}{u.isYou && <span className="text-steel-500 font-normal"> (you)</span>}</div>
+              <div className="text-[12px] text-steel-500 capitalize">{u.role} · {label(u)}{u.lastLoginAt ? ` · last sign-in ${formatDateTime(u.lastLoginAt)}` : ""}</div>
+            </div>
+            {data.canManage && u.role === "buyer" && (
+              u.status === "disabled" ? (
+                <button type="button" className={btnOutline} disabled={busy === u.id} onClick={() => run(u.id, () => dealerApi.setTeamUserStatus(u.id, "active"), "Access restored")}>Restore access</button>
+              ) : (
+                <button type="button" className={btnDanger} disabled={busy === u.id} onClick={() => run(u.id, () => dealerApi.setTeamUserStatus(u.id, "disabled"), "Access removed — they've been signed out")}>Remove access</button>
+              )
+            )}
+          </li>
+        ))}
+      </ul>
+      {data.canManage && (
+        <form
+          className="flex flex-wrap items-end gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run("invite", () => dealerApi.inviteTeamUser(email.trim()), `Invite sent to ${email.trim()}`).then(() => setEmail(""));
+          }}
+        >
+          <div className="grow max-w-sm"><label htmlFor="team-email" className={labelClass}>Add a buyer by email</label><input id="team-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} /></div>
+          <button type="submit" className={btnPrimary} disabled={busy === "invite" || !email}>{busy === "invite" && <Spinner />} Send invite</button>
+        </form>
+      )}
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`text-[13px] ${msg.ok ? "text-emerald-700" : "text-sale"}`}>{msg.text}</p>}
+    </section>
   );
 }
 

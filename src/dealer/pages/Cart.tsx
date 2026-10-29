@@ -7,6 +7,7 @@ import { useMe } from "../DealerShell";
 import { btnOutline, btnPrimary, EmptyState, ErrorState, inputClass, labelClass, money, PageSkeleton, ProductThumb, Spinner, useApi } from "../ui";
 
 const ISSUE_TEXT: Record<LineIssue, string> = {
+  out_of_stock: "Out of stock",
   not_assigned: "No longer in your catalogue",
   hidden: "No longer in your catalogue",
   not_orderable: "Can't be ordered right now",
@@ -37,7 +38,7 @@ function Totals({ quote }: { quote: Quote }) {
     <dl className="text-[14px] space-y-2">
       <div className="flex justify-between"><dt className="text-steel-500">Subtotal</dt><dd className="price">{money(quote.subtotalPaise)}</dd></div>
       <div className="flex justify-between"><dt className="text-steel-500">Tax</dt><dd className="price">{money(quote.taxPaise)}</dd></div>
-      <div className="flex justify-between gap-4"><dt className="text-steel-500">Shipping</dt><dd className="text-steel-500 text-right">{quote.shippingPaise ? money(quote.shippingPaise) : "As agreed with Delite"}</dd></div>
+      <div className="flex justify-between gap-4"><dt className="text-steel-500">Shipping</dt><dd className={quote.shippingPaise ? "price" : "text-steel-500 text-right"}>{quote.shippingPaise ? money(quote.shippingPaise) : quote.shippingLabel}</dd></div>
       <div className="flex justify-between border-t border-line pt-3 text-[16px] font-semibold"><dt>Total</dt><dd className="price">{money(quote.totalPaise)}</dd></div>
     </dl>
   );
@@ -131,6 +132,8 @@ export function Cart() {
           <Totals quote={quote} />
           <button type="button" className={`${btnPrimary} w-full`} disabled={!quote.canOrder || quote.needsAcknowledgement || busy !== null} onClick={() => navigate("/checkout")}>Continue to checkout</button>
           {!quote.canOrder && <p className="text-[12px] text-steel-500">Resolve the items above to continue.</p>}
+          {quote.credit?.wouldExceed && <p role="alert" className="text-[12.5px] text-sale">This order is above your available credit ({money(quote.credit.availablePaise)}). Delite will need to confirm it.</p>}
+          {quote.paymentTerms && <p className="text-[12px] text-steel-500">Payment terms: {quote.paymentTerms}</p>}
           <button type="button" className="text-[12.5px] text-steel-500 underline" onClick={() => run("clean", dealerApi.clearCart)}>Clear cart</button>
         </aside>
       </div>
@@ -211,6 +214,8 @@ export function Checkout() {
           setCartLines(fresh.lines.length);
         }
         setError(err.code === "CHECKOUT_CHANGED" ? "Prices or availability changed while you were checking out. Review the updated total below, then confirm." : err.message);
+      } else if (err instanceof ApiError && err.code === "CREDIT_LIMIT") {
+        setError("This order would take you over your credit limit. Please contact Delite to confirm it or to settle earlier orders.");
       } else setError(err instanceof ApiError ? err.message : "We couldn't place your order. Please try again.");
     } finally {
       setBusy(false);
@@ -244,8 +249,8 @@ export function Checkout() {
           </section>
           <section className="card-surface rounded-lg p-5 grid sm:grid-cols-2 gap-4">
             <div>
-              <label htmlFor="po" className={labelClass}>Your PO reference (optional)</label>
-              <input id="po" value={po} onChange={(e) => setPo(e.target.value)} maxLength={60} className={inputClass} />
+              <label htmlFor="po" className={labelClass}>Your PO reference{quote.purchaseMethod === "po_required" ? " *" : " (optional)"}</label>
+              <input id="po" value={po} onChange={(e) => setPo(e.target.value)} maxLength={60} required={quote.purchaseMethod === "po_required"} className={inputClass} />
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="notes" className={labelClass}>Notes for Delite (optional)</label>
@@ -254,7 +259,7 @@ export function Checkout() {
           </section>
           <section className="card-surface rounded-lg p-5">
             <h2 className="font-semibold mb-3">How this order works</h2>
-            <p className="text-[13.5px] text-steel-500">This places a <strong>purchase request</strong> at your agreed prices. The Delite team confirms it and arranges payment and delivery with {me.dealer.legalName} — you won't be charged online.</p>
+            <p className="text-[13.5px] text-steel-500">This places a <strong>purchase request</strong> at your agreed prices. The Delite team confirms it and arranges payment and delivery with {me.dealer.legalName}{quote.paymentTerms ? ` (terms: ${quote.paymentTerms})` : ""} — you won't be charged online.</p>
           </section>
         </div>
         <aside className="card-surface rounded-lg p-5 space-y-4 lg:sticky lg:top-24">
@@ -268,7 +273,7 @@ export function Checkout() {
             ))}
           </ul>
           <Totals quote={quote} />
-          <button type="submit" disabled={busy || !quote.canOrder} className={`${btnPrimary} w-full`}>{busy && <Spinner />} {quote.needsAcknowledgement ? "Accept updated prices & place order" : "Place order"}</button>
+          <button type="submit" disabled={busy || !quote.canOrder || (quote.purchaseMethod === "po_required" && !po.trim())} className={`${btnPrimary} w-full`}>{busy && <Spinner />} {quote.needsAcknowledgement ? "Accept updated prices & place order" : "Place order"}</button>
           <p className="text-[12px] text-steel-500">By placing this order you agree to Delite's dealer terms.</p>
         </aside>
       </div>

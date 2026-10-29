@@ -5,7 +5,7 @@ import { ApiError } from "../../../dealer/lib/transport";
 import { btnDanger, btnOutline, ErrorState, PageSkeleton, Spinner, useApi } from "../../../dealer/ui";
 import { adminDealers, type DealerDetailData, type DealerStatus } from "./adminDealerApi";
 import { ADMIN_ACCENT_STYLE, DealerStatusBadge, Modal, useAdminBase } from "./dealerAdminUi";
-import { DealerForm, valuesFromDealer } from "./DealerForm";
+import { DealerForm, termsPayload, valuesFromDealer } from "./DealerForm";
 
 
 export interface DetailContext {
@@ -129,7 +129,7 @@ export function DealerNew() {
         initial={valuesFromDealer()}
         submitLabel="Save draft & continue"
         onSubmit={async (v) => {
-          const res = await adminDealers.create({ ...v, contactName: v.contactName || undefined, contactPhone: v.contactPhone || undefined, gstin: v.gstin || undefined });
+          const res = await adminDealers.create({ ...v, contactName: v.contactName || undefined, contactPhone: v.contactPhone || undefined, gstin: v.gstin || undefined, ...termsPayload(v) });
           navigate(`${base}/dealers/${res.dealer.id}/branding`);
         }}
       />

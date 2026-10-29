@@ -4,7 +4,7 @@ import type { AdminRole } from "../../context/AuthContext";
 
 /** Every admin page URL that existed before the navigation was simplified (and still works), with the roles that could open it. */
 const PAGE_ROLES: Record<string, AdminRole[]> = {
-  "/admin": ["owner", "admin", "content", "merchandising", "support", "analytics"],
+  "/admin": ["owner", "admin", "content", "merchandising", "support", "analytics", "dealer_manager"],
   "/admin/website/homepage": ["owner", "admin", "content"],
   "/admin/website/hero": ["owner", "admin", "content"],
   "/admin/website/announcement": ["owner", "admin", "content"],
@@ -23,8 +23,8 @@ const PAGE_ROLES: Record<string, AdminRole[]> = {
   "/admin/products": ["owner", "admin", "merchandising"],
   "/admin/orders": ["owner", "admin", "support"],
   "/admin/payments": ["owner", "admin", "support"],
-  "/admin/dealers": ["owner", "admin", "support"],
-  "/admin/dealer-orders": ["owner", "admin", "support"],
+  "/admin/dealers": ["owner", "admin", "support", "dealer_manager"],
+  "/admin/dealer-orders": ["owner", "admin", "support", "dealer_manager"],
   "/admin/analytics": ["owner", "admin", "analytics"],
   "/admin/analytics/traffic": ["owner", "admin", "analytics"],
   "/admin/analytics/pages": ["owner", "admin", "analytics"],
@@ -39,12 +39,12 @@ const PAGE_ROLES: Record<string, AdminRole[]> = {
   "/admin/contact": ["owner", "admin", "support"],
   "/admin/system/integrations": ["owner", "admin"],
   "/admin/system/email": ["owner", "admin", "support"],
-  "/admin/settings": ["owner", "admin", "content", "merchandising", "support", "analytics"],
+  "/admin/settings": ["owner", "admin", "content", "merchandising", "support", "analytics", "dealer_manager"],
   "/admin/settings/users": ["owner"],
-  "/admin/settings/security": ["owner", "admin", "content", "merchandising", "support", "analytics"],
+  "/admin/settings/security": ["owner", "admin", "content", "merchandising", "support", "analytics", "dealer_manager"],
   "/admin/settings/activity": ["owner", "admin"],
 };
-const ROLES: AdminRole[] = ["owner", "admin", "content", "merchandising", "support", "analytics"];
+const ROLES: AdminRole[] = ["owner", "admin", "content", "merchandising", "support", "analytics", "dealer_manager"];
 
 describe("admin navigation", () => {
   it("keeps every page's role access exactly as before the simplification", () => {

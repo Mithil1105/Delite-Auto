@@ -1,16 +1,37 @@
-import { useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
-import { Headset, LockKeyhole, Tags } from "lucide-react";
+import { ChevronDown, Headset, LockKeyhole, Tags } from "lucide-react";
 import { site } from "../../data/site";
 import { useDealerAuth } from "../DealerAuth";
 import { btnPrimary, inputClass, labelClass, Spinner } from "../ui";
 
 const DEFAULT_ACCENT = { "--dealer-accent": "#10148F" } as CSSProperties;
+/** Generic Delite imagery that is already public on the storefront (spec §5.1) — never private data. */
+const HERO_IMAGE = "/images/hero/delitefied-suv-golden-hour-cropped.webp";
 
 /** Only same-app absolute paths are honoured as a post-login destination (no open redirects). */
 export function safeReturnTo(raw: string | null): string {
   if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.includes(":") || raw.includes("\\")) return "/dashboard";
   return raw;
+}
+
+/** Client-side brake on repeated failures (the server — Supabase Auth — has its own rate limits; this
+ * stops casual guessing from the page itself and is cleared on success). 5 misses → 30 s, doubling to 5 min. */
+const THROTTLE_KEY = "dealer-login-throttle";
+function readThrottle(): { fails: number; until: number } {
+  try {
+    return JSON.parse(sessionStorage.getItem(THROTTLE_KEY) ?? "") as { fails: number; until: number };
+  } catch {
+    return { fails: 0, until: 0 };
+  }
+}
+function writeThrottle(v: { fails: number; until: number } | null): void {
+  try {
+    if (v) sessionStorage.setItem(THROTTLE_KEY, JSON.stringify(v));
+    else sessionStorage.removeItem(THROTTLE_KEY);
+  } catch {
+    /* storage unavailable — the server limits still apply */
+  }
 }
 
 function PublicFrame({ children }: { children: ReactNode }) {
@@ -21,8 +42,9 @@ function PublicFrame({ children }: { children: ReactNode }) {
           <Link to="/" className="font-display uppercase text-[17px] tracking-tightish">
             Delite Auto <span className="text-steel-500 normal-case text-[13px] ml-1">Exclusive Partners</span>
           </Link>
-          <nav className="flex items-center gap-5 text-[13.5px]">
+          <nav aria-label="Main" className="flex items-center gap-5 text-[13.5px]">
             <Link to={{ pathname: "/", hash: "#benefits" }} className="hidden sm:inline text-steel-700 hover:text-ink">Benefits</Link>
+            <Link to={{ pathname: "/", hash: "#faq" }} className="hidden sm:inline text-steel-700 hover:text-ink">FAQ</Link>
             <Link to="/support-public" className="hidden sm:inline text-steel-700 hover:text-ink">Contact</Link>
             <Link to="/login" className={btnPrimary}>Dealer Login</Link>
           </nav>
@@ -43,6 +65,15 @@ function PublicFrame({ children }: { children: ReactNode }) {
   );
 }
 
+const FAQ: { q: string; a: string }[] = [
+  { q: "How do I get access?", a: "The portal is invitation-only. Your Delite representative sets up your account and emails you a single-use link to choose your password. There is no public sign-up." },
+  { q: "Why can't I see every Delite product?", a: "Your catalogue contains only the products Delite has opened up to your business, each at the price agreed with you. Anything not assigned to your account simply isn't visible." },
+  { q: "Are the prices final?", a: "Yes. Your agreed price is applied automatically and re-checked every time you add to your cart and when you place an order. If a price changes while items are in your cart, you'll see the old and new price and confirm before ordering." },
+  { q: "How do I pay?", a: "Placing an order sends Delite a purchase request at your agreed prices. Our team confirms it and arranges payment and delivery under the terms on your account — you are not charged online." },
+  { q: "Can my team use the portal?", a: "Yes. The account owner can add buyers who can order but cannot change account settings. Delite can also add team members for you." },
+  { q: "I forgot my password or my link expired.", a: "Use “Forgot your password?” on the sign-in page for a fresh single-use link, or ask your Delite contact to resend your invitation." },
+];
+
 export function Landing() {
   const cards = [
     { icon: LockKeyhole, title: "Private Catalogue", body: "See only the products Delite has opened up to your business — nothing else." },
@@ -51,11 +82,13 @@ export function Landing() {
   ];
   return (
     <PublicFrame>
-      <section className="bg-gradient-to-br from-charcoal-deep via-charcoal to-brand-700 text-white">
-        <div className="container-page py-20 sm:py-28 max-w-3xl">
+      <section className="relative text-white bg-charcoal-deep overflow-hidden">
+        <img src={HERO_IMAGE} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover opacity-45" />
+        <div className="absolute inset-0 bg-gradient-to-r from-charcoal-deep via-charcoal-deep/85 to-transparent" aria-hidden />
+        <div className="container-page relative py-20 sm:py-28 max-w-3xl">
           <p className="font-mono text-[11px] uppercase tracking-widish text-gold mb-4">Exclusive partner portal</p>
           <h1 className="font-display uppercase text-[34px] sm:text-[52px] leading-[1.05] tracking-tightish mb-5">A better way to buy, built for our partners.</h1>
-          <p className="text-[16px] text-white/75 max-w-[52ch] mb-8">Exclusive product access. Agreed pricing. One seamless ordering experience.</p>
+          <p className="text-[16px] text-white/80 max-w-[52ch] mb-8">Exclusive product access. Agreed pricing. One seamless ordering experience.</p>
           <Link to="/login" className="inline-flex items-center h-12 px-8 rounded-full bg-gold text-ink font-semibold hover:bg-gold-600 transition-colors">Dealer Login</Link>
         </div>
       </section>
@@ -70,6 +103,20 @@ export function Landing() {
           ))}
         </div>
         <p className="mt-10 text-center text-[13.5px] text-steel-500">Invitation-only dealer access — there is no public registration.</p>
+      </section>
+      <section id="faq" className="container-page pb-16 max-w-3xl" aria-labelledby="faq-title">
+        <h2 id="faq-title" className="font-display uppercase text-[22px] mb-5">Frequently asked questions</h2>
+        <div className="space-y-3">
+          {FAQ.map((f) => (
+            <details key={f.q} className="card-surface rounded-lg group">
+              <summary className="flex items-center justify-between gap-4 p-4 cursor-pointer list-none font-medium text-[14.5px] [&::-webkit-details-marker]:hidden">
+                {f.q}
+                <ChevronDown className="w-4 h-4 shrink-0 text-steel-500 transition-transform group-open:rotate-180 motion-reduce:transition-none" aria-hidden />
+              </summary>
+              <p className="px-4 pb-4 text-[13.5px] text-steel-700">{f.a}</p>
+            </details>
+          ))}
+        </div>
       </section>
     </PublicFrame>
   );
@@ -93,21 +140,42 @@ export function Login() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const returnTo = safeReturnTo(params.get("returnTo"));
+  const expired = params.get("expired") === "1";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [trap, setTrap] = useState(""); // honeypot: invisible to people, tempting to bots
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const [throttle, setThrottle] = useState(readThrottle);
+  const locked = throttle.until > now;
+
+  useEffect(() => {
+    if (!locked) return;
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [locked]);
 
   if (ready && signedIn) return <Navigate to={returnTo} replace />;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (locked) return;
     setError(null);
     setBusy(true);
-    const res = await signIn(email, password);
+    const res = trap ? { error: "Invalid email or password" } : await signIn(email, password);
     setBusy(false);
-    if (res.error) setError(res.error);
-    else navigate(returnTo, { replace: true });
+    if (res.error) {
+      const fails = throttle.fails + 1;
+      const next = { fails, until: fails >= 5 ? Date.now() + Math.min(300_000, 30_000 * 2 ** (fails - 5)) : 0 };
+      writeThrottle(next);
+      setThrottle(next);
+      setNow(Date.now());
+      setError(res.error);
+    } else {
+      writeThrottle(null);
+      navigate(returnTo, { replace: true });
+    }
   };
 
   return (
@@ -115,6 +183,7 @@ export function Login() {
       <div className="container-page py-14 max-w-md">
         <h1 className="text-2xl font-semibold mb-1">Dealer sign in</h1>
         <p className="text-[13.5px] text-steel-500 mb-6">Use the credentials from your Delite invitation. There is no public sign-up.</p>
+        {expired && <p role="status" className="mb-4 text-[13px] rounded-md border border-amber-300 bg-amber-50 px-3 py-2">Your session has ended. Please sign in again.</p>}
         <form onSubmit={submit} className="card-surface rounded-lg p-6 space-y-4" noValidate>
           <div>
             <label htmlFor="email" className={labelClass}>Email</label>
@@ -124,8 +193,13 @@ export function Login() {
             <label htmlFor="password" className={labelClass}>Password</label>
             <input id="password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} className={inputClass} />
           </div>
-          {error && <p role="alert" className="text-[13px] text-sale">{error}</p>}
-          <button type="submit" disabled={busy || !email || !password} className={`${btnPrimary} w-full`}>
+          <div aria-hidden className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
+            <label htmlFor="website">Leave this field empty</label>
+            <input id="website" name="website" tabIndex={-1} autoComplete="off" value={trap} onChange={(e) => setTrap(e.target.value)} />
+          </div>
+          {error && !locked && <p role="alert" className="text-[13px] text-sale">{error}</p>}
+          {locked && <p role="alert" className="text-[13px] text-sale">Too many attempts. Please wait {Math.ceil((throttle.until - now) / 1000)} seconds, or use “Forgot your password?”.</p>}
+          <button type="submit" disabled={busy || locked || !email || !password} className={`${btnPrimary} w-full`}>
             {busy && <Spinner />} Sign in
           </button>
           <p className="text-center text-[13px]"><Link to="/forgot-password" className="underline text-steel-700">Forgot your password?</Link></p>
@@ -168,6 +242,13 @@ export function ForgotPassword() {
   );
 }
 
+/** Secure password policy (spec §10): 10+ characters with at least one letter and one number. */
+export function passwordProblem(pw: string): string | null {
+  if (pw.length < 10) return "Use at least 10 characters.";
+  if (!/[A-Za-z]/.test(pw) || !/\d/.test(pw)) return "Include at least one letter and one number.";
+  return null;
+}
+
 /** Landing page of the single-use invite / reset link: Supabase establishes a session from the link,
  * so a session present = a valid link; none after loading = invalid, expired or already used. */
 export function SetPassword({ mode }: { mode: "invite" | "reset" }) {
@@ -183,7 +264,8 @@ export function SetPassword({ mode }: { mode: "invite" | "reset" }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (pw.length < 8) return setError("Use at least 8 characters.");
+    const problem = passwordProblem(pw);
+    if (problem) return setError(problem);
     if (pw !== confirm) return setError("The two passwords don't match.");
     setBusy(true);
     const res = await setPassword(pw);
@@ -208,7 +290,8 @@ export function SetPassword({ mode }: { mode: "invite" | "reset" }) {
           <form onSubmit={submit} className="card-surface rounded-lg p-6 mt-6 space-y-4">
             <div>
               <label htmlFor="np" className={labelClass}>New password</label>
-              <input id="np" type="password" autoComplete="new-password" required value={pw} onChange={(e) => setPw(e.target.value)} className={inputClass} />
+              <input id="np" type="password" autoComplete="new-password" required value={pw} onChange={(e) => setPw(e.target.value)} className={inputClass} aria-describedby="np-help" />
+              <p id="np-help" className="text-[12px] text-steel-500 mt-1">At least 10 characters, with a letter and a number.</p>
             </div>
             <div>
               <label htmlFor="np2" className={labelClass}>Confirm password</label>

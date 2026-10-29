@@ -5,9 +5,9 @@ import { ApiError } from "../../../dealer/lib/transport";
 import { brandingImageUrl } from "../../../dealer/lib/media";
 import { btnOutline, btnPrimary, EmptyState, ErrorState, formatDateTime, labelClass, inputClass, money, OrderStatusBadge, PageSkeleton, Spinner, useApi } from "../../../dealer/ui";
 import { AdminMediaField } from "../../components/AdminMediaPicker";
-import { adminDealers, type AdminOrderRow, type AuditEntry } from "./adminDealerApi";
+import { adminDealers, type AdminOrderRow, type AuditEntry, type DealerUserView, type OfferView, type ReconcileReport } from "./adminDealerApi";
 import { useDealerDetail } from "./DealerDetail";
-import { DealerForm, valuesFromDealer } from "./DealerForm";
+import { DealerForm, termsPayload, valuesFromDealer } from "./DealerForm";
 import { adminInput, Modal, useAdminBase } from "./dealerAdminUi";
 
 // -------------------------------------------------------------------------------------------------
@@ -39,6 +39,7 @@ export function DealerOverview() {
           {detail.ready ? <>Ready to activate. <Link className="underline font-semibold" to={`${base}/dealers/${d.id}/access`}>Review &amp; send invite</Link></> : <><strong>Not ready to activate:</strong> {detail.readiness.map((i) => i.message).join(" · ")}. <Link className="underline font-semibold" to={`${base}/dealers/${d.id}/catalog`}>Open Catalogue &amp; Pricing</Link></>}
         </section>
       )}
+      <OffersPanel dealerId={d.id} offers={detail.offers} onChanged={reload} />
       <section>
         <h3 className="font-semibold mb-4">Dealer details</h3>
         <DealerForm
@@ -46,7 +47,7 @@ export function DealerOverview() {
           initial={valuesFromDealer(d)}
           submitLabel="Save changes"
           onSubmit={async (v) => {
-            await adminDealers.update({ id: d.id, expectedUpdatedAt: d.updated_at, ...v, contactName: v.contactName || null, contactPhone: v.contactPhone || null, gstin: v.gstin || null });
+            await adminDealers.update({ id: d.id, expectedUpdatedAt: d.updated_at, ...v, contactName: v.contactName || null, contactPhone: v.contactPhone || null, gstin: v.gstin || null, ...termsPayload(v) });
             reload();
           }}
         />
@@ -109,23 +110,118 @@ export function DealerAccess() {
         {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-3 text-[13px] ${msg.ok ? "text-emerald-700" : "text-sale"}`}>{msg.text}</p>}
       </section>
 
-      <section>
-        <h3 className="font-semibold mb-3">Users</h3>
-        {detail.users.length === 0 ? (
-          <p className="text-[13px] text-steel-500">No sign-in user yet — one is created when you send the invite.</p>
-        ) : (
-          <div className="bg-white border border-line rounded-lg overflow-x-auto">
-            <table className="w-full text-[13px]">
-              <thead className="text-left text-[11.5px] uppercase tracking-wide text-steel-500 border-b border-line"><tr><th className="p-3 font-medium">Email</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium">Invited</th><th className="p-3 font-medium">Last sign-in</th></tr></thead>
-              <tbody className="divide-y divide-line">
-                {detail.users.map((u) => <tr key={u.id}><td className="p-3">{u.email}</td><td className="p-3 capitalize">{u.status}</td><td className="p-3">{formatDateTime(u.invitedAt)}</td><td className="p-3">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}</td></tr>)}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <p className="text-[12px] text-steel-500 mt-2">Suspending a dealer blocks their next request immediately; no session token can outlive that check.</p>
-      </section>
+      <UsersPanel dealerId={d.id} users={detail.users} dealerActive={d.status === "active" || d.status === "invited"} onChanged={reload} />
     </div>
+  );
+}
+
+function UsersPanel({ dealerId, users, dealerActive, onChanged }: { dealerId: string; users: DealerUserView[]; dealerActive: boolean; onChanged: () => void }) {
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const run = async (key: string, fn: () => Promise<unknown>, done: string) => {
+    setBusy(key);
+    setMsg(null);
+    try {
+      await fn();
+      setMsg({ ok: true, text: done });
+      onChanged();
+      return true;
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof ApiError ? err.message : "Something went wrong" });
+      return false;
+    } finally {
+      setBusy(null);
+    }
+  };
+  return (
+    <section aria-labelledby="users-title">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h3 id="users-title" className="font-semibold">Users</h3>
+        {users.some((u) => u.status !== "disabled") && (
+          <button type="button" className={btnOutline} disabled={busy === "revoke"} onClick={() => run("revoke", () => adminDealers.revokeSessions(dealerId), "Everyone at this dealer has been signed out.")}>{busy === "revoke" && <Spinner />} Sign everyone out</button>
+        )}
+      </div>
+      {users.length === 0 ? (
+        <p className="text-[13px] text-steel-500">No sign-in user yet — one is created when you send the invite.</p>
+      ) : (
+        <div className="bg-white border border-line rounded-lg overflow-x-auto">
+          <table className="w-full text-[13px]">
+            <thead className="text-left text-[11.5px] uppercase tracking-wide text-steel-500 border-b border-line"><tr><th className="p-3 font-medium">Email</th><th className="p-3 font-medium">Role</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium">Last sign-in</th><th className="p-3"><span className="sr-only">Actions</span></th></tr></thead>
+            <tbody className="divide-y divide-line">
+              {users.map((u) => (
+                <tr key={u.id}>
+                  <td className="p-3">{u.email}</td>
+                  <td className="p-3 capitalize">{u.role}</td>
+                  <td className="p-3 capitalize">{u.status}</td>
+                  <td className="p-3">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "Never"}</td>
+                  <td className="p-3 text-right whitespace-nowrap space-x-2">
+                    {u.status !== "disabled" && <button type="button" className="underline text-[12.5px]" disabled={busy === u.id} onClick={() => run(u.id, () => adminDealers.sendReset(dealerId, u.id), `Password-reset link sent to ${u.email}.`)}>Send reset link</button>}
+                    {u.role === "buyer" && (u.status === "disabled"
+                      ? <button type="button" className="underline text-[12.5px]" disabled={busy === u.id} onClick={() => run(u.id, () => adminDealers.setUserStatus(dealerId, u.id, "active"), `${u.email} can sign in again.`)}>Enable</button>
+                      : <button type="button" className="underline text-[12.5px] text-sale" disabled={busy === u.id} onClick={() => run(u.id, () => adminDealers.setUserStatus(dealerId, u.id, "disabled"), `${u.email} was disabled and signed out.`)}>Disable</button>)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {dealerActive && (
+        <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); void run("add", () => adminDealers.addUser(dealerId, email.trim()), `Invite sent to ${email.trim()}.`).then((ok) => ok && setEmail("")); }}>
+          <div className="grow max-w-sm"><label htmlFor="add-buyer" className={labelClass}>Add a buyer by email</label><input id="add-buyer" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={inputClass} /></div>
+          <button type="submit" className={btnPrimary} disabled={busy === "add" || !email}>{busy === "add" && <Spinner />} Send invite</button>
+        </form>
+      )}
+      {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-3 text-[13px] ${msg.ok ? "text-emerald-700" : "text-sale"}`}>{msg.text}</p>}
+      <p className="text-[12px] text-steel-500 mt-2">Suspending a dealer or disabling a user blocks their next request immediately and ends their sessions.</p>
+    </section>
+  );
+}
+
+function OffersPanel({ dealerId, offers, onChanged }: { dealerId: string; offers: OfferView[]; onChanged: () => void }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const add = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    try {
+      await adminDealers.saveOffer({ dealerId, title: title.trim(), body: body.trim() || undefined, startsAt: startsAt ? new Date(startsAt).toISOString() : undefined, endsAt: endsAt ? new Date(endsAt).toISOString() : undefined });
+      setTitle(""); setBody(""); setStartsAt(""); setEndsAt("");
+      onChanged();
+    } catch (e2) {
+      setErr(e2 instanceof ApiError ? e2.message : "Could not save the announcement");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section aria-labelledby="offers-title">
+      <h3 id="offers-title" className="font-semibold mb-1">Dealer announcements</h3>
+      <p className="text-[12.5px] text-steel-500 mb-3">Short notices shown on this dealer's dashboard — a new range, a promotion, a lead-time warning.</p>
+      {offers.length > 0 && (
+        <ul className="bg-white border border-line rounded-lg divide-y divide-line mb-4 text-[13px]">
+          {offers.map((o) => (
+            <li key={o.id} className="p-3 flex items-start justify-between gap-3">
+              <div><div className="font-medium">{o.title}</div>{o.body && <div className="text-steel-500">{o.body}</div>}<div className="text-[11.5px] text-steel-500 mt-0.5">{o.starts_at ? `From ${formatDateTime(o.starts_at)}` : "Live now"}{o.ends_at ? ` · until ${formatDateTime(o.ends_at)}` : ""}</div></div>
+              <button type="button" className="underline text-sale text-[12.5px] shrink-0" onClick={async () => { await adminDealers.deleteOffer(dealerId, o.id); onChanged(); }}>Remove</button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form onSubmit={add} className="grid sm:grid-cols-2 gap-3 max-w-3xl">
+        <div className="sm:col-span-2"><label htmlFor="of-title" className={labelClass}>Title</label><input id="of-title" required maxLength={120} className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} /></div>
+        <div className="sm:col-span-2"><label htmlFor="of-body" className={labelClass}>Details (optional)</label><input id="of-body" maxLength={500} className={inputClass} value={body} onChange={(e) => setBody(e.target.value)} /></div>
+        <div><label htmlFor="of-from" className={labelClass}>Show from (optional)</label><input id="of-from" type="datetime-local" className={inputClass} value={startsAt} onChange={(e) => setStartsAt(e.target.value)} /></div>
+        <div><label htmlFor="of-to" className={labelClass}>Show until (optional)</label><input id="of-to" type="datetime-local" className={inputClass} value={endsAt} onChange={(e) => setEndsAt(e.target.value)} /></div>
+        <div className="sm:col-span-2 flex items-center gap-3"><button type="submit" className={btnOutline} disabled={busy || !title.trim()}>{busy && <Spinner />} Add announcement</button>{err && <span role="alert" className="text-[13px] text-sale">{err}</span>}</div>
+      </form>
+    </section>
   );
 }
 
@@ -329,11 +425,46 @@ export function DealerOrdersTab() {
   return <OrdersPanel dealerId={detail.dealer.id} showDealer={false} />;
 }
 
+function ReconcilePanel() {
+  const [report, setReport] = useState<ReconcileReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const run = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      setReport(await adminDealers.reconcile());
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : "Reconciliation failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section aria-labelledby="rec-title" className="mb-6 bg-white border border-line rounded-lg p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h3 id="rec-title" className="font-semibold text-[14px]">Odoo reconciliation</h3><p className="text-[12.5px] text-steel-500">Compares recent dealer orders with their Odoo quotations and flags missing, cancelled or mismatched ones.</p></div>
+        <button type="button" className={btnOutline} disabled={busy} onClick={run}>{busy && <Spinner />} Run check</button>
+      </div>
+      {err && <p role="alert" className="mt-3 text-[13px] text-sale">{err}</p>}
+      {report && (
+        <div className="mt-3 text-[13px]" role="status">
+          {!report.odooReachable ? <p className="text-amber-800">Odoo could not be reached, so nothing was compared. Try again shortly.</p>
+            : report.issues.length === 0 ? <p className="text-emerald-700">All {report.checked} recent order{report.checked === 1 ? "" : "s"} match Odoo.</p>
+            : <><p className="mb-2">{report.issues.length} of {report.checked} order{report.checked === 1 ? "" : "s"} need attention:</p>
+              <ul className="divide-y divide-line border border-line rounded">{report.issues.map((i) => <li key={i.orderId + i.kind} className="p-2"><strong>{i.orderNumber}</strong> · {i.dealerName} — {i.detail}</li>)}</ul></>}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function AllDealerOrders() {
   return (
     <div className="p-6 lg:p-10 max-w-7xl">
       <h2 className="font-display uppercase text-[15px] mb-1">Dealer orders</h2>
       <p className="text-[12.5px] text-steel-500 mb-5">Every order placed through the dealer portal. Prices are the contract-price snapshot taken at order time.</p>
+      <ReconcilePanel />
       <OrdersPanel showDealer />
     </div>
   );

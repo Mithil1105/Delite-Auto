@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, CheckCircle2, Clock, RotateCcw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Clock, Printer, RotateCcw } from "lucide-react";
 import { dealerApi } from "../lib/dealerApi";
 import { ApiError } from "../lib/transport";
 import { useMe } from "../DealerShell";
@@ -111,6 +111,7 @@ export function OrderDetail() {
             </div>
             <div className="flex items-center gap-3">
               <OrderStatusBadge status={data.order.status} />
+              <Link to={`/orders/${id}/print`} className={btnOutline}><Printer className="w-4 h-4" aria-hidden /> PDF / Print</Link>
               <button type="button" className={btnOutline} onClick={reorder} disabled={reordering}>{reordering ? <Spinner /> : <RotateCcw className="w-4 h-4" aria-hidden />} Reorder</button>
             </div>
           </div>

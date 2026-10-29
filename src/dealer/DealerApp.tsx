@@ -13,6 +13,7 @@ const Cart = lazy(() => import("./pages/Cart").then((m) => ({ default: m.Cart })
 const Checkout = lazy(() => import("./pages/Cart").then((m) => ({ default: m.Checkout })));
 const Orders = lazy(() => import("./pages/Orders").then((m) => ({ default: m.Orders })));
 const OrderDetail = lazy(() => import("./pages/Orders").then((m) => ({ default: m.OrderDetail })));
+const OrderPrint = lazy(() => import("./pages/OrderPrint"));
 const Account = lazy(() => import("./pages/Account").then((m) => ({ default: m.Account })));
 const Support = lazy(() => import("./pages/Account").then((m) => ({ default: m.Support })));
 
@@ -36,11 +37,12 @@ export default function DealerApp() {
             <Route element={<DealerShell />}>
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="catalog" element={<Catalog />} />
-              <Route path="catalog/:templateId" element={<ProductDetail />} />
+              <Route path="catalog/:slug" element={<ProductDetail />} />
               <Route path="cart" element={<Cart />} />
               <Route path="checkout" element={<Checkout />} />
               <Route path="orders" element={<Orders />} />
               <Route path="orders/:id" element={<OrderDetail />} />
+              <Route path="orders/:id/print" element={<OrderPrint />} />
               <Route path="account" element={<Account />} />
               <Route path="support" element={<Support />} />
             </Route>

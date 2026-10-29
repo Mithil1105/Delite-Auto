@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Check, Minus, Plus, Search } from "lucide-react";
 import { dealerApi, type CatalogProduct, type CatalogVariant } from "../lib/dealerApi";
+import { productPath, templateIdFromSlug } from "../lib/slug";
 import { ApiError } from "../lib/transport";
 import { useMe } from "../DealerShell";
 import { btnOutline, btnPrimary, EmptyState, ErrorState, inputClass, money, ProductThumb, Skeleton, Spinner, useApi } from "../ui";
@@ -11,6 +12,7 @@ export const taxNote = (basis: "exclusive" | "inclusive" | null) => (basis === "
 const REASONS: Record<string, string> = {
   no_price: "Pricing pending — not orderable yet",
   unavailable: "Currently unavailable",
+  out_of_stock: "Out of stock",
   not_orderable: "Not orderable right now",
 };
 
@@ -18,27 +20,37 @@ export function Catalog() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
   const page = Math.max(1, Number(params.get("page")) || 1);
+  const categoryId = Number(params.get("category")) || undefined;
   const [draft, setDraft] = useState(q);
   useEffect(() => setDraft(q), [q]);
-  const { data, error, loading, reload } = useApi(() => dealerApi.catalog({ q: q || undefined, page, pageSize: 12 }), [q, page]);
+  const { data, error, loading, reload } = useApi(() => dealerApi.catalog({ q: q || undefined, page, pageSize: 12, categoryId }), [q, page, categoryId]);
+  const cats = useApi(() => dealerApi.categories(), []);
 
+  const update = (next: Record<string, string | undefined>) => {
+    const out = new URLSearchParams(params);
+    for (const [k, v] of Object.entries(next)) {
+      if (v) out.set(k, v);
+      else out.delete(k);
+    }
+    setParams(out);
+  };
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    setParams(draft.trim() ? { q: draft.trim() } : {});
+    update({ q: draft.trim() || undefined, page: undefined });
   };
   const goPage = (p: number) => {
-    const next = new URLSearchParams(params);
-    next.set("page", String(p));
-    setParams(next);
+    update({ page: String(p) });
     window.scrollTo({ top: 0 });
   };
+  const categories = cats.data?.categories ?? [];
+  const activeCategory = categories.find((c) => c.id === categoryId);
 
   return (
     <div className="max-w-6xl">
-      <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-semibold">My catalogue</h1>
-          <p className="text-[13.5px] text-steel-500">{data ? `${data.total} product${data.total === 1 ? "" : "s"}${q ? ` matching “${q}”` : ""}` : "Loading…"}</p>
+          <p className="text-[13.5px] text-steel-500" aria-live="polite">{data ? `${data.total} product${data.total === 1 ? "" : "s"}${activeCategory ? ` in ${activeCategory.name}` : ""}${q ? ` matching “${q}”` : ""}` : "Loading…"}</p>
         </div>
         <form onSubmit={submit} role="search" className="flex gap-2 w-full sm:w-auto">
           <label htmlFor="cat-q" className="sr-only">Search products or SKU</label>
@@ -47,6 +59,17 @@ export function Catalog() {
         </form>
       </div>
 
+      {categories.length > 1 && (
+        <nav aria-label="Categories" className="flex flex-wrap gap-2 mb-5">
+          <button type="button" aria-pressed={!categoryId} onClick={() => update({ category: undefined, page: undefined })} className={`px-3.5 h-9 rounded-full text-[13px] border ${!categoryId ? "bg-ink text-white border-ink" : "bg-white border-line hover:bg-steel-50"}`}>All</button>
+          {categories.map((c) => (
+            <button key={c.id} type="button" aria-pressed={c.id === categoryId} onClick={() => update({ category: String(c.id), page: undefined })} className={`px-3.5 h-9 rounded-full text-[13px] border ${c.id === categoryId ? "bg-ink text-white border-ink" : "bg-white border-line hover:bg-steel-50"}`}>
+              {c.name} <span className="opacity-60">({c.count})</span>
+            </button>
+          ))}
+        </nav>
+      )}
+
       {error && <ErrorState error={error} onRetry={reload} />}
       {loading && !error && (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" role="status" aria-label="Loading products">
@@ -54,8 +77,8 @@ export function Catalog() {
         </div>
       )}
       {!loading && !error && data && data.items.length === 0 && (
-        q ? (
-          <EmptyState title="No results" action={<button type="button" className={btnOutline} onClick={() => setParams({})}>Clear search</button>}>Nothing in your catalogue matches “{q}”.</EmptyState>
+        q || categoryId ? (
+          <EmptyState title="No results" action={<button type="button" className={btnOutline} onClick={() => update({ q: undefined, category: undefined, page: undefined })}>Clear filters</button>}>Nothing in your catalogue matches{q ? ` “${q}”` : " that category"}.</EmptyState>
         ) : (
           <EmptyState title="No products assigned yet">Delite hasn't opened any products for your account yet. Please contact your representative.</EmptyState>
         )
@@ -83,8 +106,10 @@ export function Catalog() {
 function ProductCard({ product }: { product: CatalogProduct }) {
   const orderable = product.variants.some((v) => v.orderable);
   const basis = product.variants.find((v) => v.pricePaise !== null)?.taxBasis ?? null;
+  const hasTiers = product.variants.some((v) => v.tiers.length > 1);
+  const reason = product.variants.find((v) => !v.orderable)?.unavailableReason;
   return (
-    <Link to={`/catalog/${product.templateId}`} className="card-surface rounded-lg p-4 flex flex-col gap-3 hover:shadow-lift transition-shadow">
+    <Link to={productPath(product)} className="card-surface rounded-lg p-4 flex flex-col gap-3 hover:shadow-lift transition-shadow">
       <ProductThumb url={product.imageUrl} name={product.name} className="w-full h-36" />
       <div>
         <div className="text-[14px] font-medium leading-snug line-clamp-2">{product.name}</div>
@@ -99,16 +124,17 @@ function ProductCard({ product }: { product: CatalogProduct }) {
         ) : (
           <div className="text-[12.5px] text-steel-500">{REASONS.no_price}</div>
         )}
-        {!orderable && product.fromPricePaise !== null && <div className="text-[12px] text-amber-700 mt-1">Currently unavailable</div>}
+        {hasTiers && <div className="text-[12px] text-emerald-700 mt-1">Volume pricing available</div>}
+        {!orderable && product.fromPricePaise !== null && <div className="text-[12px] text-amber-700 mt-1">{REASONS[reason ?? "unavailable"]}</div>}
       </div>
     </Link>
   );
 }
 
 export function ProductDetail() {
-  const { templateId } = useParams();
-  const id = Number(templateId);
-  const { data, error, loading, reload } = useApi(() => (Number.isInteger(id) && id > 0 ? dealerApi.product(id) : Promise.reject(new ApiError("NOT_FOUND", "Product not found"))), [id]);
+  const { slug } = useParams();
+  const id = templateIdFromSlug(slug);
+  const { data, error, loading, reload } = useApi(() => (id ? dealerApi.product(id) : Promise.reject(new ApiError("NOT_FOUND", "Product not found"))), [id]);
 
   return (
     <div className="max-w-4xl">
@@ -132,6 +158,12 @@ export function ProductDetail() {
   );
 }
 
+function priceAtQty(variant: CatalogVariant, qty: number): number | null {
+  let price = variant.pricePaise;
+  for (const t of variant.tiers) if (qty >= t.minQty) price = t.pricePaise;
+  return price;
+}
+
 function VariantRow({ variant }: { variant: CatalogVariant }) {
   const { setCartLines } = useMe();
   const navigate = useNavigate();
@@ -139,6 +171,7 @@ function VariantRow({ variant }: { variant: CatalogVariant }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const step = variant.qtyMultiple;
+  const unit = priceAtQty(variant, qty);
 
   const add = async () => {
     setBusy(true);
@@ -164,10 +197,10 @@ function VariantRow({ variant }: { variant: CatalogVariant }) {
           <div className="text-[12px] text-steel-500">{variant.sku ? `SKU ${variant.sku}` : null}{variant.minQty > 1 || step > 1 ? ` · min ${variant.minQty}${step > 1 ? `, in packs of ${step}` : ""}` : ""}</div>
         </div>
         <div className="text-right">
-          {variant.pricePaise !== null ? (
+          {unit !== null ? (
             <>
-              <div className="price font-semibold text-[18px]">{money(variant.pricePaise)}</div>
-              <div className="text-[11.5px] text-steel-500">{taxNote(variant.taxBasis)} · your agreed price</div>
+              <div className="price font-semibold text-[18px]">{money(unit)}</div>
+              <div className="text-[11.5px] text-steel-500">{taxNote(variant.taxBasis)} · your agreed price{variant.tiers.length > 1 ? ` at ${qty}+` : ""}</div>
               {variant.publicPricePaise !== null && <div className="text-[11.5px] text-steel-500">Reference: <s>{money(variant.publicPricePaise)}</s></div>}
             </>
           ) : (
@@ -175,6 +208,20 @@ function VariantRow({ variant }: { variant: CatalogVariant }) {
           )}
         </div>
       </div>
+      {variant.tiers.length > 1 && (
+        <table className="mt-3 text-[12.5px] w-full max-w-xs">
+          <caption className="sr-only">Volume pricing</caption>
+          <thead><tr className="text-left text-steel-500"><th className="font-medium pr-4">Quantity</th><th className="font-medium">Price each</th></tr></thead>
+          <tbody>
+            {variant.tiers.map((t, i) => (
+              <tr key={t.minQty} className={priceAtQty(variant, qty) === t.pricePaise ? "font-semibold" : ""}>
+                <td className="pr-4">{t.minQty}{variant.tiers[i + 1] ? `–${variant.tiers[i + 1].minQty - 1}` : "+"}</td>
+                <td className="price">{money(t.pricePaise)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       {variant.orderable ? (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <div className="inline-flex items-center border border-line rounded-md" role="group" aria-label="Quantity">

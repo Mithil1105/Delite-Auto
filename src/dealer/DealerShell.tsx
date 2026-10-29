@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Headset, LayoutDashboard, LogOut, Menu, Package, Search, ShoppingCart, ClipboardList, UserRound, X } from "lucide-react";
+import { ChevronDown, Headset, LayoutDashboard, LogOut, Menu, Package, Search, ShoppingCart, ClipboardList, UserRound, X } from "lucide-react";
 import { useDealerAuth } from "./DealerAuth";
 import { dealerApi, type Me } from "./lib/dealerApi";
 import { brandingImageUrl } from "./lib/media";
@@ -68,6 +68,8 @@ export function DealerShell() {
   const [drawer, setDrawer] = useState(false);
   const [search, setSearch] = useState("");
   const [tick, setTick] = useState(0);
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const [menu, setMenu] = useState(false);
 
   useEffect(() => {
     if (!ready || !signedIn) return;
@@ -81,7 +83,10 @@ export function DealerShell() {
       },
       (err) => {
         if (cancelled) return;
-        if (err instanceof ApiError && err.code === "UNAUTHENTICATED") signOut();
+        if (err instanceof ApiError && err.code === "UNAUTHENTICATED") {
+          setSessionEnded(true);
+          signOut();
+        }
         else setError(err instanceof ApiError ? err : new ApiError("NETWORK", "Couldn't load your account."));
       }
     );
@@ -94,8 +99,8 @@ export function DealerShell() {
   const reloadMe = useCallback(() => setTick((t) => t + 1), []);
 
   if (!ready) return <div className="p-10"><PageSkeleton /></div>;
-  if (!signedIn) return <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
-  if (error?.code === "FORBIDDEN") return <BlockingState title="No dealer access" body="This account isn't linked to a dealer. If you were invited, use the link from your invitation email or contact Delite." />;
+  if (!signedIn) return <Navigate to={`/login?${sessionEnded ? "expired=1&" : ""}returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  if (error?.code === "FORBIDDEN") return <BlockingState title="No dealer access" body={error.message || "This account isn't linked to a dealer. If you were invited, use the link from your invitation email or contact Delite."} />;
   if (error?.code === "DEALER_INACTIVE") return <BlockingState title="Account unavailable" body={error.message} />;
   if (error) return <div className="min-h-screen grid place-items-center p-6"><div className="max-w-md w-full"><ErrorState error={error} onRetry={reloadMe} /></div></div>;
   if (!me) return <div className="min-h-screen p-10 bg-paper"><PageSkeleton /></div>;
@@ -125,10 +130,10 @@ export function DealerShell() {
 
   return (
     <MeContext.Provider value={{ me, cartLines, setCartLines, reloadMe }}>
-      <div className="min-h-screen bg-paper text-ink flex flex-col" style={style}>
+      <div className="min-h-screen bg-paper text-ink flex flex-col print:bg-white" style={style}>
         <RouteProgress />
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-white focus:p-3">Skip to content</a>
-        <header className="bg-white border-b border-line sticky top-0 z-40">
+        <header className="bg-white border-b border-line sticky top-0 z-40 print:hidden">
           <div className="h-16 px-4 lg:px-6 flex items-center gap-4">
             <button type="button" className="lg:hidden p-2 -ml-2" aria-label="Open menu" onClick={() => setDrawer(true)}><Menu className="w-5 h-5" /></button>
             <Link to="/dashboard" className="flex items-center gap-3 min-w-0">
@@ -145,9 +150,21 @@ export function DealerShell() {
                 <ShoppingCart className="w-5 h-5" />
                 {cartLines > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full text-[11px] leading-[18px] text-center text-white font-semibold" style={{ background: accent }}>{cartLines}</span>}
               </Link>
-              <button type="button" onClick={() => signOut()} className="p-2.5 rounded-md hover:bg-steel-50 flex items-center gap-2 text-[13px]" title={email ?? undefined}>
-                <LogOut className="w-4 h-4" aria-hidden /> <span className="hidden sm:inline">Sign out</span>
-              </button>
+              <div className="relative" onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setMenu(false); }} onKeyDown={(e) => e.key === "Escape" && setMenu(false)}>
+                <button type="button" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)} className="p-2 pl-2.5 rounded-md hover:bg-steel-50 flex items-center gap-2 text-[13px]">
+                  <span className="w-7 h-7 rounded-full grid place-items-center text-white text-[12px] font-semibold" style={{ background: accent }} aria-hidden>{(email ?? me.dealer.displayName).charAt(0).toUpperCase()}</span>
+                  <span className="hidden sm:inline max-w-[140px] truncate">{email}</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-steel-500" aria-hidden />
+                </button>
+                {menu && (
+                  <div role="menu" aria-label="Account" className="absolute right-0 mt-1 w-56 bg-white border border-line rounded-lg shadow-lift py-1 text-[13.5px] z-50">
+                    <div className="px-3 py-2 border-b border-line"><div className="font-medium truncate">{me.dealer.displayName}</div><div className="text-[12px] text-steel-500 truncate">{email} · {me.user.role}</div></div>
+                    <Link role="menuitem" to="/account" className="block px-3 py-2 hover:bg-steel-50" onClick={() => setMenu(false)}>Account &amp; team</Link>
+                    <Link role="menuitem" to="/support" className="block px-3 py-2 hover:bg-steel-50" onClick={() => setMenu(false)}>Support</Link>
+                    <button role="menuitem" type="button" onClick={() => signOut()} className="w-full text-left px-3 py-2 hover:bg-steel-50 flex items-center gap-2"><LogOut className="w-4 h-4" aria-hidden /> Sign out</button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -166,12 +183,12 @@ export function DealerShell() {
         )}
 
         <div className="flex-1 flex">
-          <aside className="hidden lg:block w-60 shrink-0 bg-steel-50/60 border-r border-line">{sidebar}</aside>
+          <aside className="hidden lg:block w-60 shrink-0 bg-steel-50/60 border-r border-line print:hidden">{sidebar}</aside>
           <main id="main" className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8">
             <Outlet />
           </main>
         </div>
-        <footer className="border-t border-line bg-white text-[12px] text-steel-500 px-6 py-3">Exclusive partner portal powered by Delite Auto</footer>
+        <footer className="border-t border-line bg-white text-[12px] text-steel-500 px-6 py-3 print:hidden">Exclusive partner portal powered by Delite Auto</footer>
       </div>
     </MeContext.Provider>
   );
