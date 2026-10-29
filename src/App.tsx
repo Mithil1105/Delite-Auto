@@ -82,6 +82,17 @@ const FeaturedProducts = lazy(() => import("./admin/pages/merchandising/Featured
 const TrendingProducts = lazy(() => import("./admin/pages/merchandising/Trending"));
 const NewArrivalsProducts = lazy(() => import("./admin/pages/merchandising/NewArrivals"));
 const HomepageCategories = lazy(() => import("./admin/pages/merchandising/Categories"));
+// Dealer (B2B) admin — see Documentations MD/dealer-portal.md.
+const DealersList = lazy(() => import("./admin/pages/dealers/DealersList"));
+const DealerDetail = lazy(() => import("./admin/pages/dealers/DealerDetail"));
+const DealerNew = lazy(() => import("./admin/pages/dealers/DealerDetail").then((m) => ({ default: m.DealerNew })));
+const DealerCatalog = lazy(() => import("./admin/pages/dealers/DealerCatalog"));
+const DealerOverview = lazy(() => import("./admin/pages/dealers/DealerTabs").then((m) => ({ default: m.DealerOverview })));
+const DealerBranding = lazy(() => import("./admin/pages/dealers/DealerTabs").then((m) => ({ default: m.DealerBranding })));
+const DealerAccess = lazy(() => import("./admin/pages/dealers/DealerTabs").then((m) => ({ default: m.DealerAccess })));
+const DealerOrdersTab = lazy(() => import("./admin/pages/dealers/DealerTabs").then((m) => ({ default: m.DealerOrdersTab })));
+const DealerActivity = lazy(() => import("./admin/pages/dealers/DealerTabs").then((m) => ({ default: m.DealerActivity })));
+const AllDealerOrders = lazy(() => import("./admin/pages/dealers/DealerTabs").then((m) => ({ default: m.AllDealerOrders })));
 // Analytics pages (and their charting library) load only when an admin opens them, so none of it
 // ships in the storefront bundle.
 const AnalyticsShell = lazy(() => import("./admin/analytics/AnalyticsShell").then((m) => ({ default: m.AnalyticsShell })));
@@ -160,6 +171,19 @@ export default function App() {
                     <Route path="geography" element={<RoleRoute path="/admin/analytics/geography"><AnalyticsGeography /></RoleRoute>} />
                     <Route path="acquisition" element={<RoleRoute path="/admin/analytics/acquisition"><AnalyticsAcquisition /></RoleRoute>} />
                   </Route>
+
+                  <Route path="dealers" element={<RoleRoute path="/admin/dealers"><DealersList /></RoleRoute>} />
+                  <Route path="dealers/new" element={<RoleRoute path="/admin/dealers"><DealerNew /></RoleRoute>} />
+                  <Route path="dealers/:id" element={<RoleRoute path="/admin/dealers"><DealerDetail /></RoleRoute>}>
+                    <Route index element={<Navigate to="overview" replace />} />
+                    <Route path="overview" element={<DealerOverview />} />
+                    <Route path="catalog" element={<DealerCatalog />} />
+                    <Route path="branding" element={<DealerBranding />} />
+                    <Route path="access" element={<DealerAccess />} />
+                    <Route path="orders" element={<DealerOrdersTab />} />
+                    <Route path="activity" element={<DealerActivity />} />
+                  </Route>
+                  <Route path="dealer-orders" element={<RoleRoute path="/admin/dealer-orders"><AllDealerOrders /></RoleRoute>} />
 
                   <Route path="reviews" element={<RoleRoute path="/admin/reviews"><AdminReviews /></RoleRoute>} />
                   <Route path="contact" element={<RoleRoute path="/admin/contact"><AdminContact /></RoleRoute>} />

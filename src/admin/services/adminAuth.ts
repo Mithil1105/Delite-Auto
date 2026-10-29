@@ -15,6 +15,7 @@ import {
   MessageSquareText,
   ShieldCheck,
   Activity,
+  Building2,
 } from "lucide-react";
 
 /**
@@ -107,6 +108,13 @@ export const ADMIN_NAV: AdminNavGroup[] = [
       tabbed("Orders & payments", ShoppingCart, [
         { label: "Orders", path: "/admin/orders", roles: OWNER_ADMIN_SUPPORT },
         { label: "Payments", path: "/admin/payments", roles: OWNER_ADMIN_SUPPORT },
+      ]),
+      // B2B dealer portal admin (see Documentations MD/dealer-portal.md). Support can VIEW dealers and
+      // orders; every write (and all pricing) is further restricted server-side to owner/admin by the
+      // admin-dealers function's capability table — this list is only the UX gate.
+      tabbed("Dealers", Building2, [
+        { label: "Dealers", path: "/admin/dealers", roles: OWNER_ADMIN_SUPPORT },
+        { label: "Dealer orders", path: "/admin/dealer-orders", roles: OWNER_ADMIN_SUPPORT },
       ]),
     ],
   },

@@ -23,6 +23,8 @@ const PAGE_ROLES: Record<string, AdminRole[]> = {
   "/admin/products": ["owner", "admin", "merchandising"],
   "/admin/orders": ["owner", "admin", "support"],
   "/admin/payments": ["owner", "admin", "support"],
+  "/admin/dealers": ["owner", "admin", "support"],
+  "/admin/dealer-orders": ["owner", "admin", "support"],
   "/admin/analytics": ["owner", "admin", "analytics"],
   "/admin/analytics/traffic": ["owner", "admin", "analytics"],
   "/admin/analytics/pages": ["owner", "admin", "analytics"],
@@ -59,7 +61,8 @@ describe("admin navigation", () => {
 
   it("has far fewer sidebar entries than pages, with unique landing paths and no empty groups", () => {
     const items = ADMIN_NAV.flatMap((g) => g.items);
-    expect(items.length).toBeLessThanOrEqual(14);
+    // 14 + the B2B "Dealers" entry (tabs: Dealers, Dealer orders) — see Documentations MD/dealer-portal.md.
+    expect(items.length).toBeLessThanOrEqual(15);
     expect(new Set(items.map((i) => i.path)).size).toBe(items.length);
     for (const g of ADMIN_NAV) expect(g.items.length).toBeGreaterThan(0);
     // every tab of every item is a registered page
@@ -75,6 +78,9 @@ describe("admin navigation", () => {
     expect(matchNavLocation("/admin/settings")?.tab?.label).toBe("Appearance");
     expect(matchNavLocation("/admin/analytics/geography")?.tab?.label).toBe("Geography");
     expect(matchNavLocation("/admin/analytics")?.tab?.label).toBe("Overview");
+    expect(matchNavLocation("/admin/dealers/abc-123/catalog")?.tab?.label).toBe("Dealers");
+    expect(matchNavLocation("/admin/dealers/abc-123/catalog")?.item.label).toBe("Dealers");
+    expect(matchNavLocation("/admin/dealer-orders")?.tab?.label).toBe("Dealer orders");
     expect(matchNavLocation("/admin/nope")).toBeUndefined();
   });
 
