@@ -13,6 +13,7 @@
     "test:visual:update": "playwright test --update-snapshots",
     "test:unit": "vitest run",
     "typecheck:server": "tsc --noEmit -p tsconfig.server.json",
+    "dealer:odoo-proof": "node --env-file=.env.local node_modules/vite-node/vite-node.mjs scripts/dealer-odoo-proof.ts --",
     "odoo:health:local": "node --env-file=.env.local node_modules/vite-node/vite-node.mjs scripts/odoo-health-local.ts"
   },
   "dependencies": {
