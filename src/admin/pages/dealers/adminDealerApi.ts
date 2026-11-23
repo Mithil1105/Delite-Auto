@@ -45,6 +45,7 @@ export interface DealerRecord {
   payment_terms: string | null;
   credit_limit_paise: number | null;
   is_pilot: boolean;
+  portal_slug: string | null;
   created_at: string;
   updated_at: string;
 }

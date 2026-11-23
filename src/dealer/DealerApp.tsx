@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { DealerAuthProvider } from "./DealerAuth";
 import { DealerShell } from "./DealerShell";
 import { dealerBasename } from "./lib/media";
+import { PortalBrandProvider } from "./lib/portalBrand";
 import { DealerNotFound, ForgotPassword, Landing, Login, PublicContact, SetPassword } from "./pages/public";
 import { PageSkeleton } from "./ui";
 
@@ -25,6 +26,7 @@ const Support = lazy(() => import("./pages/Account").then((m) => ({ default: m.S
 export default function DealerApp() {
   return (
     <BrowserRouter basename={dealerBasename() || "/"}>
+      <PortalBrandProvider>
       <DealerAuthProvider>
         <Suspense fallback={<div className="p-8"><PageSkeleton /></div>}>
           <Routes>
@@ -50,6 +52,7 @@ export default function DealerApp() {
           </Routes>
         </Suspense>
       </DealerAuthProvider>
+      </PortalBrandProvider>
     </BrowserRouter>
   );
 }

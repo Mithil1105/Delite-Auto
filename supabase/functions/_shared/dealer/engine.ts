@@ -113,6 +113,30 @@ export interface DealerEngine {
   /** `tokenIssuedAtSec` = the `iat` claim of the caller's verified access token (for session revocation). */
   resolveSession(authUserId: string, requestId?: string, tokenIssuedAtSec?: number): Promise<DealerSession>;
   recordDenied(args: { actorId: string | null; reason: string; requestId?: string }): Promise<void>;
+  /** Unauthenticated: only what a dealer's own branded landing/login page may show. null = no such portal. */
+  publicBrand(slug: string): Promise<PublicBrand | null>;
+}
+
+export interface PublicBrand {
+  slug: string;
+  displayName: string;
+  logoPath: string | null;
+  coverPath: string | null;
+  accentColor: string;
+  tagline: string | null;
+  welcomeText: string | null;
+}
+
+/** Reserved so a dealer can never take an address that looks like Delite infrastructure. */
+const RESERVED_SLUGS = new Set(["www", "admin", "api", "app", "dealers", "dealer", "staging", "mail", "support", "static", "assets", "cdn", "auth", "login", "portal", "delite", "deliteauto", "odoo", "test"]);
+
+export function parsePortalSlug(raw: unknown): string | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  if (typeof raw !== "string") throw new DealerError("VALIDATION", "Portal address must be text");
+  const slug = raw.trim().toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/.test(slug)) throw new DealerError("VALIDATION", "Portal address must be 3–30 characters: letters, numbers and hyphens, not starting or ending with a hyphen");
+  if (RESERVED_SLUGS.has(slug)) throw new DealerError("VALIDATION", "That portal address is reserved — choose another");
+  return slug;
 }
 
 type AdminHandler = (actor: AdminActor, p: Payload) => Promise<unknown>;
@@ -503,7 +527,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     const users = await repo.listDealerUsers(dealer.id);
     if (users.length >= MAX_TEAM) throw new DealerError("VALIDATION", `A dealer can have at most ${MAX_TEAM} users`);
     if (users.some((u) => u.email.toLowerCase() === email.toLowerCase())) throw new DealerError("CONFLICT", "That person already has access");
-    const invited = await auth.inviteDealerUser(email, { dealerCode: dealer.dealer_code, displayName: dealer.display_name });
+    const invited = await auth.inviteDealerUser(email, { dealerCode: dealer.dealer_code, displayName: dealer.display_name, portalSlug: dealer.portal_slug });
     const mapped = await repo.getDealerUserByAuthId(invited.authUserId);
     if (mapped) throw new DealerError("CONFLICT", "That email already belongs to a dealer account");
     return repo.insertDealerUser({ dealer_id: dealer.id, auth_user_id: invited.authUserId, email, role, status: "invited", invited_at: now().toISOString(), last_login_at: null, sessions_revoked_before: null });
@@ -646,6 +670,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
         payment_terms: terms.payment_terms ?? null,
         credit_limit_paise: terms.credit_limit_paise ?? null,
         is_pilot: terms.is_pilot ?? false,
+        portal_slug: "portalSlug" in p ? parsePortalSlug(p.portalSlug) : null,
         created_by: a.id,
       });
       await repo.upsertBranding(dealer.id, { accent_color: reqAccent(p, "accentColor") ?? "#10148F" });
@@ -667,6 +692,13 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       if ("billingAddress" in p) patch.billing_address = parseAddress(p.billingAddress, false, "Billing address");
       if ("shippingAddress" in p) patch.shipping_address = parseAddress(p.shippingAddress, false, "Shipping address");
       Object.assign(patch, parseTerms(p));
+      if ("portalSlug" in p) {
+        patch.portal_slug = parsePortalSlug(p.portalSlug);
+        if (patch.portal_slug && patch.portal_slug !== dealer.portal_slug) {
+          const taken = await repo.getDealerBySlug(patch.portal_slug);
+          if (taken && taken.id !== dealer.id) throw new DealerError("CONFLICT", "That portal address is already taken");
+        }
+      }
       assertTermsConsistent({ shipping_policy: patch.shipping_policy ?? dealer.shipping_policy, flat_shipping_paise: patch.flat_shipping_paise ?? dealer.flat_shipping_paise });
       const updated = await repo.updateDealer(dealer.id, patch);
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "dealer.updated", entity: "dealer", entityId: dealer.id, oldValue: pick(dealer, Object.keys(patch)), newValue: pick(updated, Object.keys(patch)), requestId: a.requestId });
@@ -740,7 +772,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const issues = checkReadiness({ ownerEmail: dealer.contact_email, access, rules, now: now() });
       if (issues.length > 0) throw new DealerError("NOT_READY", "This dealer isn't ready to activate yet", { issues });
 
-      const invited = await auth.inviteDealerUser(dealer.contact_email, { dealerCode: dealer.dealer_code, displayName: dealer.display_name });
+      const invited = await auth.inviteDealerUser(dealer.contact_email, { dealerCode: dealer.dealer_code, displayName: dealer.display_name, portalSlug: dealer.portal_slug });
       const existingMapping = await repo.getDealerUserByAuthId(invited.authUserId);
       if (existingMapping && existingMapping.dealer_id !== dealer.id) throw new DealerError("CONFLICT", "That email already belongs to another dealer account");
       if (!existingMapping) {
@@ -784,7 +816,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const user = (await repo.listDealerUsers(dealer.id)).find((u) => u.id === reqUuid(p, "userId", "User"));
       if (!user) throw new DealerError("NOT_FOUND", "User not found");
       if (user.status === "disabled") throw new DealerError("CONFLICT", "Enable this user before sending a reset");
-      await auth.sendPasswordReset(user.email);
+      await auth.sendPasswordReset(user.email, dealer.portal_slug);
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "auth.reset_sent", entity: "dealer_user", entityId: user.auth_user_id, newValue: { email: user.email }, requestId: a.requestId });
       return { sent: true };
     },
@@ -1354,7 +1386,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
         /* the dashboard still renders without the featured strip */
       }
       return {
-        dealer: { code: dealer.dealer_code, displayName: dealer.display_name, legalName: dealer.legal_name, status: dealer.status },
+        dealer: { code: dealer.dealer_code, displayName: dealer.display_name, legalName: dealer.legal_name, status: dealer.status, portalSlug: dealer.portal_slug },
         user: { email: s.user.email, role: s.user.role },
         branding: branding ? { logoPath: branding.logo_path, coverPath: branding.cover_path, accentColor: branding.accent_color, tagline: branding.tagline, welcomeText: branding.welcome_text } : null,
         terms: { purchaseMethod: dealer.purchase_method, paymentTerms: dealer.payment_terms, shippingLabel: shippingFor(dealer).label },
@@ -1669,8 +1701,15 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     async callDealer(session, action, payload) {
       const handler = dealerActions[action];
       if (!handler) throw new DealerError("NOT_FOUND", "Unknown action");
+      const p = asPayload(payload);
+      // A dealer's own address only serves that dealer: a sign-in from another dealer is refused (the
+      // identity still comes from the session; this just stops cross-portal use). The shared address sends none.
+      if (typeof p.portalSlug === "string" && p.portalSlug && p.portalSlug !== session.dealer.portal_slug) {
+        await audit({ dealerId: session.dealer.id, actorType: "dealer", actorId: session.user.auth_user_id, event: "security.denied", entity: "dealer_portal", newValue: { reason: "wrong_portal", portal: p.portalSlug }, requestId: session.requestId });
+        throw new DealerError("FORBIDDEN", "This account belongs to a different dealer portal. Please use your own portal address.");
+      }
       // The payload is parsed but any `dealerId` the caller sends is simply never read.
-      return handler(session, asPayload(payload));
+      return handler(session, p);
     },
 
     async resolveSession(authUserId, requestId, tokenIssuedAtSec) {
@@ -1705,6 +1744,21 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
 
     async recordDenied({ actorId, reason, requestId }) {
       await audit({ dealerId: null, actorType: "dealer", actorId, event: "security.denied", entity: "dealer_session", newValue: { reason }, requestId });
+    },
+
+    async publicBrand(rawSlug) {
+      let slug: string | null;
+      try {
+        slug = parsePortalSlug(rawSlug);
+      } catch {
+        return null;
+      }
+      if (!slug) return null;
+      const dealer = await repo.getDealerBySlug(slug);
+      // Only live accounts have a landing page; drafts, suspended and closed ones look exactly like "no such portal".
+      if (!dealer || (dealer.status !== "invited" && dealer.status !== "active")) return null;
+      const b = await repo.getBranding(dealer.id);
+      return { slug, displayName: dealer.display_name, logoPath: b?.logo_path ?? null, coverPath: b?.cover_path ?? null, accentColor: b?.accent_color ?? "#10148F", tagline: b?.tagline ?? null, welcomeText: b?.welcome_text ?? null };
     },
   };
 }

@@ -1,9 +1,10 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { Address } from "../../../dealer/lib/dealerApi";
 import { ApiError } from "../../../dealer/lib/transport";
 import { btnPrimary, inputClass, labelClass, Spinner } from "../../../dealer/ui";
 import type { DealerRecord } from "./adminDealerApi";
 import { adminInput } from "./dealerAdminUi";
+import { portalAddress } from "../../../dealer/lib/portalHost";
 
 export interface DealerFormValues {
   displayName: string;
@@ -20,6 +21,12 @@ export interface DealerFormValues {
   paymentTerms: string;
   creditLimitRupees: string;
   isPilot: boolean;
+  portalSlug: string;
+}
+
+/** Lower-case, hyphenated suggestion for a dealer's own portal address. */
+export function suggestSlug(name: string): string {
+  return name.toLowerCase().replace(/&/g, " and ").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30).replace(/-+$/g, "");
 }
 
 /** Form values -> the API payload fields for commercial terms (rupees are converted to integer paise). */
@@ -32,6 +39,7 @@ export function termsPayload(v: DealerFormValues) {
     paymentTerms: v.paymentTerms.trim() || null,
     creditLimitPaise: v.creditLimitRupees.trim() ? rupees(v.creditLimitRupees) : null,
     isPilot: v.isPilot,
+    portalSlug: v.portalSlug.trim().toLowerCase() || null,
   };
 }
 
@@ -51,6 +59,7 @@ export function valuesFromDealer(d?: DealerRecord): DealerFormValues {
     paymentTerms: d?.payment_terms ?? "",
     creditLimitRupees: d?.credit_limit_paise ? String(d.credit_limit_paise / 100) : "",
     isPilot: d?.is_pilot ?? false,
+    portalSlug: d?.portal_slug ?? "",
   };
 }
 
@@ -71,8 +80,10 @@ function AddressFields({ legend, value, onChange }: { legend: string; value: Add
   );
 }
 
-export function DealerForm({ initial, submitLabel, onSubmit }: { initial: DealerFormValues; submitLabel: string; onSubmit: (v: DealerFormValues) => Promise<void> }) {
+export function DealerForm({ initial, submitLabel, onSubmit, autosave = false }: { initial: DealerFormValues; submitLabel: string; onSubmit: (v: DealerFormValues, opts?: { auto?: boolean }) => Promise<void>; autosave?: boolean }) {
   const [v, setV] = useState(initial);
+  const [autoSaved, setAutoSaved] = useState(false);
+  const first = useRef(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -80,10 +91,34 @@ export function DealerForm({ initial, submitLabel, onSubmit }: { initial: Dealer
     setSaved(false);
     setV((x) => ({ ...x, [k]: val }));
   };
+  const [slugTouched, setSlugTouched] = useState(!!initial.portalSlug);
   const text = (k: keyof DealerFormValues) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setSaved(false);
+    setAutoSaved(false);
     setV((x) => ({ ...x, [k]: e.target.value }));
   };
+
+  // Draft dealers save themselves 1.5 s after the last edit (spec 5.4 "autosave drafts"), so a half-finished
+  // setup is never lost. Only when the required fields are valid; a failure is shown like a manual save.
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    if (!autosave || !v.displayName.trim() || !v.legalName.trim() || !/^\S+@\S+\.\S+$/.test(v.contactEmail.trim())) return;
+    const t = setTimeout(async () => {
+      try {
+        await onSubmit(v, { auto: true });
+        setError(null);
+        setAutoSaved(true);
+      } catch (err) {
+        setAutoSaved(false);
+        setError(err instanceof ApiError ? err.message : "Couldn't autosave");
+      }
+    }, 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -112,6 +147,15 @@ export function DealerForm({ initial, submitLabel, onSubmit }: { initial: Dealer
       <AddressFields legend="Billing address" value={v.billingAddress} onChange={(a) => { setSaved(false); setV((x) => ({ ...x, billingAddress: a })); }} />
       <AddressFields legend="Shipping address" value={v.shippingAddress} onChange={(a) => { setSaved(false); setV((x) => ({ ...x, shippingAddress: a })); }} />
       <fieldset className="border border-line rounded-lg p-4">
+        <legend className="px-2 text-[12px] font-medium uppercase tracking-wide text-steel-500">Dealer portal address</legend>
+        <label className={labelClass} htmlFor="df-slug">Own web address (optional)</label>
+        <div className="flex items-stretch max-w-xl">
+          <input id="df-slug" className={`${inputClass} rounded-r-none lowercase`} maxLength={30} value={v.portalSlug} placeholder={suggestSlug(v.displayName) || "apex-motors"} onChange={(e) => { setSlugTouched(true); setSaved(false); setV((x) => ({ ...x, portalSlug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })); }} />
+          <span className="inline-flex items-center px-3 border border-l-0 border-line rounded-r-lg bg-steel-50 text-[13px] text-steel-700 whitespace-nowrap">.{portalAddress("").replace(/^\./, "")}</span>
+        </div>
+        <p className="text-[12px] text-steel-500 mt-1.5">{v.portalSlug ? <>This dealer signs in at <strong>https://{portalAddress(v.portalSlug)}</strong> — a landing page with their logo and colours. Invite and reset emails will link there.</> : <>Leave empty to use the shared dealer portal address. {!slugTouched && v.displayName && <button type="button" className="underline" onClick={() => { setSlugTouched(true); setV((x) => ({ ...x, portalSlug: suggestSlug(x.displayName) })); }}>Use “{suggestSlug(v.displayName)}”</button>}</>}</p>
+      </fieldset>
+      <fieldset className="border border-line rounded-lg p-4">
         <legend className="px-2 text-[12px] font-medium uppercase tracking-wide text-steel-500">Commercial terms</legend>
         <div className="grid sm:grid-cols-2 gap-3">
           <div><label className={labelClass} htmlFor="df-method">Ordering</label>
@@ -129,6 +173,7 @@ export function DealerForm({ initial, submitLabel, onSubmit }: { initial: Dealer
       <div className="flex items-center gap-3">
         <button type="submit" disabled={busy} className={btnPrimary}>{busy && <Spinner />} {submitLabel}</button>
         {saved && <span role="status" className="text-[13px] text-emerald-700">Saved</span>}
+        {!saved && autoSaved && <span role="status" className="text-[13px] text-steel-500">Draft saved automatically</span>}
       </div>
     </form>
   );

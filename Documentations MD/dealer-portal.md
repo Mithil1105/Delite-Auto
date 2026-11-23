@@ -10,7 +10,7 @@
 | Owner          | Claude (for Jay) |
 | Status         | **Code complete for all spec phases (1–4).** Live Supabase has migrations 1–2 and the *first* versions of `admin-dealers` / `dealer-portal`. The completion migration `20261029090000`, the redeploy of three functions, the second Vercel project and the live-Odoo price proof are **not yet done** — see "Must do before pilot". |
 | Created        | 2026-10-27 |
-| Last updated   | 2026-10-29 |
+| Last updated   | 2026-11-23 |
 
 ## Summary
 
@@ -45,6 +45,15 @@ that stays consistent with Odoo (product master, tax, orders).
   enforced against open orders, pilot flag); **team users** (owner + buyers, owner-managed); **account
   offers** shown on the dashboard; **spend insights** (90 days); **printable order / PDF** (browser
   "Save as PDF"); category filter and in-stock signal in the catalogue; product URL slugs.
+- **Per-dealer address** (`<slug>.dealers.deliteauto.com`) — each dealer can have its own branded landing page
+  and sign-in on its own subdomain. Admin sets the address on the dealer form (Overview → "Dealer portal
+  address"; unique, 3–30 chars, reserved words blocked). The landing page shows only branding (name, logo, cover,
+  accent colour, tagline, welcome text) via the one unauthenticated action `public.brand`; an unknown, draft,
+  suspended or archived dealer address returns the same safe 404. The browser tags every dealer-portal call with
+  the address it came from and the server refuses a sign-in that belongs to another dealer (audited as
+  `security.denied / wrong_portal`). Invite and reset emails link to the dealer's own address.
+- **Autosave** — the setup form of a *draft* dealer saves itself 1.5 s after the last edit (optimistic-lock stamp
+  kept locally, so typing is never interrupted).
 - **Security/ops** — real **session revocation** (`dealer_revoke_sessions` + `sessions_revoked_before`
   checked against the JWT `iat`); admin "sign everyone out"; **rollout flag** `off | pilot | on`
   (owner-only); `dealer_manager` role scoped by `dealer_admin_grants` (dealers + separate pricing
@@ -74,11 +83,11 @@ against Postgres + Odoo and (2) Vitest against in-memory fakes (`memory.ts`, tes
 - `supabaseRepo.ts`, `odooPort.ts`, `deps.ts` — Deno-only production adapters.
 - Edge Functions: `admin-dealers` (via `requireAdmin()` incl. MFA policy; roles owner/admin/support/
   dealer_manager, further narrowed by engine capabilities and grants) and `dealer-portal` (verified Supabase
-  session → `dealer_users`). Explicit CORS allow-list, `Cache-Control: private, no-store`, request ids,
+  session → `dealer_users`; the single unauthenticated action is `public.brand`, rate-limited per IP). Explicit CORS allow-list, `Cache-Control: private, no-store`, request ids,
   structured errors, per-isolate rate limiting.
-- Migrations: `20261028090000_dealer_portal_foundation.sql`, `20261028090100_dealer_portal_purchase.sql`
-  (**applied live**) and `20261029090000_dealer_portal_completion.sql` (**not yet applied**; rollback in
-  `supabase/rollbacks/20261029_dealer_portal_completion_down.sql`). RLS on with no client policies; GiST
+- Migrations: `20261028090000_dealer_portal_foundation.sql`, `20261028090100_dealer_portal_purchase.sql`,
+  `20261029090000_dealer_portal_completion.sql` (**all applied live**) and `20261123090000_dealer_portal_slug.sql`
+  (per-dealer address; **not yet applied**). Rollbacks in `supabase/rollbacks/`. RLS on with no client policies; GiST
   exclusion constraint prevents overlapping active prices *per tier*; `dealer_apply_price_plan` /
   `dealer_insert_order` are atomic; `dealer_audit_log` is append-only.
 
@@ -131,6 +140,13 @@ mock/demo mode; everything runs through the real admin and Edge Functions.
 
 ## Dependencies
 
+Per-dealer addresses need: frontend env `VITE_DEALER_BASE_DOMAIN` (default `dealers.deliteauto.com`); secret
+`DEALER_PORTAL_BASE_DOMAIN` (same value, so invite/reset links use the dealer's own address); a wildcard domain
+`*.dealers.deliteauto.com` on the dealer Vercel project (wildcard domains require Vercel nameservers or a
+DNS `CNAME *.dealers` record per Vercel's instructions); and the Supabase Auth redirect URL
+`https://*.dealers.deliteauto.com/**`. Local testing: `http://<slug>.localhost:5173/dealer` (browsers resolve
+`*.localhost` to your machine).
+
 Supabase Edge Function secrets (server-only): `DEALER_PORTAL_URL` (invite/reset redirect; default
 `https://dealers.deliteauto.com`), `DEALER_ALLOWED_ORIGINS`, plus existing `ODOO_*`, `SUPABASE_*`,
 `RESEND_API_KEY`. Supabase Auth must allow `<portal>/invite/accept` and `<portal>/reset-password`
@@ -142,8 +158,8 @@ writes a tagged partner + a **draft** quotation to Odoo; dry-run by default) and
 
 ## Testing / verification
 
-- `npx vitest run supabase/functions/_shared/dealer` → **89 tests pass** (22 pricing/quote/CSV unit, 40 end-to-end
-  scenarios, 27 completion scenarios: tiers, terms, credit limit, team users, session revocation, rollout
+- `npx vitest run supabase/functions/_shared/dealer` → **94 tests pass** (22 pricing/quote/CSV unit, 40 end-to-end
+  scenarios, 27 completion scenarios and 5 portal-address scenarios (slug rules, uniqueness, public brand leaks nothing, wrong-portal refusal, invite link): tiers, terms, credit limit, team users, session revocation, rollout
   modes, dealer-manager scoping, automatic retry, reconcile, categories, offers, insights, security summary).
 - Whole suite: 296 pass; the only failures are the 3 pre-existing `odooCheckoutHandoff` tests that need
   `VITE_ODOO_CHECKOUT_BASE_URL` (unrelated to this work). `npx tsc -b` clean; `npx oxlint` warnings only;
@@ -156,9 +172,8 @@ writes a tagged partner + a **draft** quotation to Odoo; dry-run by default) and
 ## Known issues / follow-ups
 
 **Must do before pilot:**
-1. Apply `20261029090000_dealer_portal_completion.sql` to the live project and redeploy `admin-dealers`,
-   `dealer-portal` and `admin-users-manage` (its role list gained `dealer_manager`). Test the rollback script in a
-   rolled-back transaction first if desired.
+1. Apply `20261123090000_dealer_portal_slug.sql` and redeploy `dealer-portal` + `admin-dealers` (the first three
+   migrations and functions are already live). Then add the wildcard domain/DNS and the env/secret above.
 2. Set the secret `DEALER_PORTAL_URL`; add the Auth redirect URLs; configure Resend SMTP for invite/reset mail.
 3. Run the Phase-0 proof (needs explicit approval — it writes to the live Odoo) and check totals/tax.
 4. Create the second Vercel project (build `npm run build:dealer`, output `dist`), attach
@@ -178,4 +193,5 @@ automated axe run has not been done.
 |------------|--------|------------------------------------------|
 | 2026-10-27 | Claude | Initial version: Phases 1–3 + reorder built and verified locally; deployment and live-Odoo proof pending. |
 | 2026-10-28 | Claude | Removed the mock/demo backend and `/mock-admin`; the Dealers section runs only in the real admin. Migrations 1–2 and first function versions deployed to the live project. |
+| 2026-11-23 | Claude | Per-dealer subdomain: own branded landing + sign-in at `<slug>.dealers.deliteauto.com`, slug field and uniqueness in admin, public `public.brand` action (branding only), server refusal of cross-portal sign-ins, invite/reset links on the dealer's address, wildcard CSP host rule, autosave for draft dealers; 94 engine tests. Migration `20261123090000` written, not yet applied. |
 | 2026-10-29 | Claude | Completion pass for the whole spec: volume tiers, commercial terms, credit limit, team users, session revocation, rollout flag, `dealer_manager` role + grants, offers, insights, print/PDF, automatic Odoo retry + reconcile, security alert, CSP headers, richer landing/auth, full admin UI for all of it; 89 engine tests. Completion migration, function redeploy, Odoo proof and Vercel project still pending. |

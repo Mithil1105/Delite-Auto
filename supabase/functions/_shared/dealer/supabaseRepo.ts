@@ -61,14 +61,19 @@ export class SupabaseDealerRepo implements DealerRepo {
   async getDealer(id: string) {
     return check(await this.db.from("dealers").select("*").eq("id", id).maybeSingle(), "getDealer") as DealerRow | null;
   }
+  async getDealerBySlug(slug: string) {
+    return check(await this.db.from("dealers").select("*").eq("portal_slug", slug).maybeSingle(), "getDealerBySlug") as DealerRow | null;
+  }
   async insertDealer(row: NewDealer) {
     const res = await this.db.from("dealers").insert(row).select("*").single();
-    if (res.error?.code === "23505") throw new DealerError("CONFLICT", "Dealer code already exists — please try again");
+    if (res.error?.code === "23505") throw new DealerError("CONFLICT", /portal_slug/.test(res.error.message) ? "That portal address is already taken" : "Dealer code already exists — please try again");
     return check(res, "insertDealer") as DealerRow;
   }
   async updateDealer(id: string, patch: Partial<DealerRow>) {
     const { id: _id, created_at: _c, ...rest } = patch;
-    return check(await this.db.from("dealers").update({ ...rest, updated_at: new Date().toISOString() }).eq("id", id).select("*").single(), "updateDealer") as DealerRow;
+    const res = await this.db.from("dealers").update({ ...rest, updated_at: new Date().toISOString() }).eq("id", id).select("*").single();
+    if (res.error?.code === "23505") throw new DealerError("CONFLICT", "That portal address is already taken");
+    return check(res, "updateDealer") as DealerRow;
   }
   async dealerStats(ids: string[]) {
     const out = new Map<string, DealerStats>();

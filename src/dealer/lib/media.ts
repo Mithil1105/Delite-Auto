@@ -9,8 +9,10 @@ export function brandingImageUrl(path: string | null | undefined): string | null
 
 /** The dealer SPA is served at the root of dealers.deliteauto.com, but under /dealer when it shares
  * the storefront's dev server. */
+import { onDealerDomain } from "./portalHost";
+
 export function dealerBasename(): string {
   const override = import.meta.env.VITE_DEALER_BASENAME;
   if (typeof override === "string") return override === "/" ? "" : override;
-  return typeof location !== "undefined" && location.hostname.startsWith("dealers.") ? "" : "/dealer";
+  return onDealerDomain() ? "" : "/dealer";
 }

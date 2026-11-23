@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, Mail } from "lucide-react";
 import { ApiError } from "../../../dealer/lib/transport";
@@ -19,6 +19,8 @@ export function DealerOverview() {
   const base = useAdminBase();
   const d = detail.dealer;
   const orderTotal = Object.values(detail.stats.orders).reduce((a, b) => a + b, 0);
+  // Autosave keeps the optimistic-lock stamp locally so it never needs to reload (and remount) the form.
+  const stamp = useRef(d.updated_at);
   return (
     <div className="space-y-8">
       <section aria-label="Summary" className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -46,9 +48,11 @@ export function DealerOverview() {
           key={d.updated_at}
           initial={valuesFromDealer(d)}
           submitLabel="Save changes"
-          onSubmit={async (v) => {
-            await adminDealers.update({ id: d.id, expectedUpdatedAt: d.updated_at, ...v, contactName: v.contactName || null, contactPhone: v.contactPhone || null, gstin: v.gstin || null, ...termsPayload(v) });
-            reload();
+          autosave={d.status === "draft"}
+          onSubmit={async (v, opts) => {
+            const res = await adminDealers.update({ id: d.id, expectedUpdatedAt: stamp.current, ...v, contactName: v.contactName || null, contactPhone: v.contactPhone || null, gstin: v.gstin || null, ...termsPayload(v) });
+            stamp.current = res.dealer.updated_at;
+            if (!opts?.auto) reload();
           }}
         />
       </section>

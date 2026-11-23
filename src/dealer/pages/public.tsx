@@ -3,6 +3,8 @@ import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronDown, Headset, LockKeyhole, Tags } from "lucide-react";
 import { site } from "../../data/site";
 import { useDealerAuth } from "../DealerAuth";
+import { brandingImageUrl } from "../lib/media";
+import { usePortalBrand } from "../lib/portalBrand";
 import { btnPrimary, inputClass, labelClass, Spinner } from "../ui";
 
 const DEFAULT_ACCENT = { "--dealer-accent": "#10148F" } as CSSProperties;
@@ -35,13 +37,26 @@ function writeThrottle(v: { fails: number; until: number } | null): void {
 }
 
 function PublicFrame({ children }: { children: ReactNode }) {
+  const b = usePortalBrand();
+  const brand = b.status === "ready" ? b.brand : null;
+  const logo = brandingImageUrl(brand?.logoPath);
+  // A dealer address that does not exist (or is not live) shows the same safe 404 as any unknown page.
+  if (b.status === "missing") return <NotFoundBody />;
+  if (b.status === "loading") return <div className="min-h-screen grid place-items-center bg-paper text-steel-500 text-[13px]" role="status">Loading…</div>;
   return (
-    <div className="min-h-screen bg-paper text-ink flex flex-col" style={DEFAULT_ACCENT}>
+    <div className="min-h-screen bg-paper text-ink flex flex-col" style={brand ? ({ "--dealer-accent": brand.accentColor } as CSSProperties) : DEFAULT_ACCENT}>
       <header className="bg-white border-b border-line">
         <div className="container-page h-16 flex items-center justify-between">
-          <Link to="/" className="font-display uppercase text-[17px] tracking-tightish">
-            Delite Auto <span className="text-steel-500 normal-case text-[13px] ml-1">Exclusive Partners</span>
-          </Link>
+          {brand ? (
+            <Link to="/" className="flex items-center gap-3 min-w-0">
+              {logo ? <img src={logo} alt="" className="h-9 w-auto max-w-[140px] object-contain" /> : <span className="h-9 w-9 shrink-0 grid place-items-center rounded-md text-white font-display text-lg" style={{ background: brand.accentColor }} aria-hidden>{brand.displayName.charAt(0)}</span>}
+              <span className="font-display uppercase text-[16px] tracking-tightish truncate">{brand.displayName}</span>
+            </Link>
+          ) : (
+            <Link to="/" className="font-display uppercase text-[17px] tracking-tightish">
+              Delite Auto <span className="text-steel-500 normal-case text-[13px] ml-1">Exclusive Partners</span>
+            </Link>
+          )}
           <nav aria-label="Main" className="flex items-center gap-5 text-[13.5px]">
             <Link to={{ pathname: "/", hash: "#benefits" }} className="hidden sm:inline text-steel-700 hover:text-ink">Benefits</Link>
             <Link to={{ pathname: "/", hash: "#faq" }} className="hidden sm:inline text-steel-700 hover:text-ink">FAQ</Link>
@@ -53,7 +68,7 @@ function PublicFrame({ children }: { children: ReactNode }) {
       <main className="flex-1">{children}</main>
       <footer className="border-t border-line bg-white">
         <div className="container-page py-6 text-[12.5px] text-steel-500 flex flex-wrap gap-x-6 gap-y-2 justify-between">
-          <span>Invitation-only dealer access. Need an account? Contact your Delite representative.</span>
+          <span>{brand ? `${brand.displayName} partner portal, powered by Delite Auto. ` : ""}Invitation-only dealer access. Need an account? Contact your Delite representative.</span>
           <span className="flex gap-4">
             <a href={`mailto:${site.email}`} className="hover:text-ink">{site.email}</a>
             <a href="https://www.deliteauto.com/terms" target="_blank" rel="noreferrer" className="hover:text-ink">Terms</a>
@@ -75,6 +90,9 @@ const FAQ: { q: string; a: string }[] = [
 ];
 
 export function Landing() {
+  const b = usePortalBrand();
+  const brand = b.status === "ready" ? b.brand : null;
+  const hero = brandingImageUrl(brand?.coverPath) ?? HERO_IMAGE;
   const cards = [
     { icon: LockKeyhole, title: "Private Catalogue", body: "See only the products Delite has opened up to your business — nothing else." },
     { icon: Tags, title: "Contract Pricing", body: "Your agreed prices, applied automatically on every order. No price lists to chase." },
@@ -83,13 +101,13 @@ export function Landing() {
   return (
     <PublicFrame>
       <section className="relative text-white bg-charcoal-deep overflow-hidden">
-        <img src={HERO_IMAGE} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover opacity-45" />
+        <img src={hero} alt="" aria-hidden className="absolute inset-0 w-full h-full object-cover opacity-45" />
         <div className="absolute inset-0 bg-gradient-to-r from-charcoal-deep via-charcoal-deep/85 to-transparent" aria-hidden />
         <div className="container-page relative py-20 sm:py-28 max-w-3xl">
-          <p className="font-mono text-[11px] uppercase tracking-widish text-gold mb-4">Exclusive partner portal</p>
-          <h1 className="font-display uppercase text-[34px] sm:text-[52px] leading-[1.05] tracking-tightish mb-5">A better way to buy, built for our partners.</h1>
-          <p className="text-[16px] text-white/80 max-w-[52ch] mb-8">Exclusive product access. Agreed pricing. One seamless ordering experience.</p>
-          <Link to="/login" className="inline-flex items-center h-12 px-8 rounded-full bg-gold text-ink font-semibold hover:bg-gold-600 transition-colors">Dealer Login</Link>
+          <p className="font-mono text-[11px] uppercase tracking-widish text-gold mb-4">{brand ? "Exclusive partner portal · powered by Delite Auto" : "Exclusive partner portal"}</p>
+          <h1 className="font-display uppercase text-[34px] sm:text-[52px] leading-[1.05] tracking-tightish mb-5">{brand ? `Welcome, ${brand.displayName}` : "A better way to buy, built for our partners."}</h1>
+          <p className="text-[16px] text-white/80 max-w-[52ch] mb-8">{brand ? (brand.welcomeText ?? brand.tagline ?? "Your private catalogue, your agreed prices, one seamless ordering experience.") : "Exclusive product access. Agreed pricing. One seamless ordering experience."}</p>
+          <Link to="/login" className={`inline-flex items-center h-12 px-8 rounded-full font-semibold transition-colors ${brand ? "text-white hover:opacity-90" : "bg-gold text-ink hover:bg-gold-600"}`} style={brand ? { background: brand.accentColor } : undefined}>Dealer Login</Link>
         </div>
       </section>
       <section id="benefits" className="container-page py-14">
@@ -136,6 +154,8 @@ export function PublicContact() {
 }
 
 export function Login() {
+  const b = usePortalBrand();
+  const brandName = b.status === "ready" ? b.brand.displayName : null;
   const { ready, signedIn, signIn } = useDealerAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -181,7 +201,7 @@ export function Login() {
   return (
     <PublicFrame>
       <div className="container-page py-14 max-w-md">
-        <h1 className="text-2xl font-semibold mb-1">Dealer sign in</h1>
+        <h1 className="text-2xl font-semibold mb-1">{brandName ? `Sign in to ${brandName}` : "Dealer sign in"}</h1>
         <p className="text-[13.5px] text-steel-500 mb-6">Use the credentials from your Delite invitation. There is no public sign-up.</p>
         {expired && <p role="status" className="mb-4 text-[13px] rounded-md border border-amber-300 bg-amber-50 px-3 py-2">Your session has ended. Please sign in again.</p>}
         <form onSubmit={submit} className="card-surface rounded-lg p-6 space-y-4" noValidate>
@@ -303,6 +323,18 @@ export function SetPassword({ mode }: { mode: "invite" | "reset" }) {
         )}
       </div>
     </PublicFrame>
+  );
+}
+
+function NotFoundBody() {
+  return (
+    <div className="min-h-screen grid place-items-center bg-paper text-ink px-6 text-center" style={DEFAULT_ACCENT}>
+      <div>
+        <h1 className="text-3xl font-semibold mb-2">Page not found</h1>
+        <p className="text-[14px] text-steel-500 mb-6">That page doesn't exist, or you don't have access to it.</p>
+        <Link to="/" className={btnPrimary}>Go to the portal</Link>
+      </div>
+    </div>
   );
 }
 

@@ -43,6 +43,7 @@ export type NewAudit = Omit<AuditRow, "id" | "created_at">;
 export interface DealerRepo {
   listDealers(f: { search?: string; status?: DealerStatus; offset: number; limit: number; sortBy?: "name" | "status" | "code" | "created" | "updated"; sortDir?: "asc" | "desc"; onlyIds?: string[] }): Promise<{ rows: DealerRow[]; total: number }>;
   getDealer(id: string): Promise<DealerRow | null>;
+  getDealerBySlug(slug: string): Promise<DealerRow | null>;
   insertDealer(row: NewDealer): Promise<DealerRow>;
   updateDealer(id: string, patch: Partial<DealerRow>): Promise<DealerRow>;
   dealerStats(ids: string[]): Promise<Map<string, DealerStats>>;
@@ -123,9 +124,9 @@ export interface OdooPort {
 
 export interface AuthPort {
   /** Creates (or finds) the auth user and emails a single-use, expiring invite/setup link. */
-  inviteDealerUser(email: string, meta: { dealerCode: string; displayName: string }): Promise<{ authUserId: string; existing: boolean }>;
+  inviteDealerUser(email: string, meta: { dealerCode: string; displayName: string; portalSlug?: string | null }): Promise<{ authUserId: string; existing: boolean }>;
   /** Single-use password reset email (spec §3.1 / FR-01). */
-  sendPasswordReset(email: string): Promise<void>;
+  sendPasswordReset(email: string, portalSlug?: string | null): Promise<void>;
   /** Ends every Supabase session of these users (refresh tokens deleted) — spec FR-01 "session revoke". */
   revokeSessions(authUserIds: string[]): Promise<void>;
 }

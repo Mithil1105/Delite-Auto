@@ -93,7 +93,11 @@ export class MemoryRepo implements DealerRepo {
   async getDealer(id: string) {
     return this.state.dealers.find((d) => d.id === id) ?? null;
   }
+  async getDealerBySlug(slug: string) {
+    return this.state.dealers.find((d) => d.portal_slug === slug) ?? null;
+  }
   async insertDealer(row: NewDealer) {
+    if (row.portal_slug && this.state.dealers.some((d) => d.portal_slug === row.portal_slug)) throw new DealerError("CONFLICT", "That portal address is already taken");
     if (this.state.dealers.some((d) => d.dealer_code === row.dealer_code)) throw new DealerError("CONFLICT", "Dealer code already exists — try again");
     const dealer: DealerRow = { ...row, id: uuid(), created_at: this.ts(), updated_at: this.ts() };
     this.state.dealers.push(dealer);
@@ -444,14 +448,14 @@ export class FakeOdoo implements OdooPort {
 
 export class FakeAuth implements AuthPort {
   users = new Map<string, string>();
-  invites: { email: string; at: string }[] = [];
+  invites: { email: string; at: string; portalSlug: string | null }[] = [];
   resets: string[] = [];
   revoked: string[][] = [];
-  async inviteDealerUser(email: string) {
+  async inviteDealerUser(email: string, meta?: { portalSlug?: string | null }) {
     const key = email.toLowerCase();
     const existing = this.users.has(key);
     if (!existing) this.users.set(key, uuid());
-    this.invites.push({ email: key, at: new Date().toISOString() });
+    this.invites.push({ email: key, at: new Date().toISOString(), portalSlug: meta?.portalSlug ?? null });
     return { authUserId: this.users.get(key)!, existing };
   }
   async sendPasswordReset(email: string) {

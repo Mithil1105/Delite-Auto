@@ -14,6 +14,11 @@ import type { AuthPort, EngineDeps, NotifierPort, OdooPort } from "./ports.ts";
 import type { DealerRow, OrderItemRow, OrderRow } from "./types.ts";
 
 const PORTAL_URL = (): string => (Deno.env.get("DEALER_PORTAL_URL") ?? "https://dealers.deliteauto.com").replace(/\/$/, "");
+/** A dealer with its own address gets invite/reset links on it (needs DEALER_PORTAL_BASE_DOMAIN, e.g. dealers.deliteauto.com). */
+const portalUrlFor = (slug?: string | null): string => {
+  const base = Deno.env.get("DEALER_PORTAL_BASE_DOMAIN");
+  return slug && base ? `https://${slug}.${base.replace(/^\.+/, "")}` : PORTAL_URL();
+};
 
 class UnconfiguredOdoo implements OdooPort {
   private fail(): never {
@@ -33,8 +38,8 @@ class SupabaseInviteAuth implements AuthPort {
   constructor(db: SupabaseClient) {
     this.db = db;
   }
-  async inviteDealerUser(email: string, meta: { dealerCode: string; displayName: string }) {
-    const redirectTo = `${PORTAL_URL()}/invite/accept`;
+  async inviteDealerUser(email: string, meta: { dealerCode: string; displayName: string; portalSlug?: string | null }) {
+    const redirectTo = `${portalUrlFor(meta.portalSlug)}/invite/accept`;
     const invited = await this.db.auth.admin.inviteUserByEmail(email, { redirectTo, data: { full_name: meta.displayName, dealer_code: meta.dealerCode } });
     if (!invited.error && invited.data.user) return { authUserId: invited.data.user.id, existing: false };
 
@@ -56,8 +61,8 @@ class SupabaseInviteAuth implements AuthPort {
     throw new DealerError("VALIDATION", "Couldn't send the invite — check the owner email address and try again");
   }
 
-  async sendPasswordReset(email: string) {
-    const { error } = await this.db.auth.resetPasswordForEmail(email, { redirectTo: `${PORTAL_URL()}/reset-password` });
+  async sendPasswordReset(email: string, portalSlug?: string | null) {
+    const { error } = await this.db.auth.resetPasswordForEmail(email, { redirectTo: `${portalUrlFor(portalSlug)}/reset-password` });
     if (error) {
       console.error("[dealer-auth] reset failed:", error.message);
       throw new DealerError("VALIDATION", "Couldn't send the reset email — please try again shortly");

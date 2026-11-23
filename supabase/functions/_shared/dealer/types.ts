@@ -40,6 +40,8 @@ export interface DealerRow {
   payment_terms: string | null;
   credit_limit_paise: number | null;
   is_pilot: boolean;
+  /** Own address: `<portal_slug>.<dealer base domain>`; null = only the shared dealer portal address. */
+  portal_slug: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

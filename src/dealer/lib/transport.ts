@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabaseClient";
+import { currentPortalSlug } from "./portalHost";
 
 /** Structured error from the dealer/admin-dealers Edge Functions (or the demo backend). */
 export class ApiError extends Error {
@@ -16,7 +17,11 @@ export type DealerFunction = "admin-dealers" | "dealer-portal";
 /** The single door every dealer/admin-dealers request goes through (Supabase Edge Functions). */
 export async function callApi<T>(fn: DealerFunction, action: string, payload: Record<string, unknown> = {}): Promise<T> {
   if (!supabase) throw new ApiError("NOT_CONFIGURED", "The portal isn't connected to its backend yet.");
-  const { data, error } = await supabase.functions.invoke(fn, { body: { action, payload } });
+  // On a dealer's own address every dealer-portal call says which portal it came from, so the server can
+  // refuse a sign-in that belongs to a different dealer. (Identity still comes only from the session.)
+  const slug = fn === "dealer-portal" ? currentPortalSlug() : null;
+  const body = slug ? { action, payload: { ...payload, portalSlug: slug } } : { action, payload };
+  const { data, error } = await supabase.functions.invoke(fn, { body });
   if (error) {
     let parsed: { error?: { code?: string; message?: string; details?: unknown } } | null = null;
     const ctx = (error as { context?: Response }).context;
