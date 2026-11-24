@@ -150,7 +150,7 @@ DNS `CNAME *.dealers` record per Vercel's instructions); and the Supabase Auth r
 Supabase Edge Function secrets (server-only): `DEALER_PORTAL_URL` (invite/reset redirect; default
 `https://dealers.deliteauto.com`), `DEALER_ALLOWED_ORIGINS`, plus existing `ODOO_*`, `SUPABASE_*`,
 `RESEND_API_KEY`. Supabase Auth must allow `<portal>/invite/accept` and `<portal>/reset-password`
-(local: `http://localhost:5173/dealer/...`). Extension `btree_gist`. No new npm packages.
+(local: `http://localhost:5173/dealer/...`). Extension `btree_gist`. Dev-only packages added: `jsdom`, `axe-core` (accessibility test).
 
 Scripts: `npm run dealer:odoo-proof -- --variant <id> --price <₹> --confirm-write [--cleanup]` (Phase-0 proof,
 writes a tagged partner + a **draft** quotation to Odoo; dry-run by default) and
@@ -184,8 +184,8 @@ writes a tagged partner + a **draft** quotation to Odoo; dry-run by default) and
 7. Change the admin password that was shared in chat while testing; archive the test dealer ZZT-2040.
 
 **Other gaps:** rate limiting is per warm isolate (add a WAF rule for distributed abuse); no Playwright spec for
-the dealer flow; English only; accessibility was reviewed in code (labels, roles, keyboard menus) but an
-automated axe run has not been done.
+the dealer flow; English only; accessibility: an automated axe-core run (WCAG 2.0/2.1 A + AA, `src/dealer/a11y.test.tsx`) passes on the six
+public dealer pages; colour contrast and the signed-in/admin screens still need a real-browser pass.
 
 ## Revision log
 
@@ -193,5 +193,6 @@ automated axe run has not been done.
 |------------|--------|------------------------------------------|
 | 2026-10-27 | Claude | Initial version: Phases 1–3 + reorder built and verified locally; deployment and live-Odoo proof pending. |
 | 2026-10-28 | Claude | Removed the mock/demo backend and `/mock-admin`; the Dealers section runs only in the real admin. Migrations 1–2 and first function versions deployed to the live project. |
+| 2026-11-24 | Claude | Added an automated accessibility test (axe-core + jsdom, dev dependencies) for the public dealer pages; Vercel project `deliteauto-dealers` created with the dealer domains (no deployment; staying on localhost for now). |
 | 2026-11-23 | Claude | Per-dealer subdomain: own branded landing + sign-in at `<slug>.dealers.deliteauto.com`, slug field and uniqueness in admin, public `public.brand` action (branding only), server refusal of cross-portal sign-ins, invite/reset links on the dealer's address, wildcard CSP host rule, autosave for draft dealers; 94 engine tests. Migration `20261123090000` written, not yet applied. |
 | 2026-10-29 | Claude | Completion pass for the whole spec: volume tiers, commercial terms, credit limit, team users, session revocation, rollout flag, `dealer_manager` role + grants, offers, insights, print/PDF, automatic Odoo retry + reconcile, security alert, CSP headers, richer landing/auth, full admin UI for all of it; 89 engine tests. Completion migration, function redeploy, Odoo proof and Vercel project still pending. |

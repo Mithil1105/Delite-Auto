@@ -50,6 +50,6 @@ export default defineConfig({
   plugins: [react(), dealerDevRoutes(), dealerEntryAsIndex()],
   build: dealerTarget ? { rollupOptions: { input: 'dealer.html' } } : undefined,
   test: {
-    include: ['src/**/*.test.ts', 'server/**/*.test.ts', 'supabase/functions/_shared/**/*.test.ts'],
+    include: ['src/**/*.test.{ts,tsx}', 'server/**/*.test.ts', 'supabase/functions/_shared/**/*.test.ts'],
   },
 })
