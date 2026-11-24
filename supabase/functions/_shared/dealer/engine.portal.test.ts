@@ -93,4 +93,31 @@ describe("dealer portal address", () => {
     await admin("dealers.invite", { id: a.id });
     expect(auth.invites.at(-1)).toMatchObject({ portalSlug: "apex" });
   });
+
+  describe("temporary login (no email)", () => {
+    it("creates an owner login with a server-generated password, shown once, never audited", async () => {
+      const a = await dealer("Apex", "abc@gmail.com", "apex");
+      const res = await admin("dealers.createTemporaryLogin", { id: a.id });
+      expect(res).toMatchObject({ email: "abc@gmail.com", mustChangeAtFirstSignIn: true });
+      expect(typeof res.temporaryPassword).toBe("string");
+      expect(res.dealer.status).toBe("invited");
+      expect(auth.invites).toHaveLength(0); // no email invite was sent
+      const session = await engine.resolveSession(auth.users.get("abc@gmail.com")!);
+      expect(session.dealer.id).toBe(a.id);
+      const audit = await admin("audit.list", { dealerId: a.id });
+      expect(JSON.stringify(audit.rows)).not.toContain(res.temporaryPassword);
+      expect(audit.rows.some((r: any) => r.event === "temp_login.created")).toBe(true);
+    });
+
+    it("refuses when the dealer is not ready, already has an owner, or the email already has an account", async () => {
+      const { dealer: bare } = await admin("dealers.create", { displayName: "Bare", legalName: "Bare Ltd", contactEmail: "bare@x.test" });
+      await expectCode(admin("dealers.createTemporaryLogin", { id: bare.id }), "NOT_READY");
+      const a = await dealer("Apex", "a@apex.test");
+      await admin("dealers.createTemporaryLogin", { id: a.id });
+      await expectCode(admin("dealers.createTemporaryLogin", { id: a.id }), "CONFLICT");
+      const b = await dealer("Bolt", "b@bolt.test");
+      auth.users.set("b@bolt.test", "99999999-9999-4999-8999-999999999999");
+      await expectCode(admin("dealers.createTemporaryLogin", { id: b.id }), "CONFLICT");
+    });
+  });
 });

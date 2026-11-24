@@ -105,7 +105,7 @@ const MAX_TEAM = 10;
 const PENDING_STALE_MS = 15 * 60 * 1000;
 
 /** Actions whose `id` payload field IS a dealer id (everything else uses `dealerId`). */
-const ID_IS_DEALER = new Set(["dealers.get", "dealers.update", "dealers.branding", "dealers.setStatus", "dealers.invite", "dealers.addUser", "dealers.setUserStatus", "dealers.sendReset", "dealers.revokeSessions"]);
+const ID_IS_DEALER = new Set(["dealers.get", "dealers.update", "dealers.branding", "dealers.setStatus", "dealers.invite", "dealers.createTemporaryLogin", "dealers.addUser", "dealers.setUserStatus", "dealers.sendReset", "dealers.revokeSessions"]);
 
 export interface DealerEngine {
   callAdmin(actor: AdminActor, action: string, payload: unknown): Promise<unknown>;
@@ -546,6 +546,7 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
     "dealers.setStatus": "dealers.manage",
     "dealers.bulkSuspend": "dealers.manage",
     "dealers.invite": "dealers.manage",
+    "dealers.createTemporaryLogin": "dealers.manage",
     "dealers.addUser": "dealers.manage",
     "dealers.setUserStatus": "dealers.manage",
     "dealers.sendReset": "dealers.manage",
@@ -781,6 +782,23 @@ export function createDealerEngine(deps: EngineDeps): DealerEngine {
       const updated = dealer.status === "draft" ? await repo.updateDealer(dealer.id, { status: "invited" }) : dealer;
       await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "invite.sent", entity: "dealer_user", entityId: invited.authUserId, newValue: { email: dealer.contact_email, existingAccount: invited.existing }, requestId: a.requestId });
       return { dealer: updated, existingAccount: invited.existing };
+    },
+
+    // Spec 3.1 step 7 alternative: the SYSTEM generates a temporary password, shown once to the admin, never
+    // stored or logged, and the dealer must change it at first sign-in. No email is sent.
+    "dealers.createTemporaryLogin": async (a, p) => {
+      const dealer = await mustDealer(reqUuid(p, "id"));
+      if (dealer.status !== "draft" && dealer.status !== "invited") throw new DealerError("CONFLICT", `A temporary login can only be created for a draft or invited dealer (this one is ${dealer.status})`);
+      const [access, rules] = await Promise.all([repo.listAccess(dealer.id), repo.listRules(dealer.id, { statuses: ["active"] })]);
+      const issues = checkReadiness({ ownerEmail: dealer.contact_email, access, rules, now: now() });
+      if (issues.length > 0) throw new DealerError("NOT_READY", "This dealer isn't ready to activate yet", { issues });
+      const existingOwner = (await repo.listDealerUsers(dealer.id)).find((u) => u.role === "owner");
+      if (existingOwner) throw new DealerError("CONFLICT", "This dealer already has an owner login. Use a password-reset link instead.");
+      const created = await auth.createTemporaryLogin(dealer.contact_email, { dealerCode: dealer.dealer_code, displayName: dealer.display_name });
+      await repo.insertDealerUser({ dealer_id: dealer.id, auth_user_id: created.authUserId, email: dealer.contact_email, role: "owner", status: "invited", invited_at: now().toISOString(), last_login_at: null, sessions_revoked_before: null });
+      const updated = dealer.status === "draft" ? await repo.updateDealer(dealer.id, { status: "invited" }) : dealer;
+      await audit({ dealerId: dealer.id, actorType: "admin", actorId: a.id, event: "temp_login.created", entity: "dealer_user", entityId: created.authUserId, newValue: { email: dealer.contact_email }, requestId: a.requestId });
+      return { dealer: updated, email: dealer.contact_email, temporaryPassword: created.password, mustChangeAtFirstSignIn: true };
     },
 
     "dealers.addUser": async (a, p) => {

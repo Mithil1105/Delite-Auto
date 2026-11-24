@@ -216,6 +216,7 @@ export const adminDealers = {
   setStatus: (id: string, status: DealerStatus) => a<{ dealer: DealerRecord }>("dealers.setStatus", { id, status }),
   bulkSuspend: (ids: string[]) => a<{ suspended: number; skipped: string[] }>("dealers.bulkSuspend", { ids, confirm: true }),
   invite: (id: string) => a<{ dealer: DealerRecord; existingAccount: boolean }>("dealers.invite", { id }),
+  createTemporaryLogin: (id: string) => a<{ dealer: DealerRecord; email: string; temporaryPassword: string; mustChangeAtFirstSignIn: boolean }>("dealers.createTemporaryLogin", { id }),
   addUser: (id: string, email: string) => a<{ user: { id: string } }>("dealers.addUser", { id, email }),
   setUserStatus: (id: string, userId: string, status: "active" | "disabled") => a<{ user: { id: string; status: string } }>("dealers.setUserStatus", { id, userId, status }),
   sendReset: (id: string, userId: string) => a<{ sent: boolean }>("dealers.sendReset", { id, userId }),

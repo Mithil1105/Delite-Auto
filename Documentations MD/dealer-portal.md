@@ -158,7 +158,7 @@ writes a tagged partner + a **draft** quotation to Odoo; dry-run by default) and
 
 ## Testing / verification
 
-- `npx vitest run supabase/functions/_shared/dealer` → **94 tests pass** (22 pricing/quote/CSV unit, 40 end-to-end
+- `npx vitest run supabase/functions/_shared/dealer` → **99 tests pass** (22 pricing/quote/CSV unit, 40 end-to-end
   scenarios, 27 completion scenarios and 5 portal-address scenarios (slug rules, uniqueness, public brand leaks nothing, wrong-portal refusal, invite link): tiers, terms, credit limit, team users, session revocation, rollout
   modes, dealer-manager scoping, automatic retry, reconcile, categories, offers, insights, security summary).
 - Whole suite: 296 pass; the only failures are the 3 pre-existing `odooCheckoutHandoff` tests that need
@@ -193,6 +193,7 @@ public dealer pages; colour contrast and the signed-in/admin screens still need 
 |------------|--------|------------------------------------------|
 | 2026-10-27 | Claude | Initial version: Phases 1–3 + reorder built and verified locally; deployment and live-Odoo proof pending. |
 | 2026-10-28 | Claude | Removed the mock/demo backend and `/mock-admin`; the Dealers section runs only in the real admin. Migrations 1–2 and first function versions deployed to the live project. |
+| 2026-11-24 | Claude | Fixed "could not reach server" on dealer addresses: CORS now allows `https://<slug>.dealers.deliteauto.com` and local `http://<slug>.localhost[:port]` (`origins.ts`, tested). Added admin **Create temporary login** (server-generated one-time password shown once, never stored/logged/emailed; refuses an email that already has an account; dealer must change it at first sign-in, spec §3.1 step 7 alternative). 99 engine tests. |
 | 2026-11-24 | Claude | Added an automated accessibility test (axe-core + jsdom, dev dependencies) for the public dealer pages; Vercel project `deliteauto-dealers` created with the dealer domains (no deployment; staying on localhost for now). |
 | 2026-11-23 | Claude | Per-dealer subdomain: own branded landing + sign-in at `<slug>.dealers.deliteauto.com`, slug field and uniqueness in admin, public `public.brand` action (branding only), server refusal of cross-portal sign-ins, invite/reset links on the dealer's address, wildcard CSP host rule, autosave for draft dealers; 94 engine tests. Migration `20261123090000` written, not yet applied. |
 | 2026-10-29 | Claude | Completion pass for the whole spec: volume tiers, commercial terms, credit limit, team users, session revocation, rollout flag, `dealer_manager` role + grants, offers, insights, print/PDF, automatic Odoo retry + reconcile, security alert, CSP headers, richer landing/auth, full admin UI for all of it; 89 engine tests. Completion migration, function redeploy, Odoo proof and Vercel project still pending. |

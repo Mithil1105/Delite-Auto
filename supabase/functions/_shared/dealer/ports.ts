@@ -125,6 +125,8 @@ export interface OdooPort {
 export interface AuthPort {
   /** Creates (or finds) the auth user and emails a single-use, expiring invite/setup link. */
   inviteDealerUser(email: string, meta: { dealerCode: string; displayName: string; portalSlug?: string | null }): Promise<{ authUserId: string; existing: boolean }>;
+  /** Creates a confirmed login with a SERVER-GENERATED random password (never chosen by an admin) that must be changed at first sign-in. Refuses an email that already has an account. The password is returned once and never stored or logged. */
+  createTemporaryLogin(email: string, meta: { dealerCode: string; displayName: string }): Promise<{ authUserId: string; password: string }>;
   /** Single-use password reset email (spec §3.1 / FR-01). */
   sendPasswordReset(email: string, portalSlug?: string | null): Promise<void>;
   /** Ends every Supabase session of these users (refresh tokens deleted) — spec FR-01 "session revoke". */

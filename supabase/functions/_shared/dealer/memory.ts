@@ -458,6 +458,14 @@ export class FakeAuth implements AuthPort {
     this.invites.push({ email: key, at: new Date().toISOString(), portalSlug: meta?.portalSlug ?? null });
     return { authUserId: this.users.get(key)!, existing };
   }
+  temporaryLogins: string[] = [];
+  async createTemporaryLogin(email: string) {
+    const key = email.toLowerCase();
+    if (this.users.has(key)) throw new DealerError("CONFLICT", "An account with this email already exists. Use the email invite or a password-reset link instead.");
+    this.users.set(key, uuid());
+    this.temporaryLogins.push(key);
+    return { authUserId: this.users.get(key)!, password: `Tmp${this.temporaryLogins.length}-test-password` };
+  }
   async sendPasswordReset(email: string) {
     this.resets.push(email.toLowerCase());
   }

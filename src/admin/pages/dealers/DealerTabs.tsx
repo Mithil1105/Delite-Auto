@@ -85,6 +85,22 @@ export function DealerAccess() {
     }
   };
 
+  const [temp, setTemp] = useState<{ email: string; password: string } | null>(null);
+  const [tempBusy, setTempBusy] = useState(false);
+  const createTemp = async () => {
+    setTempBusy(true);
+    setMsg(null);
+    try {
+      const res = await adminDealers.createTemporaryLogin(d.id);
+      setTemp({ email: res.email, password: res.temporaryPassword });
+      reload();
+    } catch (err) {
+      setMsg({ ok: false, text: err instanceof ApiError ? err.message : "Couldn't create the temporary login" });
+    } finally {
+      setTempBusy(false);
+    }
+  };
+
   const canInvite = d.status === "draft" || d.status === "invited";
   return (
     <div className="space-y-8 max-w-3xl">
@@ -111,6 +127,22 @@ export function DealerAccess() {
           <p className="text-[13px] text-steel-700">{d.status === "active" ? "This dealer is active. To help them sign in, they can use “Forgot your password?” on the portal." : `Invites aren't available while the dealer is ${d.status}.`}</p>
         )}
         {!detail.ready && canInvite && <p className="text-[12.5px] text-steel-500 mt-2">Complete the checklist above first.</p>}
+        {canInvite && detail.users.length === 0 && (
+          <div className="mt-6 border-t border-line pt-5">
+            <h4 className="font-semibold text-[14px] mb-1">Or: create a temporary login (no email)</h4>
+            <p className="text-[12.5px] text-steel-500 mb-3">For testing or hand-over. The system generates a one-time password and shows it here once; it is never stored or emailed. The dealer must choose their own password at first sign-in. Does not work if the email already has an account.</p>
+            <button type="button" className={btnOutline} disabled={tempBusy || !detail.ready} onClick={createTemp}>{tempBusy && <Spinner />} Create temporary login</button>
+          </div>
+        )}
+        {temp && (
+          <div role="status" className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-4 text-[13.5px]">
+            <p className="font-semibold mb-2">Temporary login — copy it now, it will not be shown again</p>
+            <p>Email: <code className="font-mono bg-white border border-line rounded px-1.5 py-0.5 select-all">{temp.email}</code></p>
+            <p className="mt-1">Password: <code className="font-mono bg-white border border-line rounded px-1.5 py-0.5 select-all">{temp.password}</code></p>
+            <p className="text-[12.5px] text-steel-700 mt-2">Sign in at the dealer's portal address; they will be asked to set a new password straight away.</p>
+            <button type="button" className="underline text-[12.5px] mt-2" onClick={() => setTemp(null)}>I've copied it — hide</button>
+          </div>
+        )}
         {msg && <p role={msg.ok ? "status" : "alert"} className={`mt-3 text-[13px] ${msg.ok ? "text-emerald-700" : "text-sale"}`}>{msg.text}</p>}
       </section>
 

@@ -9,6 +9,7 @@ import { getOdooConfig } from "../odoo/client.ts";
 import { sendEmail } from "../email/index.ts";
 import { DealerError } from "./errors.ts";
 import { OdooDealerPort } from "./odooPort.ts";
+import { isAllowedOrigin } from "./origins.ts";
 import { SupabaseDealerRepo } from "./supabaseRepo.ts";
 import type { AuthPort, EngineDeps, NotifierPort, OdooPort } from "./ports.ts";
 import type { DealerRow, OrderItemRow, OrderRow } from "./types.ts";
@@ -31,6 +32,18 @@ class UnconfiguredOdoo implements OdooPort {
   ensurePartner = async () => this.fail();
   createQuotation = async () => this.fail();
   getOrderStates = async () => this.fail();
+}
+
+/** 16 random characters (crypto, no look-alikes), guaranteed to contain a letter and a digit. */
+function generateTemporaryPassword(): string {
+  const letters = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ";
+  const digits = "23456789";
+  const all = letters + digits;
+  const bytes = crypto.getRandomValues(new Uint32Array(16));
+  const chars = Array.from(bytes, (b) => all[b % all.length]);
+  chars[0] = letters[bytes[0] % letters.length];
+  chars[1] = digits[bytes[1] % digits.length];
+  return chars.join("");
 }
 
 class SupabaseInviteAuth implements AuthPort {
@@ -59,6 +72,16 @@ class SupabaseInviteAuth implements AuthPort {
     }
     console.error("[dealer-auth] invite failed:", invited.error?.message);
     throw new DealerError("VALIDATION", "Couldn't send the invite — check the owner email address and try again");
+  }
+
+  async createTemporaryLogin(email: string, meta: { dealerCode: string; displayName: string }) {
+    const password = generateTemporaryPassword();
+    const created = await this.db.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { full_name: meta.displayName, dealer_code: meta.dealerCode, must_change_password: true } });
+    if (!created.error && created.data.user) return { authUserId: created.data.user.id, password };
+    // Never overwrite the password of an account that already exists (it could be a real storefront customer).
+    if (/already|registered|exists/i.test(created.error?.message ?? "")) throw new DealerError("CONFLICT", "An account with this email already exists. Use the email invite or a password-reset link instead.");
+    console.error("[dealer-auth] temporary login failed:", created.error?.message);
+    throw new DealerError("VALIDATION", "Couldn't create the temporary login - check the email address and try again");
   }
 
   async sendPasswordReset(email: string, portalSlug?: string | null) {
@@ -115,11 +138,8 @@ export function buildDeps(db: SupabaseClient): EngineDeps {
 
 // ---- HTTP plumbing -----------------------------------------------------------------------------
 
-const DEFAULT_ORIGINS = ["https://dealers.deliteauto.com", "https://www.deliteauto.com", "https://deliteauto.com", "http://localhost:5173", "http://127.0.0.1:5173"];
-
-function allowedOrigins(): string[] {
-  const extra = (Deno.env.get("DEALER_ALLOWED_ORIGINS") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  return [...DEFAULT_ORIGINS, ...extra];
+function extraOrigins(): string[] {
+  return (Deno.env.get("DEALER_ALLOWED_ORIGINS") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 }
 
 export function corsHeaders(req: Request): Record<string, string> {
@@ -130,7 +150,7 @@ export function corsHeaders(req: Request): Record<string, string> {
     Vary: "Origin",
   };
   // Explicit allow-list — never `*` (dealer responses carry contract pricing).
-  if (origin && allowedOrigins().includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  if (origin && isAllowedOrigin(origin, extraOrigins())) headers["Access-Control-Allow-Origin"] = origin;
   return headers;
 }
 

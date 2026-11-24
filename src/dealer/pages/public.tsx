@@ -271,7 +271,7 @@ export function passwordProblem(pw: string): string | null {
 
 /** Landing page of the single-use invite / reset link: Supabase establishes a session from the link,
  * so a session present = a valid link; none after loading = invalid, expired or already used. */
-export function SetPassword({ mode }: { mode: "invite" | "reset" }) {
+export function SetPassword({ mode }: { mode: "invite" | "reset" | "change" }) {
   const { ready, signedIn, setPassword, signOut } = useDealerAuth();
   const navigate = useNavigate();
   const [pw, setPw] = useState("");
@@ -300,7 +300,8 @@ export function SetPassword({ mode }: { mode: "invite" | "reset" }) {
   return (
     <PublicFrame>
       <div className="container-page py-14 max-w-md">
-        <h1 className="text-2xl font-semibold mb-1">{mode === "invite" ? "Welcome — set your password" : "Choose a new password"}</h1>
+        <h1 className="text-2xl font-semibold mb-1">{mode === "invite" ? "Welcome — set your password" : mode === "change" ? "Choose your own password" : "Choose a new password"}</h1>
+        {mode === "change" && signedIn && <p className="text-[13.5px] text-steel-500 mt-1">You signed in with a temporary password. Choose your own now to continue.</p>}
         {!signedIn ? (
           <div role="alert" className="card-surface rounded-lg p-6 mt-6 text-[14px]">
             <p className="font-semibold mb-1">This link is invalid or has expired.</p>

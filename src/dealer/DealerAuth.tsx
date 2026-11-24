@@ -7,6 +7,8 @@ interface DealerAuthValue {
   /** False until the stored session has been restored — distinct from "signed out". */
   ready: boolean;
   signedIn: boolean;
+  /** True for an admin-created temporary login: the dealer must choose their own password before anything else. */
+  mustChangePassword: boolean;
   email: string | null;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
@@ -63,13 +65,14 @@ export function DealerAuthProvider({ children }: { children: ReactNode }) {
 
   const setPassword = useCallback(async (password: string) => {
     if (!supabase) return { error: "The portal isn't connected to its backend yet." };
-    const { error } = await supabase.auth.updateUser({ password });
+    const { error } = await supabase.auth.updateUser({ password, data: { must_change_password: false } });
     return error ? { error: error.message } : {};
   }, []);
 
   const value: DealerAuthValue = {
     ready,
     signedIn: !!session,
+    mustChangePassword: session?.user.user_metadata?.must_change_password === true,
     email: session?.user.email ?? null,
     signIn,
     signOut,

@@ -35,6 +35,7 @@ export default function DealerApp() {
             <Route path="forgot-password" element={<ForgotPassword />} />
             <Route path="invite/accept" element={<SetPassword mode="invite" />} />
             <Route path="reset-password" element={<SetPassword mode="reset" />} />
+            <Route path="change-password" element={<SetPassword mode="change" />} />
             <Route path="support-public" element={<PublicContact />} />
             <Route element={<DealerShell />}>
               <Route path="dashboard" element={<Dashboard />} />

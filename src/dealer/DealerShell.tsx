@@ -59,7 +59,7 @@ const NAV = [
 ];
 
 export function DealerShell() {
-  const { ready, signedIn, signOut, email } = useDealerAuth();
+  const { ready, signedIn, signOut, email, mustChangePassword } = useDealerAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [me, setMe] = useState<Me | null>(null);
@@ -100,6 +100,7 @@ export function DealerShell() {
 
   if (!ready) return <div className="p-10"><PageSkeleton /></div>;
   if (!signedIn) return <Navigate to={`/login?${sessionEnded ? "expired=1&" : ""}returnTo=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  if (mustChangePassword) return <Navigate to="/change-password" replace />;
   if (error?.code === "FORBIDDEN") return <BlockingState title="No dealer access" body={error.message || "This account isn't linked to a dealer. If you were invited, use the link from your invitation email or contact Delite."} />;
   if (error?.code === "DEALER_INACTIVE") return <BlockingState title="Account unavailable" body={error.message} />;
   if (error) return <div className="min-h-screen grid place-items-center p-6"><div className="max-w-md w-full"><ErrorState error={error} onRetry={reloadMe} /></div></div>;
